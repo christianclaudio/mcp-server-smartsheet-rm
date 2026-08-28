@@ -1,0 +1,40 @@
+language: "en-US"
+
+reviews:
+  # 'chill' provides balanced feedback without nitpicky noise
+  profile: "chill"
+  review_status: false
+
+  # Auto-Review Settings
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_title_keywords:
+      - "dependabot"
+      - "bump"
+
+  # Path Filters: Exclude lockfiles, docs, manifests, and configs from review
+  path_filters:
+    - "!poetry.lock"
+    - "!package-lock.json"
+    - "!.venv/**"
+    - "!**.log"
+    - "!CHANGELOG.md"
+    - "!README.md"
+    - "!server.json"
+    - "!COOKBOOK.md"
+    - "!.gitignore"
+    - "!.coderabbit.yaml"
+
+  # Domain Path Instructions: Enforce project-specific architectural rules automatically
+  path_instructions:
+    - path: "src/smartsheet_rm_mcp/server.py"
+      instructions: "Ensure all newly added tools declare read_only_hint, destructive_hint, or idempotent_hint annotations, and enforce explicit confirm=True parameters on all delete, remove, and bulk-destruction endpoints."
+    - path: "src/smartsheet_rm_mcp/client.py"
+      instructions: "Verify HTTP 429 retry backoff includes jitter and preserves Retry-After minimum delay."
+
+  # Enables '🤖 Prompt for AI Agents' blocks in review comments for one-click resolution
+  enable_prompt_for_ai_agents: true
+
+  poem: false
+  collapse_walkthrough: true

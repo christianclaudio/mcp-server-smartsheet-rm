@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.christianclaudio/smartsheet-rm",
+  "title": "mcp-server-smartsheet-rm",
+  "description": "MCP server for Smartsheet Resource Management (10,000ft API) time tracking and scheduling.",
+  "repository": {
+    "url": "https://github.com/christianclaudio/mcp-server-smartsheet-rm",
+    "source": "github"
+  },
+  "version": "1.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "mcp-server-smartsheet-rm",
+      "version": "1.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SMARTSHEET_RM_API_TOKEN",
+          "description": "Your Smartsheet Resource Management (10,000ft) API token",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        },
+        {
+          "name": "SMARTSHEET_RM_BASE_URL",
+          "description": "Smartsheet RM API Base URL (defaults to https://api.rm.smartsheet.com/api/v1)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

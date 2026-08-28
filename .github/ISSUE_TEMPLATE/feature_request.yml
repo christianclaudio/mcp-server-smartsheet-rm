@@ -1,0 +1,23 @@
+name: "✨ Feature Request"
+description: "Suggest an idea or new tool for mcp-server-smartsheet-rm"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suggest an improvement, new composite workflow, or API endpoint support.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Use Case
+      description: What challenge does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the tool or workflow improvement.
+    validations:
+      required: true
