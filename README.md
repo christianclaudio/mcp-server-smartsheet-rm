@@ -1,4 +1,4 @@
-# 🚀 mcp-server-smartsheet-rm
+# 📋 mcp-server-smartsheet-rm
 
 [![CI](https://github.com/christianclaudio/mcp-server-smartsheet-rm/actions/workflows/ci.yml/badge.svg)](https://github.com/christianclaudio/mcp-server-smartsheet-rm/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/mcp-server-smartsheet-rm)](https://pypi.org/project/mcp-server-smartsheet-rm/)
