@@ -735,3 +735,10 @@ def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) 
     finally:
         monkeypatch.undo()
         importlib.reload(srv)
+
+
+def test_handle_shutdown() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        srv._handle_shutdown(15, None)
+    assert exc_info.value.code == 0
+
