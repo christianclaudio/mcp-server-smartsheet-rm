@@ -1,6 +1,6 @@
 [project]
 name = "mcp-server-smartsheet-rm"
-version = "1.1.2"
+version = "1.1.3"
 description = "Enterprise Model Context Protocol (MCP) server for Smartsheet Resource Management (10,000ft API) — time tracking, projects, allocations, scheduling, and capacity planning."
 readme = "README.md"
 license = "Apache-2.0"

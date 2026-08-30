@@ -29,7 +29,6 @@ import logging
 import os
 import re
 import signal
-import sys
 import time
 from collections.abc import Callable
 from typing import Any
@@ -2153,8 +2152,8 @@ def project_staffing_plan(project_id: str) -> str:
 
 
 def _handle_shutdown(signum: int, frame: Any) -> None:
-    """Gracefully handle SIGTERM/SIGINT from host supervisor to exit with status 0."""
-    sys.exit(0)
+    """Gracefully handle SIGTERM/SIGINT from host supervisor to exit with status 0 immediately."""
+    os._exit(0)
 
 
 def main() -> None:
