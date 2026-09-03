@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.4] - 2026-09-03
+
+### Changed
+- **Synchronized Sunday Maintenance Schedule**: Standardized upstream API drift monitoring to Sunday 12:00 AM EDT / 04:00 UTC (`cron: '0 4 * * 0'`) and Dependabot dependency reconciliation to Sunday 12:30 AM EDT / 04:30 UTC (`time: "04:30"`).
+- **Enhanced Parameter & Schema Drift Engine**: Upgraded `scripts/check_openapi_drift.py` with AST client parameter parsing, parameter deprecation detection (`deprecated: true` / `[Deprecated]`), and missing required parameter audits.
+
 ## [1.1.3] - 2026-08-30
 
 ### Fixed
