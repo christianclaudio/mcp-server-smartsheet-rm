@@ -4,15 +4,29 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "04:30"
+      timezone: "Etc/UTC"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "sunday"
+      time: "04:30"
+      timezone: "Etc/UTC"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "github-actions"
+    groups:
+      actions:
+        patterns:
+          - "*"

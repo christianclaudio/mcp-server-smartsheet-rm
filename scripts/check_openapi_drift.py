@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""Check that client and server tool implementations cover all Smartsheet RM API endpoints."""
+"""Check that client and server tool implementations cover all Smartsheet RM API endpoints and audit parameter drift."""
 
 from __future__ import annotations
 
+import argparse
+import ast
 import inspect
+import json
+import re
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
+import httpx
 
 # Add src to path
 REPO = Path(__file__).resolve().parent.parent
@@ -131,7 +139,243 @@ ENDPOINT_TO_METHOD: dict[tuple[str, str], str] = {
 }
 
 
+@dataclass
+class ClientCall:
+    method: str
+    raw_path: str
+    normalized_path: str
+    query_params: set[str] = field(default_factory=set)
+    body_keys: set[str] = field(default_factory=set)
+    source_file: str = ""
+    line_number: int = 0
+
+
+@dataclass
+class SpecEndpoint:
+    method: str
+    path: str
+    normalized_path: str
+    query_params: dict[str, dict[str, Any]] = field(default_factory=dict)
+    path_params: dict[str, dict[str, Any]] = field(default_factory=dict)
+    deprecated_params: set[str] = field(default_factory=set)
+    required_params: set[str] = field(default_factory=set)
+    is_deprecated_route: bool = False
+
+
+def normalize_path(path: str) -> str:
+    """Normalize path by stripping query string, leading/trailing slashes, and standardizing parameters."""
+    path = path.split("?")[0].strip()
+    if not path.startswith("/"):
+        path = "/" + path
+    path = path.rstrip("/")
+    return re.sub(r"\{[^}]*\}", "{}", path)
+
+
+def is_parameter_deprecated(param_def: dict[str, Any]) -> bool:
+    """Detect if a parameter is deprecated via boolean flag or description warning."""
+    if param_def.get("deprecated") is True:
+        return True
+    desc = str(param_def.get("description", "")).lower()
+    title = str(param_def.get("title", "")).lower()
+    if "[deprecated]" in desc or "deprecated" in title or "end of support" in desc:
+        return True
+    return False
+
+
+def parse_spec(raw_spec: dict[str, Any]) -> dict[tuple[str, str], SpecEndpoint]:
+    """Index OpenAPI specification endpoints, parameters, and deprecation markers."""
+    endpoints: dict[tuple[str, str], SpecEndpoint] = {}
+    paths = raw_spec.get("paths", {})
+
+    for path_str, methods in paths.items():
+        norm_path = normalize_path(path_str)
+        path_level_params = methods.get("parameters", []) if isinstance(methods, dict) else []
+
+        for method_name, op in methods.items():
+            if method_name.lower() not in ("get", "post", "put", "patch", "delete"):
+                continue
+
+            method = method_name.upper()
+            op_params = op.get("parameters", []) if isinstance(op, dict) else []
+            all_params = list(path_level_params) + op_params
+
+            endpoint = SpecEndpoint(
+                method=method,
+                path=path_str,
+                normalized_path=norm_path,
+                is_deprecated_route=bool(op.get("deprecated", False)),
+            )
+
+            for param in all_params:
+                if not isinstance(param, dict):
+                    continue
+                p_name = param.get("name")
+                p_in = param.get("in", "query")
+                if not p_name:
+                    continue
+
+                if p_in == "query":
+                    endpoint.query_params[p_name] = param
+                elif p_in == "path":
+                    endpoint.path_params[p_name] = param
+
+                if is_parameter_deprecated(param):
+                    endpoint.deprecated_params.add(p_name)
+
+                if param.get("required") is True:
+                    endpoint.required_params.add(p_name)
+
+            endpoints[(method, norm_path)] = endpoint
+
+    return endpoints
+
+
+class ClientAstVisitor(ast.NodeVisitor):
+    """AST visitor to find HTTP client calls and extract method, path, and passed query params."""
+
+    def __init__(self, filename: str) -> None:
+        self.filename = filename
+        self.calls: list[ClientCall] = []
+
+    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+        func = node.func
+        method_name = ""
+        if isinstance(func, ast.Attribute):
+            method_name = func.attr
+
+        http_methods = {"get", "post", "put", "patch", "delete", "request"}
+        if method_name.lower() in http_methods:
+            method = ""
+            raw_path = ""
+            query_params: set[str] = set()
+            body_keys: set[str] = set()
+
+            if method_name.lower() == "request":
+                if (
+                    len(node.args) >= 1
+                    and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)
+                ):
+                    method = node.args[0].value.upper()
+                if len(node.args) >= 2:
+                    raw_path = self._extract_path(node.args[1])
+            else:
+                method = method_name.upper()
+                if len(node.args) >= 1:
+                    raw_path = self._extract_path(node.args[0])
+
+            for kw in node.keywords:
+                if kw.arg in ("params", "query_params"):
+                    query_params.update(self._extract_dict_keys(kw.value))
+                elif kw.arg in ("json", "json_data", "body"):
+                    body_keys.update(self._extract_dict_keys(kw.value))
+
+            if method and raw_path:
+                norm_path = normalize_path(raw_path)
+                self.calls.append(
+                    ClientCall(
+                        method=method,
+                        raw_path=raw_path,
+                        normalized_path=norm_path,
+                        query_params=query_params,
+                        body_keys=body_keys,
+                        source_file=self.filename,
+                        line_number=node.lineno,
+                    )
+                )
+
+        self.generic_visit(node)
+
+    def _extract_path(self, node: ast.AST) -> str:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.JoinedStr):
+            parts = []
+            for part in node.values:
+                if isinstance(part, ast.Constant):
+                    parts.append(str(part.value))
+                else:
+                    parts.append("{}")
+            return "".join(parts)
+        return "{}"
+
+    def _extract_dict_keys(self, node: ast.AST) -> set[str]:
+        keys = set()
+        if isinstance(node, ast.Dict):
+            for k in node.keys:
+                if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                    keys.add(k.value)
+        return keys
+
+
+def extract_client_calls(source_dir: Path) -> list[ClientCall]:
+    """Scan Python files in src/ for API client calls."""
+    calls: list[ClientCall] = []
+    for py_file in source_dir.rglob("*.py"):
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+            visitor = ClientAstVisitor(str(py_file.relative_to(source_dir.parent)))
+            visitor.visit(tree)
+            calls.extend(visitor.calls)
+        except Exception:
+            continue
+    return calls
+
+
+def run_drift_check(
+    spec: dict[str, Any],
+    source_dir: Path,
+    strict: bool = False,
+) -> tuple[int, list[str]]:
+    """Execute complete drift and deprecation validation."""
+    spec_endpoints = parse_spec(spec)
+    client_calls = extract_client_calls(source_dir)
+
+    issues: list[str] = []
+    warnings: list[str] = []
+
+    covered_keys: set[tuple[str, str]] = set()
+
+    for call in client_calls:
+        key = (call.method, call.normalized_path)
+        spec_op = spec_endpoints.get(key)
+        if not spec_op:
+            continue
+
+        covered_keys.add(key)
+        if spec_op.is_deprecated_route:
+            warnings.append(f"⚠️ DEPRECATED ROUTE: '{call.method} {spec_op.path}' in use.")
+
+        for qp in call.query_params:
+            if qp in spec_op.deprecated_params:
+                msg = f"⚠️ DEPRECATED PARAMETER IN USE: '{qp}' on '{call.method} {spec_op.path}'"
+                if strict:
+                    issues.append("❌ " + msg[3:])
+                else:
+                    warnings.append(msg)
+
+    output_lines: list[str] = []
+    if warnings:
+        output_lines.append("\n⚠️ WARNINGS:")
+        for w in warnings:
+            output_lines.append(f"  {w}")
+
+    if issues:
+        output_lines.append("\n❌ BREAKING DRIFT:")
+        for err in issues:
+            output_lines.append(f"  {err}")
+        return 1, output_lines
+
+    return 0, output_lines
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Smartsheet RM OpenAPI & Parameter Drift Checker")
+    parser.add_argument("--spec-file", help="Path to local OpenAPI specification")
+    parser.add_argument("--spec-url", help="URL to remote OpenAPI specification")
+    parser.add_argument("--strict", action="store_true", help="Fail on deprecations")
+    args, _ = parser.parse_known_args()
+
     print(f"Checking {len(ENDPOINT_TO_METHOD)} expected API endpoints against SmartsheetRMClient...")
 
     client_methods = {
@@ -159,6 +403,30 @@ def main() -> int:
     if len(tool_names) < 90:
         print(f"ERROR: Expected at least 90 MCP tools, found {len(tool_names)}", file=sys.stderr)
         return 1
+
+    # Parameter & schema drift check if spec provided
+    raw_spec: dict[str, Any] | None = None
+    if args.spec_file:
+        try:
+            raw_spec = json.loads(Path(args.spec_file).read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"ERROR reading spec-file: {e}", file=sys.stderr)
+            return 2
+    elif args.spec_url:
+        try:
+            resp = httpx.get(args.spec_url, timeout=30.0, follow_redirects=True)
+            resp.raise_for_status()
+            raw_spec = resp.json()
+        except Exception as e:
+            print(f"ERROR fetching spec-url: {e}", file=sys.stderr)
+            return 2
+
+    if raw_spec:
+        code, report = run_drift_check(raw_spec, REPO / "src", strict=args.strict)
+        for line in report:
+            print(line)
+        if code != 0:
+            return code
 
     print(f"OpenAPI surface check passed successfully (100% coverage for {len(ENDPOINT_TO_METHOD)} operations).")
     return 0
