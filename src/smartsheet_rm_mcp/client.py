@@ -20,6 +20,7 @@ from urllib.parse import quote
 
 import httpx
 from httpx import Response
+from smartsheet_rm_mcp import __version__
 
 from .errors import SmartsheetRMAPIError
 
@@ -66,7 +67,7 @@ class SmartsheetRMClient:
             "auth": self.api_token,
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "mcp-server-smartsheet-rm/1.0.0",
+            "User-Agent": f"mcp-server-smartsheet-rm/{__version__}",
         }
 
     async def _request(
