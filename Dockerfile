@@ -1,20 +1,34 @@
-# Multi-stage Docker build for mcp-server-smartsheet-rm
+# syntax=docker/dockerfile:1
+# Multi-stage build for mcp-server-smartsheet-rm
+# Produces a minimal runtime image (~150MB) with no dev tooling.
+
+# ─── Stage 1: Builder ─────────────────────────────────────────────────────────
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
+# Install build deps in a virtualenv so we can copy it cleanly
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-COPY pyproject.toml README.md ./
-COPY src/ ./src/
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ src/
 
-RUN pip install --no-cache-dir build && python -m build --wheel
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir .
 
-FROM python:3.12-slim
+# ─── Stage 2: Runtime ─────────────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
 
-WORKDIR /app
+# Security: run as non-root
+RUN useradd --create-home --shell /bin/bash mcp
+USER mcp
+WORKDIR /home/mcp
 
-COPY --from=builder /app/dist/*.whl ./
-RUN pip install --no-cache-dir *.whl && rm -f *.whl
+# Copy the pre-built virtualenv from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
+# MCP servers communicate over stdio — no port to expose
 ENTRYPOINT ["mcp-server-smartsheet-rm"]
+
