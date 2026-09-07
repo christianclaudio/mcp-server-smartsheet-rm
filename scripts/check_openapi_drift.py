@@ -240,8 +240,31 @@ class ClientAstVisitor(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
         func = node.func
         method_name = ""
+        caller_name = ""
         if isinstance(func, ast.Attribute):
             method_name = func.attr
+            if isinstance(func.value, ast.Name):
+                caller_name = func.value.id
+            elif isinstance(func.value, ast.Attribute):
+                caller_name = func.value.attr
+
+        # Only inspect recognized HTTP client invocations
+        valid_callers = {
+            "client",
+            "_client",
+            "http_client",
+            "_custom_client",
+            "httpx",
+            "custom_client",
+            "session",
+        }
+        if caller_name == "self":
+            if method_name.lower() != "request":
+                self.generic_visit(node)
+                return
+        elif not caller_name or caller_name not in valid_callers:
+            self.generic_visit(node)
+            return
 
         http_methods = {"get", "post", "put", "patch", "delete", "request"}
         if method_name.lower() in http_methods:
