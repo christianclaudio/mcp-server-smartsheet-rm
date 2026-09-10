@@ -4,7 +4,7 @@ Instructions for AI coding agents (Antigravity, Claude Code, Copilot, Cursor, Wi
 
 ---
 
-## 🎯 Project Overview & Scaffolding Purpose
+## 🎯 Project Overview
 
 This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server exposing 98 tools by default (100 with bulk-destructive operations enabled) covering the entire REST API surface for **Resource Management by Smartsheet** (formerly 10,000ft API).
 
@@ -39,7 +39,6 @@ mcp-server-smartsheet-rm/
 ├── Dockerfile                    # Multi-stage container build running as non-root USER mcp
 ├── server.json                   # MCP Registry catalog metadata (runtimeHint: uvx, stdio transport)
 ├── pyproject.toml                # Packaging metadata, entrypoint CLI, dependency pinning
-├── COOKBOOK.md                   # Operational maintainer runbook (9-step release SOP, recipes)
 ├── AGENTS.md                     # Agent guidance map, gotchas, and conventions (this file)
 └── README.md                     # User-facing installation, quickstart, and tool index
 ```
@@ -137,4 +136,4 @@ The GitHub Actions CI matrix enforces:
 - Multi-stage Docker image build.
 - CodeQL security scan.
 
-For cutting releases, creating version bumps, and handling PyPI / GitHub tag workflows, refer to the step-by-step runbook in **`COOKBOOK.md`**.
+For cutting releases, creating version bumps, and handling PyPI / GitHub tag workflows, follow standard project guidelines.

@@ -48,3 +48,5 @@ Thumbs.db
 
 # Private runbooks & artifacts
 .gemini_security/
+COOKBOOK.md
+
