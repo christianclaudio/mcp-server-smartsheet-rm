@@ -120,6 +120,9 @@ uv run python scripts/check_openapi_drift.py
 
 # Stdio JSON-RPC protocol smoke test
 uv run python scripts/smoke_test.py
+
+# Local pre-commit CodeRabbit CLI review
+coderabbit review --agent
 ```
 
 ---
