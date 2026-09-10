@@ -121,7 +121,7 @@ uv run python scripts/check_openapi_drift.py
 uv run python scripts/smoke_test.py
 
 # Local pre-commit CodeRabbit CLI review
-coderabbit review --agent
+coderabbit review --agent --uncommitted
 ```
 
 ---
@@ -136,4 +136,4 @@ The GitHub Actions CI matrix enforces:
 - Multi-stage Docker image build.
 - CodeQL security scan.
 
-For cutting releases, creating version bumps, and handling PyPI / GitHub tag workflows, follow standard project guidelines.
+For release automation and packaging, push matching `v*` tags aligned with `pyproject.toml`'s `project.version` to trigger `.github/workflows/release.yml`.
