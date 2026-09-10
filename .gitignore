@@ -47,5 +47,4 @@ htmlcov/
 Thumbs.db
 
 # Private runbooks & artifacts
-COOKBOOK.md
 .gemini_security/
