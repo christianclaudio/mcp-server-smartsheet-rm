@@ -254,3 +254,32 @@ async def test_all_client_api_methods() -> None:
     assert await client.list_webhooks() == {"success": True}
     assert await client.create_webhook({"url": "https://test.com"}) == {"success": True}
     assert await client.delete_webhook(1) == {"success": True}
+
+
+def test_extract_list_and_extract_dict() -> None:
+    """Verify defensive container extraction for lists and dictionaries across polymorphic inputs."""
+    # extract_list with direct container (key=None)
+    assert SmartsheetRMClient.extract_list([1, 2, 3]) == [1, 2, 3]
+    assert SmartsheetRMClient.extract_list({"key": "val"}) == []
+    assert SmartsheetRMClient.extract_list(None) == []
+    assert SmartsheetRMClient.extract_list("string") == []
+
+    # extract_list with key
+    assert SmartsheetRMClient.extract_list({"data": ["a", "b"]}, key="data") == ["a", "b"]
+    assert SmartsheetRMClient.extract_list({"data": "not-a-list"}, key="data") == []
+    assert SmartsheetRMClient.extract_list({"other": [1]}, key="data") == []
+    assert SmartsheetRMClient.extract_list(["not", "a", "dict"], key="data") == []
+    assert SmartsheetRMClient.extract_list(None, key="data") == []
+
+    # extract_dict with direct container (key=None)
+    assert SmartsheetRMClient.extract_dict({"a": 1}) == {"a": 1}
+    assert SmartsheetRMClient.extract_dict([1, 2]) == {}
+    assert SmartsheetRMClient.extract_dict(None) == {}
+    assert SmartsheetRMClient.extract_dict("string") == {}
+
+    # extract_dict with key
+    assert SmartsheetRMClient.extract_dict({"item": {"id": 10}}, key="item") == {"id": 10}
+    assert SmartsheetRMClient.extract_dict({"item": [1, 2]}, key="item") == {}
+    assert SmartsheetRMClient.extract_dict({"other": {}}, key="item") == {}
+    assert SmartsheetRMClient.extract_dict(["not", "a", "dict"], key="item") == {}
+    assert SmartsheetRMClient.extract_dict(None, key="item") == {}

@@ -62,6 +62,24 @@ class SmartsheetRMClient:
     async def __aexit__(self, *args: object) -> None:
         await self.aclose()
 
+    @staticmethod
+    def extract_list(container: Any, key: str | None = None) -> list[Any]:
+        """Safely extract a list from a polymorphic upstream JSON response or field."""
+        if key is not None:
+            target = container.get(key) if isinstance(container, dict) else None
+        else:
+            target = container
+        return target if isinstance(target, list) else []
+
+    @staticmethod
+    def extract_dict(container: Any, key: str | None = None) -> dict[str, Any]:
+        """Safely extract a dictionary from a polymorphic upstream JSON response or field."""
+        if key is not None:
+            target = container.get(key) if isinstance(container, dict) else None
+        else:
+            target = container
+        return target if isinstance(target, dict) else {}
+
     def _headers(self) -> dict[str, str]:
         """Headers required by Smartsheet RM (10,000ft) API."""
         return {
