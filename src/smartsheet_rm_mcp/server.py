@@ -2152,23 +2152,64 @@ def project_staffing_plan(project_id: str) -> str:
 
 
 def _handle_shutdown(signum: int, frame: Any) -> None:
-    """Gracefully handle SIGTERM/SIGINT from host supervisor to exit with status 0 immediately."""
-    os._exit(0)
+    """Gracefully handle SIGTERM/SIGINT from host supervisor and unwind cleanly."""
+    logger.info("Received signal %s; shutting down.", signum)
+    raise SystemExit(0)
 
 
 def main() -> None:
     """Parse CLI arguments and start MCP server."""
     signal.signal(signal.SIGTERM, _handle_shutdown)
     signal.signal(signal.SIGINT, _handle_shutdown)
-    parser = argparse.ArgumentParser(description="Smartsheet RM MCP Server")
-    parser.add_argument("--transport", default="stdio", choices=["stdio", "sse"], help="MCP transport mode")
-    parser.add_argument("--host", default="0.0.0.0", help="SSE host")
-    parser.add_argument("--port", type=int, default=8080, help="SSE port")
+    parser = argparse.ArgumentParser(description="Smartsheet RM MCP Server (2026-07-28 Spec)")
+    parser.add_argument(
+        "--transport",
+        default="stdio",
+        choices=["stdio", "streamable-http", "sse"],
+        help="Transport protocol: 'stdio' (default), 'streamable-http' (modern), or 'sse'.",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host address for HTTP transports (default: 127.0.0.1).",
+    )
+    parser.add_argument("--port", type=int, default=8000, help="Port for HTTP transports (default: 8000).")
+    parser.add_argument(
+        "--stateless",
+        action=getattr(argparse, "BooleanOptionalAction", "store_true"),
+        default=os.environ.get("SMARTSHEET_RM_STATELESS_HTTP", "").lower() in ("1", "true", "yes"),
+        help="Run Streamable HTTP in stateless mode (fresh connection per request, no Mcp-Session-Id).",
+    )
+    parser.add_argument(
+        "--json-response",
+        action=getattr(argparse, "BooleanOptionalAction", "store_true"),
+        default=os.environ.get("SMARTSHEET_RM_JSON_RESPONSE", "").lower() in ("1", "true", "yes"),
+        help="Return direct JSON responses instead of SSE text/event-stream over Streamable HTTP.",
+    )
     args = parser.parse_args()
 
     configure_logging()
+
+    if args.transport != "streamable-http":
+        if args.stateless:
+            logger.warning("--stateless flag is only applicable to 'streamable-http' transport.")
+        if args.json_response:
+            logger.warning("--json-response flag is only applicable to 'streamable-http' transport.")
+
     if args.transport == "sse":  # pragma: no cover
+        logger.warning(
+            "Deprecation Warning: HTTP+SSE transport is deprecated per MCP 2026-07-28 spec "
+            "(SEP-2577). Please migrate to Streamable HTTP (--transport streamable-http)."
+        )
         mcp.run(transport="sse", host=args.host, port=args.port)
+    elif args.transport == "streamable-http":  # pragma: no cover
+        mcp.run(
+            transport="streamable-http",
+            host=args.host,
+            port=args.port,
+            stateless_http=args.stateless,
+            json_response=args.json_response,
+        )
     else:
         mcp.run(transport="stdio")  # pragma: no cover
 

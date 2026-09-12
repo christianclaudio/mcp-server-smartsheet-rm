@@ -7,6 +7,7 @@ import logging
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 import smartsheet_rm_mcp.server as srv
@@ -702,14 +703,97 @@ def test_resources_and_prompts() -> None:
     assert "project ID 456" in p2
 
 
-def test_main_cli_argparsing() -> None:
-    with patch("sys.argv", ["mcp-server-smartsheet-rm", "--transport", "stdio"]):
-        with patch.object(srv.mcp, "run") as mock_run:
-            srv.main()
-            mock_run.assert_called_once_with(transport="stdio")
+def test_main_cli_argparsing(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    """Verify CLI argument parsing across transports and flags."""
+    run_args: dict[str, object] = {}
+
+    def mock_run(**kwargs: object) -> None:
+        """Record mock MCP run keyword arguments."""
+        run_args.clear()
+        run_args.update(kwargs)
+
+    monkeypatch.setattr(srv.mcp, "run", mock_run)
+
+    # stdio default
+    monkeypatch.setattr("sys.argv", ["mcp-server-smartsheet-rm", "--transport", "stdio"])
+    srv.main()
+    assert run_args.get("transport") == "stdio"
+
+    # stdio with invalid flags triggers warnings
+    caplog.clear()
+    monkeypatch.setattr(
+        "sys.argv",
+        ["mcp-server-smartsheet-rm", "--transport", "stdio", "--stateless", "--json-response"],
+    )
+    srv.main()
+    assert run_args.get("transport") == "stdio"
+    assert any("--stateless flag is only applicable" in r.message for r in caplog.records)
+    assert any("--json-response flag is only applicable" in r.message for r in caplog.records)
+
+    # streamable-http default
+    monkeypatch.setenv("SMARTSHEET_RM_STATELESS_HTTP", "false")
+    monkeypatch.setenv("SMARTSHEET_RM_JSON_RESPONSE", "false")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["mcp-server-smartsheet-rm", "--transport", "streamable-http", "--port", "8000"],
+    )
+    srv.main()
+    assert run_args.get("transport") == "streamable-http"
+    assert run_args.get("host") == "127.0.0.1"
+    assert run_args.get("port") == 8000
+    assert run_args.get("stateless_http") is False
+    assert run_args.get("json_response") is False
+
+    # streamable-http explicit stateless and json-response
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "mcp-server-smartsheet-rm",
+            "--transport",
+            "streamable-http",
+            "--port",
+            "8002",
+            "--stateless",
+            "--json-response",
+        ],
+    )
+    srv.main()
+    assert run_args.get("transport") == "streamable-http"
+    assert run_args.get("port") == 8002
+    assert run_args.get("stateless_http") is True
+    assert run_args.get("json_response") is True
+
+    # streamable-http explicit negation flags
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "mcp-server-smartsheet-rm",
+            "--transport",
+            "streamable-http",
+            "--port",
+            "8003",
+            "--no-stateless",
+            "--no-json-response",
+        ],
+    )
+    srv.main()
+    assert run_args.get("transport") == "streamable-http"
+    assert run_args.get("port") == 8003
+    assert run_args.get("stateless_http") is False
+    assert run_args.get("json_response") is False
+
+    # sse with deprecation warning
+    caplog.clear()
+    monkeypatch.setattr("sys.argv", ["mcp-server-smartsheet-rm", "--transport", "sse", "--port", "8001"])
+    srv.main()
+    assert run_args.get("transport") == "sse"
+    assert run_args.get("host") == "127.0.0.1"
+    assert run_args.get("port") == 8001
+    assert any("Deprecation Warning" in r.message for r in caplog.records)
 
 
 def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify tool profile filtering, readonly mode, and bulk destructive opt-in."""
     import importlib
 
     try:
@@ -738,6 +822,46 @@ def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_handle_shutdown() -> None:
-    with patch("os._exit") as mock_exit:
+    """Verify graceful process exit on shutdown signals."""
+    with pytest.raises(SystemExit) as exc_info:
         srv._handle_shutdown(15, None)
-        mock_exit.assert_called_once_with(0)
+    assert exc_info.value.code == 0
+
+
+@pytest.mark.asyncio
+async def test_server_streamable_http_dispatch() -> None:
+    """Verify Streamable HTTP ASGI app dispatches tool requests."""
+    app = srv.mcp.streamable_http_app(stateless_http=True, json_response=True)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8000"
+        ) as http_c:
+            meta = {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }
+            call_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "rm_list_projects",
+                    "arguments": {},
+                    "_meta": meta,
+                },
+            }
+            res = await http_c.post(
+                "/mcp",
+                json=call_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "MCP-Protocol-Version": "2026-07-28",
+                    "Mcp-Method": "tools/call",
+                    "Mcp-Name": "rm_list_projects",
+                },
+            )
+            assert res.status_code == 200
+            data = res.json()
+            assert "result" in data
+            assert "content" in data["result"]
+            assert json.loads(data["result"]["content"][0]["text"]) == {"data": []}
