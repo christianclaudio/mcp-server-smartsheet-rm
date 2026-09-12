@@ -1,5 +1,6 @@
 """Protocol integration tests for stdio and stateless Streamable HTTP transports."""
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -148,3 +149,7 @@ async def test_stateless_streamable_http_standalone_post(monkeypatch: pytest.Mon
             tool_data = res_tool.json()
             assert "result" in tool_data
             assert "content" in tool_data["result"]
+            assert json.loads(tool_data["result"]["content"][0]["text"]) == {
+                "data": [{"id": 101, "name": "Software Engineer"}],
+                "total_count": 1,
+            }

@@ -708,6 +708,7 @@ def test_main_cli_argparsing(monkeypatch: pytest.MonkeyPatch, caplog: pytest.Log
     run_args: dict[str, object] = {}
 
     def mock_run(**kwargs: object) -> None:
+        """Record mock MCP run keyword arguments."""
         run_args.clear()
         run_args.update(kwargs)
 
@@ -792,6 +793,7 @@ def test_main_cli_argparsing(monkeypatch: pytest.MonkeyPatch, caplog: pytest.Log
 
 
 def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify tool profile filtering, readonly mode, and bulk destructive opt-in."""
     import importlib
 
     try:
@@ -862,3 +864,4 @@ async def test_server_streamable_http_dispatch() -> None:
             data = res.json()
             assert "result" in data
             assert "content" in data["result"]
+            assert json.loads(data["result"]["content"][0]["text"]) == {"data": []}
