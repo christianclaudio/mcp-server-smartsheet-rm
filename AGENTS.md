@@ -24,14 +24,14 @@ mcp-server-smartsheet-rm/
 │   └── errors.py                 # Structured API exceptions and automatic secret redaction
 ├── scripts/
 │   ├── check_tool_contract.py    # AST/reflection contract testing total tool & annotation counts
-│   ├── check_openapi_drift.py    # AST visitor checking client methods against upstream API routes
-│   └── smoke_test.py             # Stdio JSON-RPC protocol handshake verification
+│   └── check_openapi_drift.py    # AST visitor checking client methods against upstream API routes
 ├── tests/
 │   ├── conftest.py               # Shared fixtures and mock HTTP transports (offline only)
 │   ├── test_client.py            # Unit tests for HTTP client, retries, headers, and error handling
 │   ├── test_server.py            # Tests for tool execution, parameter validation, and confirmation gating
 │   ├── test_errors.py            # Tests for error formatting and regex credential redaction
-│   └── test_scripts.py           # Unit tests for contract and drift validation scripts
+│   ├── test_scripts.py           # Unit tests for contract and drift validation scripts
+│   └── test_protocol.py          # Wire-level stdio & stateless streamable HTTP protocol verification
 ├── .github/workflows/
 │   ├── ci.yml                    # Multi-job matrix: lint, py3.10-3.13 tests, contracts, CodeQL, docker build
 │   ├── release.yml               # Automated release on v* tags: wheels, sdist, CycloneDX SBOM, GHCR docker
@@ -117,8 +117,8 @@ uv run python scripts/check_tool_contract.py
 # Upstream OpenAPI / route drift check
 uv run python scripts/check_openapi_drift.py
 
-# Stdio JSON-RPC protocol smoke test
-uv run python scripts/smoke_test.py
+# Protocol integration tests (stdio handshake & stateless streamable HTTP)
+uv run pytest tests/test_protocol.py
 
 # Local pre-commit CodeRabbit CLI review
 coderabbit review --agent --uncommitted
