@@ -1,5 +1,7 @@
 """Protocol integration tests for stdio and stateless Streamable HTTP transports."""
 
+import os
+import sys
 from pathlib import Path
 
 import httpx
@@ -16,8 +18,12 @@ async def test_stdio_jsonrpc_handshake_and_dispatch() -> None:
     """Verify standard stdio JSON-RPC handshake and tool discovery over subprocess pipes."""
     repo_dir = Path(__file__).resolve().parents[1]
     server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "--directory", str(repo_dir), "smartsheet-rm-mcp"],
+        command=sys.executable,
+        args=["-m", "smartsheet_rm_mcp.server"],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(repo_dir / "src"),
+        },
     )
 
     async with stdio_client(server_params) as (read, write):
