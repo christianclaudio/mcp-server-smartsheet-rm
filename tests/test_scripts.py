@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from scripts import check_openapi_drift, check_tool_contract, smoke_test
+from scripts import check_openapi_drift, check_tool_contract
 
 
 def test_check_tool_contract_main(capsys: pytest.CaptureFixture[str]) -> None:
@@ -39,30 +38,6 @@ def test_check_openapi_drift_main_insufficient_tools(capsys: pytest.CaptureFixtu
         assert code == 1
         captured = capsys.readouterr()
         assert "ERROR: Expected at least 90 MCP tools" in captured.err
-
-
-def test_smoke_test_main_success(capsys: pytest.CaptureFixture[str]) -> None:
-    mock_res = MagicMock(returncode=0, stdout=">>> ALL STDIO PROTOCOL SMOKE TESTS PASSED CLEANLY <<<", stderr="")
-    with patch("subprocess.run", return_value=mock_res):
-        code = smoke_test.main()
-        assert code == 0
-
-
-def test_smoke_test_main_timeout(capsys: pytest.CaptureFixture[str]) -> None:
-    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["test"], timeout=60)):
-        code = smoke_test.main()
-        assert code == 1
-        captured = capsys.readouterr()
-        assert "timed out after 60 seconds" in captured.err
-
-
-def test_smoke_test_main_failure(capsys: pytest.CaptureFixture[str]) -> None:
-    mock_res = MagicMock(returncode=2, stdout="Failure output", stderr="STDERR message")
-    with patch("subprocess.run", return_value=mock_res):
-        code = smoke_test.main()
-        assert code == 2
-        captured = capsys.readouterr()
-        assert "STDERR message" in captured.err
 
 
 def test_drift_helpers() -> None:

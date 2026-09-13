@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.5] - 2026-09-13
+
+### Changed
+- **Modernized Testing Pyramid**: Integrated end-to-end live testing module `tests/test_e2e_live.py` with `@pytest.mark.e2e` marker and offline mock dispatch validation.
+- **Retired Legacy Smoke Script**: Retired out-of-band `scripts/smoke_test.py` in favor of standardized pytest test suites and CI protocol verification.
+- **Workflow Protocol Verification**: Updated CI workflow to run pytest protocol checks with `--no-cov` in the isolated protocol validation job.
+- **Server Metadata Alignment**: Synchronized `server.json` versioning to 1.1.5.
+
 ## [1.1.4] - 2026-09-03
 
 ### Changed
