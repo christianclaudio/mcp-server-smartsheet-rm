@@ -1,6 +1,6 @@
 [project]
 name = "mcp-server-smartsheet-rm"
-version = "1.1.4"
+version = "1.1.5"
 description = "Enterprise Model Context Protocol (MCP) server for Smartsheet Resource Management (10,000ft API) — time tracking, projects, allocations, scheduling, and capacity planning."
 readme = "README.md"
 license = "Apache-2.0"
@@ -64,7 +64,10 @@ mypy_path = "src"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = ["src", "."]
+markers = [
+    "e2e: End-to-end integration tests hitting live or mocked APIs (deselect with '-m \"not e2e\"')",
+]
 
 [tool.ruff]
 src = ["src"]
