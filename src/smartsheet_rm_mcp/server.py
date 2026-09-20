@@ -98,7 +98,7 @@ mcp = FastMCP(
     "mcp-server-smartsheet-rm",
     lifespan=server_lifespan,
     cache_ttl=3600,
-    cache_scope="private",
+    cache_scope="public",
 )
 
 
