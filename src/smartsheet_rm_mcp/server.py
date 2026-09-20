@@ -29,11 +29,14 @@ import logging
 import os
 import re
 import signal
+import sys
 import time
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
-from mcp.server import MCPServer
+from fastmcp import FastMCP
+from fastmcp.tools import FunctionTool
 from mcp.types import ToolAnnotations
 
 from .client import DEFAULT_BASE_URL, SmartsheetRMClient
@@ -71,13 +74,95 @@ def configure_logging() -> None:
         logging.root.setLevel(logging.INFO)
 
 
-mcp = MCPServer(
-    "mcp-server-smartsheet-rm",
-    description="Enterprise MCP server for Smartsheet Resource Management (10,000ft API). Orchestrate timesheets, resource scheduling, project staffing, capacity planning, and approvals.",
-)
-
 _client: SmartsheetRMClient | None = None
 _HEADER_CLIENT_CACHE: dict[tuple[str, str], SmartsheetRMClient] = {}
+
+
+@asynccontextmanager
+async def server_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
+    """Manage server lifecycle and persistent client resources."""
+    global _client
+    logger.info("Starting up Smartsheet RM MCP server")
+    try:
+        yield {"client": _client}
+    finally:
+        logger.info("Shutting down Smartsheet RM MCP resources")
+        if _client is not None:
+            await _client.close()
+        for c in _HEADER_CLIENT_CACHE.values():
+            await c.close()
+        _HEADER_CLIENT_CACHE.clear()
+
+
+mcp = FastMCP(
+    "mcp-server-smartsheet-rm",
+    lifespan=server_lifespan,
+    cache_ttl=3600,
+    cache_scope="private",
+)
+
+
+def _streamable_http_app(
+    self: FastMCP,
+    path: str | None = None,
+    stateless_http: bool | None = None,
+    json_response: bool | None = None,
+    host: str = "127.0.0.1",
+    **kwargs: Any,
+) -> Any:
+    """Compatibility bridge for streamable HTTP ASGI application."""
+    allowed_hosts = kwargs.pop(
+        "allowed_hosts",
+        [host, "localhost", f"{host}:8000", "localhost:8000"],
+    )
+    return self.http_app(
+        path=path,
+        transport="streamable-http",
+        stateless_http=stateless_http,
+        json_response=json_response,
+        host_origin_protection=True,
+        allowed_hosts=allowed_hosts,
+        **kwargs,
+    )
+
+
+mcp.streamable_http_app = _streamable_http_app.__get__(mcp, FastMCP)  # type: ignore[attr-defined]
+
+if not hasattr(FunctionTool, "input_schema"):
+    FunctionTool.input_schema = property(lambda self: self.parameters)  # type: ignore[attr-defined]
+
+
+class _ToolManagerCompat:
+    """Compatibility bridge for internal _tool_manager access."""
+
+    def __init__(self, server: FastMCP) -> None:
+        self._server = server
+        self._custom_tools: dict[str, Any] | None = None
+
+    @property
+    def _tools(self) -> dict[str, Any]:
+        if self._custom_tools is not None:
+            return self._custom_tools
+        return {
+            c.name: c
+            for c in self._server._local_provider._components.values()
+            if hasattr(c, "name") and (getattr(c, "type", None) == "tool" or hasattr(c, "parameters"))
+        }
+
+    @_tools.setter
+    def _tools(self, val: dict[str, Any] | None) -> None:
+        self._custom_tools = val
+
+    @_tools.deleter
+    def _tools(self) -> None:
+        self._custom_tools = None
+
+    def remove_tool(self, name: str) -> None:
+        self._server._local_provider.remove_tool(name)
+
+
+_tool_mgr = _ToolManagerCompat(mcp)
+mcp._tool_manager = _tool_mgr  # type: ignore[attr-defined]
 
 _SECRET_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)bearer\s+[a-zA-Z0-9\-\._~\+\/]+=*"),
@@ -2154,7 +2239,7 @@ def project_staffing_plan(project_id: str) -> str:
 def _handle_shutdown(signum: int, frame: Any) -> None:
     """Gracefully handle SIGTERM/SIGINT from host supervisor and unwind cleanly."""
     logger.info("Received signal %s; shutting down.", signum)
-    raise SystemExit(0)
+    sys.exit(0)
 
 
 def main() -> None:
@@ -2186,6 +2271,18 @@ def main() -> None:
         default=os.environ.get("SMARTSHEET_RM_JSON_RESPONSE", "").lower() in ("1", "true", "yes"),
         help="Return direct JSON responses instead of SSE text/event-stream over Streamable HTTP.",
     )
+    parser.add_argument(
+        "--allowed-host",
+        action="append",
+        default=[],
+        help="Additional allowed Host header value for DNS rebinding protection (can be repeated).",
+    )
+    parser.add_argument(
+        "--allowed-origin",
+        action="append",
+        default=[],
+        help="Additional allowed browser Origin header value for DNS rebinding protection (can be repeated).",
+    )
     args = parser.parse_args()
 
     configure_logging()
@@ -2196,12 +2293,27 @@ def main() -> None:
         if args.json_response:
             logger.warning("--json-response flag is only applicable to 'streamable-http' transport.")
 
+    hosts = [
+        args.host,
+        "localhost",
+        f"{args.host}:{args.port}",
+        f"localhost:{args.port}",
+    ] + args.allowed_host
+    origins = args.allowed_origin
+
     if args.transport == "sse":  # pragma: no cover
         logger.warning(
             "Deprecation Warning: HTTP+SSE transport is deprecated per MCP 2026-07-28 spec "
             "(SEP-2577). Please migrate to Streamable HTTP (--transport streamable-http)."
         )
-        mcp.run(transport="sse", host=args.host, port=args.port)
+        mcp.run(
+            transport="sse",
+            host=args.host,
+            port=args.port,
+            host_origin_protection=True,
+            allowed_hosts=hosts,
+            allowed_origins=origins,
+        )
     elif args.transport == "streamable-http":  # pragma: no cover
         mcp.run(
             transport="streamable-http",
@@ -2209,6 +2321,9 @@ def main() -> None:
             port=args.port,
             stateless_http=args.stateless,
             json_response=args.json_response,
+            host_origin_protection=True,
+            allowed_hosts=hosts,
+            allowed_origins=origins,
         )
     else:
         mcp.run(transport="stdio")  # pragma: no cover
@@ -2296,7 +2411,7 @@ _IDEMPOTENT_NAMES = {
     "rm_set_user_status",
 }
 
-for tool_name, tool_obj in mcp._tool_manager._tools.items():
+for tool_name, tool_obj in _tool_mgr._tools.items():
     if tool_name in _DESTRUCTIVE_NAMES:
         tool_obj.annotations = _DESTRUCTIVE
     elif tool_name in _IDEMPOTENT_NAMES:
@@ -2442,9 +2557,9 @@ if _profile != "full":
     if _profile not in _PROFILES:
         raise ValueError(f"Unknown SMARTSHEET_RM_PROFILE {_profile!r}. Valid: time, projects, admin, full.")
     _allowed = _PROFILES[_profile]
-    _to_remove = [name for name in mcp._tool_manager._tools if name not in _allowed]
+    _to_remove = [name for name in _tool_mgr._tools if name not in _allowed]
     for name in _to_remove:
-        mcp._tool_manager.remove_tool(name)
+        _tool_mgr.remove_tool(name)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2454,11 +2569,11 @@ if _profile != "full":
 if os.environ.get("SMARTSHEET_RM_READONLY", "").strip() == "1":
     _ro_remove = [
         name
-        for name, tool_obj in mcp._tool_manager._tools.items()
+        for name, tool_obj in _tool_mgr._tools.items()
         if not (tool_obj.annotations and tool_obj.annotations.read_only_hint)
     ]
     for name in _ro_remove:
-        mcp._tool_manager.remove_tool(name)
+        _tool_mgr.remove_tool(name)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2469,8 +2584,8 @@ _BULK_DESTRUCTIVE_TOOLS = {"rm_bulk_delete_time_entries", "rm_bulk_delete_assign
 
 if os.environ.get("SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE", "").strip() != "1":
     for name in _BULK_DESTRUCTIVE_TOOLS:
-        if name in mcp._tool_manager._tools:
-            mcp._tool_manager.remove_tool(name)
+        if name in _tool_mgr._tools:
+            _tool_mgr.remove_tool(name)
 
 
 if __name__ == "__main__":  # pragma: no cover

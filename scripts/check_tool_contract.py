@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -43,7 +44,7 @@ asyncio.run(main())
 """
 
 
-def probe(**env_overrides: str) -> dict:
+def probe(**env_overrides: str) -> dict[str, Any]:
     """Import the server under given env vars and report its tool surface."""
     import json
 
@@ -65,7 +66,8 @@ def probe(**env_overrides: str) -> dict:
         text=True,
         check=True,
     )
-    return json.loads(out.stdout.strip().splitlines()[-1])
+    res: dict[str, Any] = json.loads(out.stdout.strip().splitlines()[-1])
+    return res
 
 
 def parse_readme_counts() -> dict[str, int]:

@@ -419,7 +419,7 @@ def main() -> int:
         return 1
 
     # Verify MCP tool registration
-    tool_names = list(mcp._tool_manager._tools.keys())
+    tool_names = list(mcp._tool_manager._tools.keys())  # type: ignore[attr-defined]
     print(f"SmartsheetRMClient defines all {len(ENDPOINT_TO_METHOD)} required API methods.")
     print(f"Server registers {len(tool_names)} total MCP tools.")
 

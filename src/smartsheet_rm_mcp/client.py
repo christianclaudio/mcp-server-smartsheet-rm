@@ -56,6 +56,10 @@ class SmartsheetRMClient:
         if self._owns_http:
             await self._http.aclose()
 
+    async def close(self) -> None:
+        """Alias for aclose() to standardize connection cleanup."""
+        await self.aclose()
+
     async def __aenter__(self) -> SmartsheetRMClient:
         return self
 

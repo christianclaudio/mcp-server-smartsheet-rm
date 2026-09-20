@@ -9,7 +9,6 @@ from typing import Any
 
 import httpx
 import pytest
-from mcp.types import CallToolResult
 
 import smartsheet_rm_mcp.server as server
 from smartsheet_rm_mcp.client import SmartsheetRMClient
@@ -170,7 +169,7 @@ async def dispatch_tool_call(
         else:
             return ("FAIL", True, f"Unclassified tool '{tool_name}' is not in a safety allowlist")
 
-        if isinstance(res, CallToolResult):
+        if hasattr(res, "content"):
             content_str = res.content[0].text if res.content and hasattr(res.content[0], "text") else ""
             if "requires explicit confirmation" in content_str:
                 return ("PASS", False, None)
@@ -187,7 +186,7 @@ async def dispatch_tool_call(
             except Exception:
                 pass
 
-            is_err = res.is_error
+            is_err = getattr(res, "is_error", False)
             status = "FAIL" if is_err else "PASS"
             return (status, is_err, None if not is_err else _redact_secrets(content_str))
 

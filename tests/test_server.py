@@ -865,3 +865,32 @@ async def test_server_streamable_http_dispatch() -> None:
             assert "result" in data
             assert "content" in data["result"]
             assert json.loads(data["result"]["content"][0]["text"]) == {"data": []}
+
+
+@pytest.mark.asyncio
+async def test_server_lifespan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify server_lifespan cleanly initializes and tears down client caches."""
+    dummy_closed = False
+
+    class DummyClient:
+        async def close(self) -> None:
+            nonlocal dummy_closed
+            dummy_closed = True
+
+    header_dummy_closed = False
+
+    class HeaderDummyClient:
+        async def close(self) -> None:
+            nonlocal header_dummy_closed
+            header_dummy_closed = True
+
+    monkeypatch.setattr(srv, "_client", DummyClient())
+    srv._HEADER_CLIENT_CACHE[("tok", "url")] = HeaderDummyClient()  # type: ignore[assignment]
+    try:
+        async with srv.server_lifespan(srv.mcp) as ctx:
+            assert "client" in ctx
+    finally:
+        srv._client = None
+    assert dummy_closed is True
+    assert header_dummy_closed is True
+    assert len(srv._HEADER_CLIENT_CACHE) == 0

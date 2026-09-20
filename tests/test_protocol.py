@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from fastmcp import Client
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -153,3 +154,26 @@ async def test_stateless_streamable_http_standalone_post(monkeypatch: pytest.Mon
                 "data": [{"id": 101, "name": "Software Engineer"}],
                 "total_count": 1,
             }
+
+
+@pytest.mark.asyncio
+async def test_fastmcp_in_memory_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify tool listing and execution via FastMCP 4 in-memory Client."""
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"data": [{"id": 101, "name": "Software Engineer"}], "total_count": 1},
+        )
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    mock_http = httpx.AsyncClient(transport=mock_transport, base_url="https://api.rm.smartsheet.com/api/v1")
+    monkeypatch.setattr(server, "_client", SmartsheetRMClient(api_token="test-token", http_client=mock_http))
+
+    async with Client(server.mcp) as client:
+        tools = await client.list_tools()
+        assert len(tools) > 0
+        res = await client.call_tool("rm_list_roles", {})
+        assert res is not None
+        assert not res.is_error
+        assert len(res.content) > 0
