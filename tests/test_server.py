@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -894,3 +895,25 @@ async def test_server_lifespan(monkeypatch: pytest.MonkeyPatch) -> None:
     assert dummy_closed is True
     assert header_dummy_closed is True
     assert len(srv._HEADER_CLIENT_CACHE) == 0
+
+
+def test_streamable_http_app_allowed_hosts_dynamic_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify _streamable_http_app uses dynamic port binding for default allowed_hosts."""
+    captured_kwargs: dict[str, Any] = {}
+
+    def fake_http_app(**kwargs: Any) -> MagicMock:
+        captured_kwargs.update(kwargs)
+        return MagicMock()
+
+    monkeypatch.setattr(srv.mcp, "http_app", fake_http_app)
+    srv.mcp.streamable_http_app(host="0.0.0.0", port=9999)
+    assert captured_kwargs["allowed_hosts"] == [
+        "0.0.0.0",
+        "localhost",
+        "0.0.0.0:9999",
+        "localhost:9999",
+    ]
+
+    captured_kwargs.clear()
+    srv.mcp.streamable_http_app(allowed_hosts=["explicit.domain"])
+    assert captured_kwargs["allowed_hosts"] == ["explicit.domain"]
