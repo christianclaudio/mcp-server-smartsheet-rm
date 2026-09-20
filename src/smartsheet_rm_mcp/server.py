@@ -2293,6 +2293,9 @@ def main() -> None:
         if args.json_response:
             logger.warning("--json-response flag is only applicable to 'streamable-http' transport.")
 
+    if args.transport == "streamable-http" and args.host in ("0.0.0.0", "::") and not args.allowed_host:
+        parser.error("--allowed-host is required when binding to a wildcard host")
+
     hosts = [
         args.host,
         "localhost",
