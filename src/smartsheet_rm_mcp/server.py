@@ -108,13 +108,13 @@ def _streamable_http_app(
     stateless_http: bool | None = None,
     json_response: bool | None = None,
     host: str = "127.0.0.1",
+    port: int = 8000,
     **kwargs: Any,
 ) -> Any:
     """Compatibility bridge for streamable HTTP ASGI application."""
-    allowed_hosts = kwargs.pop(
-        "allowed_hosts",
-        [host, "localhost", f"{host}:8000", "localhost:8000"],
-    )
+    allowed_hosts = kwargs.pop("allowed_hosts", None)
+    if allowed_hosts is None:
+        allowed_hosts = [host, "localhost", f"{host}:{port}", f"localhost:{port}"]
     return self.http_app(
         path=path,
         transport="streamable-http",
