@@ -23,8 +23,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+if command -v uv >/dev/null 2>&1; then
+    RUN_CMD=(uv run python)
+else
+    RUN_CMD=(python)
+fi
+
 echo "[*] Starting mcp-server-smartsheet-rm server on ${HOST}:${PORT} (streamable-http)..."
-SMARTSHEET_RM_API_TOKEN="ci-placeholder-token" uv run python -m smartsheet_rm_mcp.server --transport streamable-http --host "${HOST}" --port "${PORT}" &
+SMARTSHEET_RM_API_TOKEN="ci-placeholder-token" "${RUN_CMD[@]}" -m smartsheet_rm_mcp.server --transport streamable-http --host "${HOST}" --port "${PORT}" &
 SERVER_PID=$!
 
 echo "[*] Waiting for server endpoint ${URL} to become ready..."
