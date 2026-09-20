@@ -19,24 +19,29 @@ Expose deep resource planning, allocation, time-tracking, project management, an
 mcp-server-smartsheet-rm/
 ├── src/smartsheet_rm_mcp/
 │   ├── __init__.py               # Package version (__version__) and public exports
-│   ├── server.py                 # MCPServer instance, @mcp.tool() registrations, prompts, resources
+│   ├── server.py                 # FastMCP 4 server instance, @mcp.tool() registrations, prompts, resources
 │   ├── client.py                 # Async HTTP client (httpx.AsyncClient, retries, jitter, auth headers)
 │   └── errors.py                 # Structured API exceptions and automatic secret redaction
 ├── scripts/
+│   ├── check_conformance.sh      # MCP Protocol conformance suite verification script
 │   ├── check_tool_contract.py    # AST/reflection contract testing total tool & annotation counts
-│   └── check_openapi_drift.py    # AST visitor checking client methods against upstream API routes
+│   ├── check_openapi_drift.py    # AST visitor checking client methods against upstream API routes
+│   └── determine_bump.py         # SemVer release bump recommendation based on git log
 ├── tests/
 │   ├── conftest.py               # Shared fixtures and mock HTTP transports (offline only)
 │   ├── test_client.py            # Unit tests for HTTP client, retries, headers, and error handling
+│   ├── test_determine_bump.py    # Unit tests for determine_bump.py SemVer calculation
 │   ├── test_server.py            # Tests for tool execution, parameter validation, and confirmation gating
 │   ├── test_errors.py            # Tests for error formatting and regex credential redaction
 │   ├── test_scripts.py           # Unit tests for contract and drift validation scripts
-│   └── test_protocol.py          # Wire-level stdio & stateless streamable HTTP protocol verification
+│   └── test_protocol.py          # FastMCP 4 in-memory & stdio/streamable HTTP protocol verification
 ├── .github/workflows/
 │   ├── ci.yml                    # Multi-job matrix: lint, py3.10-3.13 tests, contracts, CodeQL, docker build
 │   ├── release.yml               # Automated release on v* tags: wheels, sdist, CycloneDX SBOM, GHCR docker
 │   └── drift-monitor.yml         # Scheduled upstream schema drift check
 ├── Dockerfile                    # Multi-stage container build running as non-root USER mcp
+├── fastmcp.json                  # FastMCP 4 deployment and execution manifest
+├── conformance-baseline.yml      # Conformance suite baseline expected failures
 ├── server.json                   # MCP Registry catalog metadata (runtimeHint: uvx, stdio transport)
 ├── pyproject.toml                # Packaging metadata, entrypoint CLI, dependency pinning
 ├── AGENTS.md                     # Agent guidance map, gotchas, and conventions (this file)
