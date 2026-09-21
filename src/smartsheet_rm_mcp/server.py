@@ -2295,6 +2295,8 @@ def main() -> None:
 
     if args.transport == "streamable-http" and args.host in ("0.0.0.0", "::") and not args.allowed_host:
         parser.error("--allowed-host is required when binding to a wildcard host")
+    if any(h.strip() == "*" for h in args.allowed_host):
+        parser.error("Wildcard '*' is not permitted in --allowed-host; specify explicit hostnames.")
 
     hosts = [
         args.host,

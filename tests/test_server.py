@@ -800,6 +800,14 @@ def test_main_cli_argparsing(monkeypatch: pytest.MonkeyPatch, caplog: pytest.Log
     with pytest.raises(SystemExit):
         srv.main()
 
+    # wildcard "*" in --allowed-host fails closed with parser.error
+    monkeypatch.setattr(
+        "sys.argv",
+        ["mcp-server-smartsheet-rm", "--transport", "streamable-http", "--allowed-host", "*"],
+    )
+    with pytest.raises(SystemExit):
+        srv.main()
+
 
 def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify tool profile filtering, readonly mode, and bulk destructive opt-in."""
