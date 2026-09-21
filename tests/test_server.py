@@ -792,6 +792,22 @@ def test_main_cli_argparsing(monkeypatch: pytest.MonkeyPatch, caplog: pytest.Log
     assert run_args.get("port") == 8001
     assert any("Deprecation Warning" in r.message for r in caplog.records)
 
+    # wildcard bind on streamable-http without --allowed-host fails closed with parser.error
+    monkeypatch.setattr(
+        "sys.argv",
+        ["mcp-server-smartsheet-rm", "--transport", "streamable-http", "--host", "0.0.0.0"],
+    )
+    with pytest.raises(SystemExit):
+        srv.main()
+
+    # wildcard "*" in --allowed-host fails closed with parser.error
+    monkeypatch.setattr(
+        "sys.argv",
+        ["mcp-server-smartsheet-rm", "--transport", "streamable-http", "--allowed-host", "*"],
+    )
+    with pytest.raises(SystemExit):
+        srv.main()
+
 
 def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify tool profile filtering, readonly mode, and bulk destructive opt-in."""

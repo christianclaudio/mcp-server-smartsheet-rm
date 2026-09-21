@@ -13,6 +13,20 @@ Enables AI coding agents, planners, and assistants (Claude, Cortex, Antigravity,
 
 ---
 
+## 🏗️ System Architecture
+
+```mermaid
+graph TD
+    Client["AI Agent (Claude / Cortex / Antigravity / Cursor)"] -->|"MCP Stdio / Streamable HTTP"| Server["mcp-server-smartsheet-rm"]
+    Server --> Config["Pydantic Settings & Safety Gates"]
+    Config -->|"SMARTSHEET_RM_READONLY=1"| RO["Read-Only Gate (39 tools)"]
+    Config -->|"confirm=True"| Destructive["Destructive Gate (21 tools)"]
+    Server --> ClientPool["SmartsheetRMClient (httpx.AsyncClient Pool)"]
+    ClientPool -->|"Bearer Auth + 429 Jitter Retry"| API["Smartsheet RM (10,000ft API)"]
+```
+
+---
+
 ## ⚡ Tool Surface Overview
 
 The server exposes tools covering projects, resources, timesheets, and capacity:

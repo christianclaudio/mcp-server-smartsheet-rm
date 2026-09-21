@@ -98,7 +98,7 @@ mcp = FastMCP(
     "mcp-server-smartsheet-rm",
     lifespan=server_lifespan,
     cache_ttl=3600,
-    cache_scope="private",
+    cache_scope="public",
 )
 
 
@@ -2292,6 +2292,11 @@ def main() -> None:
             logger.warning("--stateless flag is only applicable to 'streamable-http' transport.")
         if args.json_response:
             logger.warning("--json-response flag is only applicable to 'streamable-http' transport.")
+
+    if args.transport == "streamable-http" and args.host in ("0.0.0.0", "::") and not args.allowed_host:
+        parser.error("--allowed-host is required when binding to a wildcard host")
+    if any(h.strip() == "*" for h in args.allowed_host):
+        parser.error("Wildcard '*' is not permitted in --allowed-host; specify explicit hostnames.")
 
     hosts = [
         args.host,
