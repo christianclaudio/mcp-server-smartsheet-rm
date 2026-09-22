@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from typing import Any
 
 from fastmcp import FastMCP
@@ -394,8 +395,22 @@ async def rm_clone_project_schedule(
     elif source_project.get("client_id"):
         new_proj_payload["client_id"] = source_project.get("client_id")
 
+    date_offset: timedelta | None = None
     if new_start_date:
+        source_start_date = source_project.get("starts_at")
+        if not source_start_date:
+            return _invalid_request("Source project has no starts_at date to calculate schedule offset")
+        try:
+            date_offset = date.fromisoformat(new_start_date) - date.fromisoformat(source_start_date)
+        except ValueError as exc:
+            return _invalid_request(f"Invalid date format: {exc}")
+
         new_proj_payload["starts_at"] = new_start_date
+        if source_project.get("ends_at"):
+            try:
+                new_proj_payload["ends_at"] = (date.fromisoformat(source_project["ends_at"]) + date_offset).isoformat()
+            except ValueError:
+                pass
 
     new_project = await client.create_project(new_proj_payload)
     new_proj_id = new_project.get("id")
@@ -405,10 +420,23 @@ async def rm_clone_project_schedule(
     if new_proj_id:
         for phase in phase_list:
             if isinstance(phase, dict):
+                phase_start = phase.get("starts_at")
+                phase_end = phase.get("ends_at")
+                if date_offset is not None:
+                    if phase_start:
+                        try:
+                            phase_start = (date.fromisoformat(phase_start) + date_offset).isoformat()
+                        except ValueError:
+                            pass
+                    if phase_end:
+                        try:
+                            phase_end = (date.fromisoformat(phase_end) + date_offset).isoformat()
+                        except ValueError:
+                            pass
                 phase_payload = {
                     "name": phase.get("name", "Phase"),
-                    "starts_at": phase.get("starts_at"),
-                    "ends_at": phase.get("ends_at"),
+                    "starts_at": phase_start,
+                    "ends_at": phase_end,
                     "budget": phase.get("budget"),
                     "description": phase.get("description"),
                 }

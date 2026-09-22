@@ -12,6 +12,7 @@ import httpx
 import pytest
 
 import smartsheet_rm_mcp.server as srv
+from smartsheet_rm_mcp.common import _validate_base_url
 from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
 
 
@@ -215,6 +216,40 @@ async def test_get_client_resolution_and_cache() -> None:
         srv._HEADER_CLIENT_CACHE[(f"tok-{i}", "url")] = m
     await srv.get_client({"headers": {"x-smartsheet-rm-token": "new-tok"}})
     assert len(srv._HEADER_CLIENT_CACHE) == 105
+
+    # SSRF protections on base URL
+    with pytest.raises(ValueError, match="Only HTTPS is permitted"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "http://api.custom.com"}})
+    with pytest.raises(ValueError, match="missing hostname"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://"}})
+    with pytest.raises(ValueError, match="Blocked internal/loopback"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://localhost"}})
+    with pytest.raises(ValueError, match="Blocked internal/loopback"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://127.0.0.1"}})
+    with pytest.raises(ValueError, match="Blocked internal/loopback"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://server.local"}})
+    with pytest.raises(ValueError, match="Blocked internal/loopback"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://host.internal"}})
+    with pytest.raises(ValueError, match="Blocked private/reserved"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://10.0.0.1"}})
+    with pytest.raises(ValueError, match="Blocked private/reserved"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://127.0.0.2"}})
+    with pytest.raises(ValueError, match="Blocked private/reserved"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://192.168.1.1"}})
+    with pytest.raises(ValueError, match="Blocked private/reserved"):
+        await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://169.254.169.254"}})
+
+    # Allowed hosts check
+    with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "api.custom.com, api.rm.smartsheet.com"}):
+        with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://unauthorized.com"}})
+        c_allowed = await srv.get_client(
+            {"headers": {"x-smartsheet-rm-token": "tok", "x-smartsheet-rm-base-url": "https://api.custom.com"}}
+        )
+        assert c_allowed.base_url == "https://api.custom.com"
+
+    # Direct unit test of _validate_base_url
+    assert _validate_base_url("") == srv.DEFAULT_BASE_URL
 
 
 @pytest.mark.asyncio
@@ -592,21 +627,67 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     assert data3_var["variance"] == -8.0
 
     # 4. rm_clone_project_schedule
+    # Error when new_start_date is provided but source project lacks starts_at
     setup_mock_client.get_project.return_value = {
         "id": 100,
         "name": "Template",
         "project_state": "Confirmed",
         "client_id": 5,
     }
+    res4_no_start = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01")
+    assert "Source project has no starts_at date" in json.loads(res4_no_start)["error"]["message"]
+
+    # Error when new_start_date has invalid date format
+    setup_mock_client.get_project.return_value["starts_at"] = "2026-08-01"
+    res4_bad_date = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="invalid-date")
+    assert "Invalid date format" in json.loads(res4_bad_date)["error"]["message"]
+
+    # Success: shifting timeline (source: 2026-08-01 to 2026-08-31 shifted to 2026-09-01 -> 31 day shift)
+    setup_mock_client.get_project.return_value = {
+        "id": 100,
+        "name": "Template",
+        "project_state": "Confirmed",
+        "client_id": 5,
+        "starts_at": "2026-08-01",
+        "ends_at": "2026-08-31",
+    }
     setup_mock_client.list_project_phases.return_value = {
-        "data": [{"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"}]
+        "data": [
+            {"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"},
+            {"name": "Phase 2", "starts_at": "invalid-phase-start", "ends_at": "invalid-phase-end"},
+            {"name": "Phase 3"},
+        ]
     }
     res4 = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01", client_id=9)
     data4 = json.loads(res4)
     assert data4["status"] == "success"
-    assert data4["cloned_phases_count"] == 1
+    assert data4["cloned_phases_count"] == 3
 
-    # Clone without explicit client_id (uses source client_id fallback)
+    # Verify shifted dates passed to client.create_project
+    created_proj_payload = setup_mock_client.create_project.call_args[0][0]
+    assert created_proj_payload["starts_at"] == "2026-09-01"
+    assert created_proj_payload["ends_at"] == "2026-10-01"
+    assert created_proj_payload["client_id"] == 9
+
+    # Verify shifted dates passed to client.create_project_phase
+    phase_payloads = [call[0][1] for call in setup_mock_client.create_project_phase.call_args_list[-3:]]
+    assert phase_payloads[0]["starts_at"] == "2026-09-01"
+    assert phase_payloads[0]["ends_at"] == "2026-09-15"
+    assert phase_payloads[1]["starts_at"] == "invalid-phase-start"
+    assert phase_payloads[2]["starts_at"] is None
+
+    # Source project with invalid ends_at handled gracefully
+    setup_mock_client.get_project.return_value["ends_at"] = "invalid-end-date"
+    res4_bad_end = await srv.rm_clone_project_schedule(100, "Cloned Project Bad End", new_start_date="2026-09-01")
+    assert json.loads(res4_bad_end)["status"] == "success"
+
+    # Clone without explicit client_id and without new_start_date (uses source client_id fallback and keeps dates)
+    setup_mock_client.get_project.return_value = {
+        "id": 100,
+        "name": "Template",
+        "client_id": 5,
+        "starts_at": "2026-08-01",
+    }
     res4_fallback = await srv.rm_clone_project_schedule(100, "Cloned Project 2")
     assert json.loads(res4_fallback)["status"] == "success"
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import ipaddress
 import json
 import logging
 import os
@@ -11,6 +12,7 @@ import sys
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 from mcp.types import ToolAnnotations
 
@@ -20,26 +22,26 @@ from smartsheet_rm_mcp.errors import SmartsheetRMAPIError, redact_secrets
 ANNOTATION_READ_ONLY = ToolAnnotations(
     read_only_hint=True,
     destructive_hint=False,
-    idempotent_hint=False,
-    open_world_hint=False,
+    idempotent_hint=True,
+    open_world_hint=True,
 )
 ANNOTATION_DESTRUCTIVE = ToolAnnotations(
     read_only_hint=False,
     destructive_hint=True,
     idempotent_hint=False,
-    open_world_hint=False,
+    open_world_hint=True,
 )
 ANNOTATION_IDEMPOTENT = ToolAnnotations(
     read_only_hint=False,
     destructive_hint=False,
     idempotent_hint=True,
-    open_world_hint=False,
+    open_world_hint=True,
 )
 ANNOTATION_WRITE_SAFE = ToolAnnotations(
     read_only_hint=False,
     destructive_hint=False,
     idempotent_hint=False,
-    open_world_hint=False,
+    open_world_hint=True,
 )
 
 logger = logging.getLogger("smartsheet_rm_mcp")
@@ -97,6 +99,43 @@ def _destructive_gate(confirm: bool, action_name: str) -> str | None:
     return None
 
 
+def _validate_base_url(url: str) -> str:
+    """Validate per-request base URL to mitigate SSRF risks.
+
+    Ensures the URL uses HTTPS and does not point to loopback, link-local,
+    or private IP addresses.
+    """
+    if not url:
+        return DEFAULT_BASE_URL
+
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(f"Insecure or invalid base URL scheme '{parsed.scheme}'. Only HTTPS is permitted.")
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("Invalid base URL: missing hostname.")
+
+    if hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith(".local") or hostname.endswith(".internal"):
+        raise ValueError(f"Blocked internal/loopback hostname in base URL: {hostname}")
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            raise ValueError(f"Blocked private/reserved IP address in base URL: {hostname}")
+    except ValueError as e:
+        if "Blocked" in str(e):
+            raise
+
+    allowed_env = os.environ.get("SMARTSHEET_RM_ALLOWED_HOSTS", "").strip()
+    if allowed_env:
+        allowed = {h.strip().lower() for h in allowed_env.split(",") if h.strip()}
+        if hostname not in allowed:
+            raise ValueError(f"Hostname '{hostname}' is not in SMARTSHEET_RM_ALLOWED_HOSTS.")
+
+    return url
+
+
 async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
     """Retrieve or construct the SmartsheetRMClient instance.
 
@@ -129,9 +168,10 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
     if raw_headers:
         headers = {k.lower(): str(v) for k, v in raw_headers.items() if v is not None}
         req_token = headers.get("x-smartsheet-rm-token") or headers.get("auth")
-        req_base_url = headers.get("x-smartsheet-rm-base-url") or os.environ.get(
+        raw_base_url = headers.get("x-smartsheet-rm-base-url") or os.environ.get(
             "SMARTSHEET_RM_BASE_URL", DEFAULT_BASE_URL
         )
+        req_base_url = _validate_base_url(raw_base_url)
 
         if req_token:
             cache_key = (req_token, req_base_url)
@@ -146,7 +186,8 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
 
     if _client is None:
         token = os.environ.get("SMARTSHEET_RM_API_TOKEN", "").strip()
-        base_url = os.environ.get("SMARTSHEET_RM_BASE_URL", DEFAULT_BASE_URL).strip()
+        base_url = _validate_base_url(os.environ.get("SMARTSHEET_RM_BASE_URL", DEFAULT_BASE_URL).strip())
+
         if not token:
             raise ValueError("SMARTSHEET_RM_API_TOKEN environment variable or request 'auth' header must be set")
         _client = SmartsheetRMClient(token, base_url)

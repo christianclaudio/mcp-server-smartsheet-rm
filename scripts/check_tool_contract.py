@@ -20,7 +20,7 @@ EXPECTED_READONLY = 39
 # Expected annotation split at default registration.
 EXPECTED_READ_ONLY = 39
 EXPECTED_DESTRUCTIVE = 19
-EXPECTED_IDEMPOTENT = 4
+EXPECTED_IDEMPOTENT = 43
 
 PROBE = """
 import asyncio, json, sys
