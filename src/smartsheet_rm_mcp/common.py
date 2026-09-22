@@ -105,7 +105,7 @@ def _validate_base_url(url: str) -> str:
 
     Ensures the URL uses HTTPS, does not point to loopback, link-local,
     or private IP addresses, and verifies that resolved DNS addresses are global.
-    To eliminate residual time-of-check/time-of-use DNS-rebinding risks in
+    To mitigate residual time-of-check/time-of-use DNS-rebinding risks in
     zero-trust environments, configure SMARTSHEET_RM_ALLOWED_HOSTS to explicitly
     whitelist permitted API domains (e.g. 'api.rm.smartsheet.com').
     """
