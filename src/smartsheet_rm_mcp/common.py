@@ -8,6 +8,7 @@ import ipaddress
 import json
 import logging
 import os
+import socket
 import sys
 import time
 from collections.abc import Callable
@@ -121,11 +122,26 @@ def _validate_base_url(url: str) -> str:
 
     try:
         ip = ipaddress.ip_address(hostname)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or not ip.is_global:
             raise ValueError(f"Blocked private/reserved IP address in base URL: {hostname}")
     except ValueError as e:
         if "Blocked" in str(e):
             raise
+        try:
+            resolved_addrs = socket.getaddrinfo(hostname, None)
+            for _, _, _, _, sockaddr in resolved_addrs:
+                resolved_ip = ipaddress.ip_address(sockaddr[0])
+                if (
+                    resolved_ip.is_private
+                    or resolved_ip.is_loopback
+                    or resolved_ip.is_link_local
+                    or resolved_ip.is_multicast
+                    or resolved_ip.is_reserved
+                    or not resolved_ip.is_global
+                ):
+                    raise ValueError(f"Blocked hostname '{hostname}' resolving to private/reserved IP: {sockaddr[0]}")
+        except socket.gaierror:
+            pass
 
     allowed_env = os.environ.get("SMARTSHEET_RM_ALLOWED_HOSTS", "").strip()
     if allowed_env:

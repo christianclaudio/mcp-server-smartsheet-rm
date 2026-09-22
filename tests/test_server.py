@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,6 +13,7 @@ import httpx
 import pytest
 
 import smartsheet_rm_mcp.server as srv
+from smartsheet_rm_mcp.client import SmartsheetRMClient
 from smartsheet_rm_mcp.common import _validate_base_url
 from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
 
@@ -250,6 +252,11 @@ async def test_get_client_resolution_and_cache() -> None:
 
     # Direct unit test of _validate_base_url
     assert _validate_base_url("") == srv.DEFAULT_BASE_URL
+
+    # Hostname resolving to private/reserved IP via DNS
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]):
+        with pytest.raises(ValueError, match="resolving to private/reserved IP"):
+            _validate_base_url("https://malicious-dns.com")
 
 
 @pytest.mark.asyncio
@@ -780,6 +787,68 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
         in json.loads(await srv.rm_delete_webhook(1, confirm=False))["error"]["message"]
     )
     assert json.loads(await srv.rm_delete_webhook(1, confirm=True))["status"] == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_clone_project_schedule_transport_respx(respx_mock: Any) -> None:
+    real_client = SmartsheetRMClient("test-token", "https://api.rm.smartsheet.com/api/v1")
+    old_client = srv._client
+    srv._client = real_client
+    try:
+        respx_mock.get("https://api.rm.smartsheet.com/api/v1/projects/100").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": 100,
+                    "name": "Template Project",
+                    "project_state": "Confirmed",
+                    "client_id": 5,
+                    "starts_at": "2026-08-01",
+                    "ends_at": "2026-08-31",
+                },
+            )
+        )
+        respx_mock.get("https://api.rm.smartsheet.com/api/v1/projects/100/phases").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"},
+                        {"name": "Phase 2", "starts_at": "2026-08-16", "ends_at": "2026-08-31"},
+                    ]
+                },
+            )
+        )
+        create_proj_route = respx_mock.post("https://api.rm.smartsheet.com/api/v1/projects").mock(
+            return_value=httpx.Response(200, json={"id": 200, "name": "Cloned Project"})
+        )
+        create_phase_route = respx_mock.post("https://api.rm.smartsheet.com/api/v1/projects/200/phases").mock(
+            return_value=httpx.Response(200, json={"id": 201, "name": "Cloned Phase"})
+        )
+
+        res = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01", client_id=9)
+        data = json.loads(res)
+        assert data["status"] == "success"
+        assert data["cloned_phases_count"] == 2
+
+        # Verify transport-level wire payloads
+        assert create_proj_route.called
+        proj_req = json.loads(create_proj_route.calls.last.request.content)
+        assert proj_req["starts_at"] == "2026-09-01"
+        assert proj_req["ends_at"] == "2026-10-01"
+        assert proj_req["client_id"] == 9
+
+        assert create_phase_route.call_count == 2
+        phase1_req = json.loads(create_phase_route.calls[0].request.content)
+        assert phase1_req["starts_at"] == "2026-09-01"
+        assert phase1_req["ends_at"] == "2026-09-15"
+
+        phase2_req = json.loads(create_phase_route.calls[1].request.content)
+        assert phase2_req["starts_at"] == "2026-09-16"
+        assert phase2_req["ends_at"] == "2026-10-01"
+    finally:
+        await real_client.aclose()
+        srv._client = old_client
 
 
 def test_resources_and_prompts() -> None:
