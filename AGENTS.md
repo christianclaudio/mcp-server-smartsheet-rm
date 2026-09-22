@@ -1,6 +1,28 @@
+---
+vcs:
+  system: github
+  owner: christianclaudio
+  repo: mcp-server-smartsheet-rm
+  default_branch: main
+  branch_policy: pr_only
+---
+
 # AGENTS.md
 
 Instructions for AI coding agents (Antigravity, Claude Code, Copilot, Cursor, Windsurf) working on this repository or integrating Smartsheet Resource Management capabilities.
+
+---
+
+## 📚 Canonical Documentation & Live Doc MCPs
+
+Before designing, implementing, or updating any MCP tool, always consult the official machine-readable documentation indexes ("the bibles") and live documentation MCP servers:
+
+### Machine-Readable Documentation Indexes (`llms.txt`)
+| Resource | URL | Focus Areas |
+| :--- | :--- | :--- |
+| **FastMCP 4 Framework** | [`https://gofastmcp.com/llms.txt`](https://gofastmcp.com/llms.txt) | Server composition (`mount`), hierarchical middleware, transforms, lifespans, in-memory testing |
+| **Model Context Protocol (Official)** | [`https://modelcontextprotocol.io/llms.txt`](https://modelcontextprotocol.io/llms.txt) | Wire protocol spec, Streamable HTTP framing, tool annotations, elicitation |
+| **Smartsheet RM Developer Portal** | [`https://developer.smartsheet.com/10000ft-api/`](https://developer.smartsheet.com/10000ft-api/) | Smartsheet RM (10,000ft) REST API reference, endpoints, schemas, authentication |
 
 ---
 
