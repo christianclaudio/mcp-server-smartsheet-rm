@@ -8,7 +8,7 @@ import pytest
 from fastmcp import FastMCP
 from fastmcp.server.middleware import MiddlewareContext
 
-from smartsheet_rm_mcp.config import settings
+from smartsheet_rm_mcp.config import Settings, SmartsheetRMSettings, settings
 from smartsheet_rm_mcp.middleware import (
     AdminDomainGuardMiddleware,
     ParentAuditMiddleware,
@@ -273,3 +273,27 @@ def test_main_cli_profile_and_search(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     main()
     assert run_called is True
+
+
+def test_smartsheet_rm_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify SmartsheetRMSettings defaults, env prefix, and backward-compatible Settings alias."""
+    assert Settings is SmartsheetRMSettings
+    for var in (
+        "SMARTSHEET_RM_API_TOKEN",
+        "SMARTSHEET_RM_BASE_URL",
+        "SMARTSHEET_RM_PROFILE",
+        "SMARTSHEET_RM_READONLY",
+        "SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE",
+        "SMARTSHEET_RM_ENABLE_TOOL_SEARCH",
+        "SMARTSHEET_RM_CATALOG_CACHE_TTL_MS",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    s = SmartsheetRMSettings(_env_file=None, API_TOKEN="test-token")  # type: ignore[call-arg]
+    assert s.API_TOKEN == "test-token"
+    assert s.BASE_URL == "https://api.rm.smartsheet.com/api/v1"
+    assert s.PROFILE == "full"
+    assert s.READONLY is False
+    assert s.ALLOW_BULK_DESTRUCTIVE is False
+    assert s.ENABLE_TOOL_SEARCH is False
+    assert s.CATALOG_CACHE_TTL_MS == 3600000

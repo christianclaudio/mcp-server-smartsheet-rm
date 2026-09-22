@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from smartsheet_rm_mcp.client import DEFAULT_BASE_URL
 
 
-class Settings(BaseSettings):
+class SmartsheetRMSettings(BaseSettings):
     """Application settings with environment variable bindings."""
 
     model_config = SettingsConfigDict(
@@ -58,4 +58,7 @@ class Settings(BaseSettings):
     )
 
 
-settings = Settings()
+Settings = SmartsheetRMSettings
+settings = SmartsheetRMSettings()
+
+__all__ = ["SmartsheetRMSettings", "Settings", "settings"]

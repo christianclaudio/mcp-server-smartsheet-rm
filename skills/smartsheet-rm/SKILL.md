@@ -77,3 +77,39 @@ This skill provides expert instructions, architectural workflows, and safety pro
 ### Prompts
 - `timesheet_reconciliation(user_id=..., week_start_date=...)` — Step-by-step assistant guide for auditing and balancing weekly logged time against 40-hour capacity targets.
 - `project_staffing_plan(project_id=...)` — Checklist for analyzing project phases, allocations, and discipline bottlenecks.
+
+---
+
+## 🏗️ FastMCP 4 Architecture & Server Composition
+
+The server is engineered as a modular, layered FastMCP 4 composition with domain sub-servers mounted onto a root FastMCP gateway:
+
+```
+FastMCP Gateway (create_server)
+├── Global Middleware Pipeline
+│   ├── ParentAuditMiddleware (timing, structured JSON logging, secret scrubbing)
+│   └── ReadOnlyGateMiddleware (fail-closed write protection when READONLY=1)
+├── Mounted Domain Sub-Servers
+│   ├── Time Sub-Server (tools/time.py, 15 tools + timesheet_reconciliation prompt)
+│   │   └── TimeDomainGuardMiddleware (hours range & sanity validation)
+│   ├── Projects Sub-Server (tools/projects.py, 25 tools + project_staffing_plan prompt)
+│   │   └── ProjectsDomainGuardMiddleware (non-empty naming validation)
+│   └── Admin Sub-Server (tools/admin.py, 60 tools + rm://capabilities, rm://quickstart resources)
+│       └── AdminDomainGuardMiddleware (pagination batch cap validation)
+└── Configuration & Safety Filtering
+    ├── SmartsheetRMSettings (Pydantic BaseSettings binding SMARTSHEET_RM_*)
+    ├── Profile Trimming (full, time, projects, admin, readonly)
+    ├── Bulk-Destructive Safety Gate (SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1)
+    └── Dynamic Tool Discovery (RegexSearchTransform opt-in via --enable-tool-search)
+```
+
+### Component Breakdown
+
+| Layer | Component | Responsibility |
+| :--- | :--- | :--- |
+| **Settings** | `SmartsheetRMSettings` (`config.py`) | Strongly-typed configuration bound to `SMARTSHEET_RM_*` environment variables. |
+| **Common** | `@rm_tool` & `get_client` (`common.py`) | Standardized execution wrapper, client caching, and fail-closed secret redaction. |
+| **Middleware** | `ParentAuditMiddleware`, `ReadOnlyGateMiddleware`, Guards (`middleware.py`) | Hierarchical invocation logging, read-only gating, and domain argument validation. |
+| **Domain Tools** | `time.py`, `projects.py`, `admin.py` (`tools/`) | Autonomous domain sub-servers with dedicated tools, prompts, and resources. |
+| **Root Gateway** | `create_server()` (`server.py`) | Factory composing sub-servers, applying annotations, profile filters, and search transforms. |
+

@@ -686,11 +686,7 @@ def main() -> None:
         profile=args.profile,
         enable_tool_search=args.enable_tool_search,
     )
-    target_server = (
-        server_instance
-        if getattr(mcp.run, "__func__", None) is getattr(FastMCP, "run", None)
-        else mcp
-    )
+    target_server = server_instance if getattr(mcp.run, "__func__", None) is getattr(FastMCP, "run", None) else mcp
 
     if args.transport == "sse":  # pragma: no cover
         logger.warning(
