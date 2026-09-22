@@ -258,17 +258,25 @@ async def test_get_client_resolution_and_cache() -> None:
         # Direct unit test of _validate_base_url
         assert _validate_base_url("") == srv.DEFAULT_BASE_URL
 
-        # Hostname resolving to private/reserved IP via DNS
+        # Hostname resolving to private/reserved IP via DNS (when check_dns=True)
         with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]):
             with pytest.raises(ValueError, match="resolving to private/reserved IP"):
-                _validate_base_url("https://malicious-dns.com")
+                _validate_base_url("https://malicious-dns.com", check_dns=True)
 
-        # Hostname failing DNS resolution (gaierror fails closed)
+        # Hostname failing DNS resolution (gaierror fails closed when check_dns=True)
         with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
             with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
-                _validate_base_url("https://unresolvable-domain.com")
-            with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
-                await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://unresolvable-domain.com"}})
+                _validate_base_url("https://unresolvable-domain.com", check_dns=True)
+            # get_client uses check_dns=False (DNS validation is connection-bound)
+            c_unres = await srv.get_client(
+                {
+                    "headers": {
+                        "x-smartsheet-rm-token": "tok",
+                        "x-smartsheet-rm-base-url": "https://unresolvable-domain.com",
+                    }
+                }
+            )
+            assert c_unres.base_url == "https://unresolvable-domain.com"
 
 
 @pytest.mark.asyncio
