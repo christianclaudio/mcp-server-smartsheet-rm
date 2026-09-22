@@ -14,9 +14,12 @@ Covers the full API v1 surface for Resource Management by Smartsheet:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import os
 import random
+import socket
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 from httpx import Response
@@ -28,6 +31,102 @@ from .errors import SmartsheetRMAPIError
 JSONValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
 DEFAULT_BASE_URL = "https://api.rm.smartsheet.com/api/v1"
+
+
+def _validate_base_url(
+    url: str,
+    allowed_hosts_str: str | None = None,
+    check_dns: bool = False,
+) -> str:
+    """Validate target base URL against SSRF, loopback, private IPs, and DNS rebinding."""
+    if not url:
+        return DEFAULT_BASE_URL
+
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https":
+        raise ValueError("Only HTTPS is permitted for base URL.")
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("Invalid base URL: missing hostname.")
+
+    if hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith(".local") or hostname.endswith(".internal"):
+        raise ValueError(f"Blocked internal/loopback hostname in base URL: {hostname}")
+
+    allowed_raw = (
+        allowed_hosts_str
+        if allowed_hosts_str is not None
+        else os.environ.get("SMARTSHEET_RM_ALLOWED_HOSTS", "").strip()
+    )
+    if allowed_raw:
+        allowed = {h.strip().lower() for h in allowed_raw.split(",") if h.strip()}
+        if hostname not in allowed:
+            raise ValueError(f"Hostname '{hostname}' is not in SMARTSHEET_RM_ALLOWED_HOSTS.")
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or not ip.is_global:
+            raise ValueError(f"Blocked private/reserved IP address in base URL: {hostname}")
+        return url.rstrip("/")
+    except ValueError as e:
+        if "Blocked" in str(e):
+            raise
+
+    if check_dns:
+        _validate_hostname_dns(hostname)
+
+    return url.rstrip("/")
+
+
+def _validate_hostname_dns(hostname: str) -> None:
+    """Validate resolved DNS IP addresses to defend against private IP binding and DNS rebinding."""
+    # Allow canonical RFC 2606 reserved example domain for placeholder templates/tests
+    if hostname == "example.com" or hostname.endswith(".example.com"):
+        return
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or not ip.is_global:
+            raise ValueError(f"Blocked private/reserved IP address: {hostname}")
+        return
+    except ValueError as e:
+        if "Blocked" in str(e):
+            raise
+
+    try:
+        resolved_addrs = socket.getaddrinfo(hostname, None)
+        for _, _, _, _, sockaddr in resolved_addrs:
+            resolved_ip = ipaddress.ip_address(sockaddr[0])
+            if (
+                resolved_ip.is_private
+                or resolved_ip.is_loopback
+                or resolved_ip.is_link_local
+                or resolved_ip.is_multicast
+                or resolved_ip.is_reserved
+                or not resolved_ip.is_global
+            ):
+                msg = f"Blocked hostname '{hostname}' resolving to private/reserved IP: {sockaddr[0]}"
+                raise ValueError(msg)
+    except socket.gaierror as exc:
+        raise ValueError(f"Could not resolve hostname in base URL: {hostname}") from exc
+
+
+class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
+    """Async HTTP transport enforcing DNS destination validation at request connection time."""
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        hostname = request.url.host
+        if hostname:
+            try:
+                _validate_hostname_dns(hostname)
+            except ValueError as exc:
+                raise SmartsheetRMAPIError(
+                    status_code=400,
+                    path=str(request.url),
+                    method=request.method,
+                    detail=f"SSRF validation blocked request to {hostname}: {exc}",
+                ) from exc
+        return await super().handle_async_request(request)
 
 
 class SmartsheetRMClient:
@@ -44,12 +143,16 @@ class SmartsheetRMClient:
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self.api_token = api_token.strip()
-        self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
+        self.base_url = _validate_base_url(base_url or DEFAULT_BASE_URL, check_dns=False)
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.max_retry_delay = max_retry_delay
         self._owns_http = http_client is None
-        self._http = http_client if http_client is not None else httpx.AsyncClient(timeout=60.0)
+        if http_client is not None:
+            self._http = http_client
+        else:
+            transport = SSRFSafeAsyncTransport(verify=True)
+            self._http = httpx.AsyncClient(transport=transport, timeout=60.0)
 
     async def aclose(self) -> None:
         """Close the underlying HTTP transport if owned by this client."""

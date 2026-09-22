@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+import socket
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from smartsheet_rm_mcp.client import SmartsheetRMClient
+from smartsheet_rm_mcp.client import (
+    DEFAULT_BASE_URL,
+    SmartsheetRMClient,
+    SSRFSafeAsyncTransport,
+    _validate_base_url,
+    _validate_hostname_dns,
+)
 from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
 
 
@@ -283,3 +290,106 @@ def test_extract_list_and_extract_dict() -> None:
     assert SmartsheetRMClient.extract_dict({"other": {}}, key="item") == {}
     assert SmartsheetRMClient.extract_dict(["not", "a", "dict"], key="item") == {}
     assert SmartsheetRMClient.extract_dict(None, key="item") == {}
+
+
+def test_validate_base_url_ssrf_protections() -> None:
+    """Verify base URL validation protects against SSRF and non-global destinations."""
+    # Default fallback
+    assert _validate_base_url("") == DEFAULT_BASE_URL
+
+    # HTTPS enforcement
+    with pytest.raises(ValueError, match="Only HTTPS is permitted"):
+        _validate_base_url("http://api.rm.smartsheet.com")
+
+    # Missing hostname
+    with pytest.raises(ValueError, match="missing hostname"):
+        _validate_base_url("https://")
+
+    # Internal/loopback hostnames
+    for host in ["localhost", "127.0.0.1", "[::1]", "service.local", "db.internal"]:
+        with pytest.raises(ValueError, match="Blocked internal/loopback"):
+            _validate_base_url(f"https://{host}")
+
+    # Private IP literals
+    for ip in ["10.0.0.1", "172.16.0.1", "192.168.1.1", "169.254.169.254", "127.0.0.2"]:
+        with pytest.raises(ValueError, match="Blocked private/reserved"):
+            _validate_base_url(f"https://{ip}")
+
+    # Valid globally routable public IP
+    assert _validate_base_url("https://93.184.216.34") == "https://93.184.216.34"
+
+    # Allowed hosts check
+    with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+        _validate_base_url("https://untrusted.example.com", allowed_hosts_str="api.rm.smartsheet.com")
+    assert (
+        _validate_base_url("https://api.rm.smartsheet.com", allowed_hosts_str="api.rm.smartsheet.com")
+        == "https://api.rm.smartsheet.com"
+    )
+
+    # Valid global domain name via DNS resolution
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ):
+        assert _validate_base_url("https://api.customdomain.org", check_dns=True) == "https://api.customdomain.org"
+
+    # DNS resolving to private IP
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))],
+    ):
+        with pytest.raises(ValueError, match="resolving to private/reserved IP"):
+            _validate_base_url("https://malicious-rebinding.com", check_dns=True)
+
+    # DNS resolution failure (fail-closed)
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
+        with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
+            _validate_base_url("https://unresolvable-domain.com", check_dns=True)
+
+    # Private IP literal in _validate_hostname_dns
+    with pytest.raises(ValueError, match="Blocked private/reserved"):
+        _validate_hostname_dns("10.0.0.1")
+
+    # Example.com and global public IP in _validate_hostname_dns
+    _validate_hostname_dns("example.com")
+    _validate_hostname_dns("api.example.com")
+    _validate_hostname_dns("93.184.216.34")
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport() -> None:
+    """Verify SSRFSafeAsyncTransport blocks outbound requests to private/reserved destinations."""
+    transport = SSRFSafeAsyncTransport()
+
+    # Valid public resolution passes to base transport
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ):
+        with patch.object(
+            httpx.AsyncHTTPTransport,
+            "handle_async_request",
+            return_value=httpx.Response(200, json={"ok": True}),
+        ):
+            req = httpx.Request("GET", "https://api.customdomain.org/data")
+            resp = await transport.handle_async_request(req)
+            assert resp.status_code == 200
+
+    # Private IP resolution raises SmartsheetRMAPIError at request time
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.1.1", 443))],
+    ):
+        req = httpx.Request("GET", "https://malicious.com/data")
+        with pytest.raises(SmartsheetRMAPIError) as exc_info:
+            await transport.handle_async_request(req)
+        assert exc_info.value.status_code == 400
+        assert "SSRF validation blocked request" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_client_default_transport_ssrf() -> None:
+    """Verify SmartsheetRMClient instantiates SSRFSafeAsyncTransport by default and closes it cleanly."""
+    client = SmartsheetRMClient("token")
+    assert isinstance(client._http._transport, SSRFSafeAsyncTransport)
+    await client.aclose()
