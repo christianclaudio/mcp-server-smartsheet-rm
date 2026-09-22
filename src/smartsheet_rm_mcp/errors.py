@@ -23,6 +23,8 @@ _SECRET_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)auth:\s*[a-zA-Z0-9\-\._~\+\/]+"),
     re.compile(r"(?i)(api_token=|\"api_token\":\s*\")[a-zA-Z0-9\-\._~\+\/]+=*\"?"),
     re.compile(r"(?i)(SMARTSHEET_RM_API_TOKEN=)[a-zA-Z0-9\-\._~\+\/]+"),
+    re.compile(r"(?i)(api_key=|\"api_key\":\s*\"?)[a-zA-Z0-9\-\._~\+\/]+=*\"?"),
+    re.compile(r"(?i)(password=|\"password\":\s*\"?)[^\s,}\"]+\"?"),
 ]
 
 

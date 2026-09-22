@@ -100,7 +100,16 @@ async def test_parent_audit_middleware_error() -> None:
     with pytest.raises(ValueError) as exc_info:
         await mw.on_message(ctx, fake_failing_next)
 
-    assert "secret-auth-token-xyz" in str(exc_info.value)
+    assert "secret-auth-token-xyz" not in str(exc_info.value)
+    assert "***REDACTED***" in str(exc_info.value)
+
+    # Clean error without secrets
+    async def fake_clean_next(_ctx: MiddlewareContext) -> None:
+        raise ValueError("Plain clean failure")
+
+    with pytest.raises(ValueError) as clean_exc:
+        await mw.on_message(ctx, fake_clean_next)
+    assert str(clean_exc.value) == "Plain clean failure"
 
 
 @pytest.mark.asyncio
@@ -131,6 +140,11 @@ async def test_read_only_gate_middleware(monkeypatch: pytest.MonkeyPatch) -> Non
     with pytest.raises(PermissionError) as exc_info:
         await mw.on_message(ctx, fake_next)
     assert "Server is in read-only mode" in str(exc_info.value)
+
+    # When READONLY is True, mutating recipe operations are also blocked
+    ctx.message.name = "time_fill_weekly_timesheet"
+    with pytest.raises(PermissionError):
+        await mw.on_message(ctx, fake_next)
 
     # When READONLY is True, non-mutating operations are allowed
     ctx.message.name = "rm_list_projects"

@@ -7,6 +7,7 @@ from typing import Any
 
 from fastmcp import FastMCP
 
+from smartsheet_rm_mcp import __version__
 from smartsheet_rm_mcp.client import DEFAULT_BASE_URL
 from smartsheet_rm_mcp.common import (
     ANNOTATION_DESTRUCTIVE,
@@ -858,7 +859,7 @@ def rm_capabilities_resource() -> str:
     return json.dumps(
         {
             "server": "mcp-server-smartsheet-rm",
-            "version": "1.0.0",
+            "version": __version__,
             "domains": [
                 "Time Tracking & Approvals",
                 "Projects & Phases",

@@ -24,7 +24,35 @@ from smartsheet_rm_mcp.errors import redact_secrets
 logger = logging.getLogger(__name__)
 
 # Mutating operation prefixes across the Smartsheet RM tools
-_MUTATING_PREFIXES = ("rm_create_", "rm_update_", "rm_delete_", "rm_bulk_delete_", "rm_lock_", "rm_set_")
+_MUTATING_PREFIXES = (
+    "rm_create_",
+    "rm_update_",
+    "rm_delete_",
+    "rm_bulk_delete_",
+    "rm_lock_",
+    "rm_set_",
+    "rm_fill_",
+    "rm_confirm_",
+    "rm_reconcile_",
+    "rm_clone_",
+    "time_create_",
+    "time_update_",
+    "time_delete_",
+    "time_bulk_delete_",
+    "time_lock_",
+    "time_fill_",
+    "time_confirm_",
+    "time_reconcile_",
+    "projects_create_",
+    "projects_update_",
+    "projects_delete_",
+    "projects_bulk_delete_",
+    "projects_clone_",
+    "admin_create_",
+    "admin_update_",
+    "admin_delete_",
+    "admin_set_",
+)
 
 
 class ParentAuditMiddleware(Middleware):
@@ -51,6 +79,10 @@ class ParentAuditMiddleware(Middleware):
             duration_ms = (time.perf_counter() - start_time) * 1000.0
             sanitized_msg = redact_secrets(str(exc))
             logger.error("✗ MCP Request failed: %s in %.2fms: %s", target, duration_ms, sanitized_msg)
+            if str(exc) != sanitized_msg:
+                sanitized_exc = type(exc)(sanitized_msg)
+                sanitized_exc.__traceback__ = exc.__traceback__
+                raise sanitized_exc from None
             raise
 
 

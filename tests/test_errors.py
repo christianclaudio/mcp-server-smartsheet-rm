@@ -65,3 +65,12 @@ def test_smartsheet_rm_api_error_to_dict() -> None:
     assert data["request_id"] == "req-abc-123"
     assert data["detail"]["token"] == "[redacted]"
     assert data["detail"]["error"] == "Not Found"
+
+
+def test_redact_secrets_api_key_and_password() -> None:
+    from smartsheet_rm_mcp.errors import redact_secrets
+
+    assert redact_secrets("api_key=secret-key-123") == "***REDACTED***"
+    assert redact_secrets('{"api_key": "secret-key-123"}') == "{***REDACTED***}"
+    assert redact_secrets("password=mypassword123") == "***REDACTED***"
+    assert redact_secrets('{"password": "mypassword123"}') == "{***REDACTED***}"

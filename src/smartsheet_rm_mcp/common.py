@@ -55,14 +55,14 @@ class StructuredJSONFormatter(logging.Formatter):
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "name": record.name,
-            "message": record.getMessage(),
+            "message": _redact_secrets(record.getMessage()),
         }
         if hasattr(record, "tool_name"):
             log_obj["mcp_tool"] = record.tool_name
         if hasattr(record, "duration_ms"):
             log_obj["duration_ms"] = record.duration_ms
         if record.exc_info:
-            log_obj["exception"] = self.formatException(record.exc_info)
+            log_obj["exception"] = _redact_secrets(self.formatException(record.exc_info))
         return json.dumps(log_obj)
 
 
@@ -73,19 +73,21 @@ def configure_logging() -> None:
         handler = logging.StreamHandler()
         handler.setFormatter(StructuredJSONFormatter())
         logging.root.handlers = [handler]
-        logging.root.setLevel(logging.INFO)
 
 
 _redact_secrets = redact_secrets
 
 
 def _invalid_request(message: str) -> str:
-    """Return uniform structured error response for invalid requests."""
-    return json.dumps({"error": {"type": "invalid_request", "message": message}})
+    """Format structured invalid_request error document."""
+    return json.dumps({"error": {"type": "invalid_request", "message": message}}, indent=2)
 
 
 def _destructive_gate(confirm: bool, action_name: str) -> str | None:
-    """Enforce explicit user confirmation for destructive actions."""
+    """Enforce explicit user confirmation for destructive tools.
+
+    Returns an error document string if confirmation is missing, or None if confirmed.
+    """
     if not confirm:
         return _invalid_request(
             f"Action '{action_name}' is destructive and requires explicit confirmation. Pass confirm=True to execute."
@@ -106,13 +108,21 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
     if srv is not None and hasattr(srv, "_client"):
         _client = srv._client
 
+    raw_headers: dict[str, Any] = {}
     if ctx is not None:
-        raw_headers: dict[str, Any] = {}
         if hasattr(ctx, "request_context") and ctx.request_context:
             raw_headers = getattr(ctx.request_context, "headers", {}) or {}
         elif isinstance(ctx, dict):
             raw_headers = ctx.get("headers", {})
+    else:
+        try:
+            from fastmcp.server.dependencies import get_http_headers
 
+            raw_headers = get_http_headers(include_all=True) or {}
+        except Exception:  # pragma: no cover
+            raw_headers = {}
+
+    if raw_headers:
         headers = {k.lower(): str(v) for k, v in raw_headers.items() if v is not None}
         req_token = headers.get("x-smartsheet-rm-token") or headers.get("auth")
         req_base_url = headers.get("x-smartsheet-rm-base-url") or os.environ.get(

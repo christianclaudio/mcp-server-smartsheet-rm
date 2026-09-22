@@ -372,7 +372,7 @@ async def rm_clone_project_schedule(
     new_start_date: str | None = None,
     client_id: int | str | None = None,
 ) -> str:
-    """Duplicate project phases, milestone structure, and assignments to a new project."""
+    """Duplicate project budget settings, timeline, and phase milestone structure to a new project."""
     client = await get_client()
 
     # 1. Fetch source project & phases

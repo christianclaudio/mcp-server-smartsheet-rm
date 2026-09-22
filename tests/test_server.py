@@ -143,16 +143,23 @@ def test_logging_and_formatter() -> None:
     assert data["mcp_tool"] == "rm_test_tool"
     assert data["duration_ms"] == 45.6
 
-    # With exception info
+    # With exception info and credential redaction
     try:
-        raise ValueError("Boom")
+        raise ValueError("Failed with Bearer secret-in-traceback")
     except ValueError:
         import sys
 
         record.exc_info = sys.exc_info()
         res_exc = formatter.format(record)
         data_exc = json.loads(res_exc)
-        assert "Boom" in data_exc["exception"]
+        assert "secret-in-traceback" not in data_exc["exception"]
+        assert "***REDACTED***" in data_exc["exception"]
+
+    record_sec = logging.LogRecord("test", logging.INFO, "path.py", 10, "Bearer secret-in-log", (), None)
+    res_sec = formatter.format(record_sec)
+    data_sec = json.loads(res_sec)
+    assert "secret-in-log" not in data_sec["message"]
+    assert "***REDACTED***" in data_sec["message"]
 
     with patch.dict(os.environ, {"SMARTSHEET_RM_LOG_FORMAT": "json"}):
         srv.configure_logging()
@@ -194,6 +201,11 @@ async def test_get_client_resolution_and_cache() -> None:
     req_ctx_mock.request_context.headers = {"auth": "auth-header-token"}
     client_ctx2 = await srv.get_client(req_ctx_mock)
     assert client_ctx2.api_token == "auth-header-token"
+
+    # FastMCP dependency get_http_headers fallback when ctx is None
+    with patch("fastmcp.server.dependencies.get_http_headers", return_value={"x-smartsheet-rm-token": "dep-token"}):
+        c_dep = await srv.get_client()
+        assert c_dep.api_token == "dep-token"
 
     # Cache limit eviction (>100)
     srv._HEADER_CLIENT_CACHE.clear()
