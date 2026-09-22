@@ -103,8 +103,11 @@ def _destructive_gate(confirm: bool, action_name: str) -> str | None:
 def _validate_base_url(url: str) -> str:
     """Validate per-request base URL to mitigate SSRF risks.
 
-    Ensures the URL uses HTTPS and does not point to loopback, link-local,
-    or private IP addresses.
+    Ensures the URL uses HTTPS, does not point to loopback, link-local,
+    or private IP addresses, and verifies that resolved DNS addresses are global.
+    To eliminate residual time-of-check/time-of-use DNS-rebinding risks in
+    zero-trust environments, configure SMARTSHEET_RM_ALLOWED_HOSTS to explicitly
+    whitelist permitted API domains (e.g. 'api.rm.smartsheet.com').
     """
     if not url:
         return DEFAULT_BASE_URL

@@ -79,6 +79,7 @@ pip install mcp-server-smartsheet-rm
 | `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE` | Set to `1` to unlock bulk delete operations | `0` |
 | `SMARTSHEET_RM_ENABLE_TOOL_SEARCH` | Set to `1` (or `--enable-tool-search`) for dynamic regex search | `0` |
 | `SMARTSHEET_RM_LOG_FORMAT` | Set to `json` for Datadog/CloudWatch structured logs | `text` |
+| `SMARTSHEET_RM_ALLOWED_HOSTS` | Comma-separated allowlist of hostnames for base URL overrides (mitigates SSRF/DNS-rebinding) | `unset` (allows valid HTTPS domains) |
 
 ---
 
