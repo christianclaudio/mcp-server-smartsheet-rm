@@ -56,12 +56,15 @@ This skill provides expert instructions, architectural workflows, and safety pro
 3. **Secret Protection & Redaction**:
    - Never log, echo, or store `SMARTSHEET_RM_API_TOKEN` or raw authorization headers. All errors and output automatically scrub credentials.
 
-4. **Profile Selection**:
-   Minimize token context in LLM prompts by setting `SMARTSHEET_RM_PROFILE`:
-   - `time`: Time tracking, PTO, suggestions, approvals, and timesheet recipes.
-   - `projects`: Projects, phases, milestones, assignments, and schedule cloning.
-   - `admin`: Users, roles, disciplines, clients, expenses, tags, custom fields.
-   - `full`: Complete 80+ tool surface.
+4. **Profile & Dynamic Discovery Selection**:
+   Minimize token context in LLM prompts by setting `SMARTSHEET_RM_PROFILE` or `--profile`:
+   - `time`: Time tracking, PTO, suggestions, approvals, and timesheet recipes (20 tools).
+   - `projects`: Projects, phases, milestones, assignments, and schedule cloning (24 tools).
+   - `admin`: Users, roles, disciplines, clients, expenses, tags, custom fields (65 tools).
+   - `readonly`: Pure read-only inspection queries across all domains (39 tools).
+   - `full`: Complete catalog (98 default tools, 100 with bulk deletion opt-in).
+
+   For dynamic tool discovery on vast catalogs without polluting context, enable on-demand regex search via `--enable-tool-search` or `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1`.
 
 ---
 

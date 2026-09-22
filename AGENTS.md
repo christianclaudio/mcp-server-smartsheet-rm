@@ -19,9 +19,17 @@ Expose deep resource planning, allocation, time-tracking, project management, an
 mcp-server-smartsheet-rm/
 ├── src/smartsheet_rm_mcp/
 │   ├── __init__.py               # Package version (__version__) and public exports
-│   ├── server.py                 # FastMCP 4 server instance, @mcp.tool() registrations, prompts, resources
+│   ├── server.py                 # FastMCP 4 root gateway, composition mounting, profiles, tool search
+│   ├── middleware.py             # Gateway audit/readonly middleware & domain guardrails
+│   ├── common.py                 # Client resolution, decorator (@rm_tool), secret redaction, structured logging
+│   ├── config.py                 # Pydantic settings with SMARTSHEET_RM_* env bindings
 │   ├── client.py                 # Async HTTP client (httpx.AsyncClient, retries, jitter, auth headers)
-│   └── errors.py                 # Structured API exceptions and automatic secret redaction
+│   ├── errors.py                 # Structured API exceptions and regex secret redaction
+│   └── tools/                    # Modular domain sub-servers
+│       ├── __init__.py           # Sub-server and tool function re-exports
+│       ├── time.py               # Time tracking, suggestions, approval, timesheets sub-server
+│       ├── projects.py           # Projects, phases, assignments, placeholders sub-server
+│       └── admin.py              # Users, roles, clients, expenses, tags, reports sub-server
 ├── scripts/
 │   ├── check_conformance.sh      # MCP Protocol conformance suite verification script
 │   ├── check_tool_contract.py    # AST/reflection contract testing total tool & annotation counts
@@ -32,6 +40,7 @@ mcp-server-smartsheet-rm/
 │   ├── test_client.py            # Unit tests for HTTP client, retries, headers, and error handling
 │   ├── test_determine_bump.py    # Unit tests for determine_bump.py SemVer calculation
 │   ├── test_server.py            # Tests for tool execution, parameter validation, and confirmation gating
+│   ├── test_layered.py           # FastMCP 4 composition, profiles, middleware, and domain guard tests
 │   ├── test_errors.py            # Tests for error formatting and regex credential redaction
 │   ├── test_scripts.py           # Unit tests for contract and drift validation scripts
 │   └── test_protocol.py          # FastMCP 4 in-memory & stdio/streamable HTTP protocol verification

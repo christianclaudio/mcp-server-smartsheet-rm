@@ -17,11 +17,15 @@ Enables AI coding agents, planners, and assistants (Claude, Cortex, Antigravity,
 
 ```mermaid
 graph TD
-    Client["AI Agent (Claude / Cortex / Antigravity / Cursor)"] -->|"MCP Stdio / Streamable HTTP"| Server["mcp-server-smartsheet-rm"]
-    Server --> Config["Pydantic Settings & Safety Gates"]
-    Config -->|"SMARTSHEET_RM_READONLY=1"| RO["Read-Only Gate (39 tools)"]
-    Config -->|"confirm=True"| Destructive["Destructive Gate (21 tools)"]
-    Server --> ClientPool["SmartsheetRMClient (httpx.AsyncClient Pool)"]
+    Client["AI Agent (Claude / Cortex / Antigravity / Cursor)"] -->|"MCP Stdio / Streamable HTTP"| Server["mcp-server-smartsheet-rm Gateway"]
+    Server --> Middle["Parent Middleware (Audit / ReadOnly Gate)"]
+    Middle --> SubTime["Time Sub-Server (15 tools)"]
+    Middle --> SubProj["Projects Sub-Server (25 tools)"]
+    Middle --> SubAdmin["Admin Sub-Server (60 tools)"]
+    SubTime --> Guards["Domain Guardrails"]
+    SubProj --> Guards
+    SubAdmin --> Guards
+    Guards --> ClientPool["SmartsheetRMClient (httpx.AsyncClient Pool)"]
     ClientPool -->|"Bearer Auth + 429 Jitter Retry"| API["Smartsheet RM (10,000ft API)"]
 ```
 
@@ -70,9 +74,10 @@ pip install mcp-server-smartsheet-rm
 | :--- | :--- | :--- |
 | `SMARTSHEET_RM_API_TOKEN` | Smartsheet RM (10,000ft) API Token (**Required**) | - |
 | `SMARTSHEET_RM_BASE_URL` | Base API URL | `https://api.rm.smartsheet.com/api/v1` |
-| `SMARTSHEET_RM_PROFILE` | Tool profile subset: `time`, `projects`, `admin`, `full` | `full` |
+| `SMARTSHEET_RM_PROFILE` | Tool profile subset: `time`, `projects`, `admin`, `full`, `readonly` | `full` |
 | `SMARTSHEET_RM_READONLY` | Set to `1` to restrict server to read-only tools | `0` |
 | `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE` | Set to `1` to unlock bulk delete operations | `0` |
+| `SMARTSHEET_RM_ENABLE_TOOL_SEARCH` | Set to `1` (or `--enable-tool-search`) for dynamic regex search | `0` |
 | `SMARTSHEET_RM_LOG_FORMAT` | Set to `json` for Datadog/CloudWatch structured logs | `text` |
 
 ---

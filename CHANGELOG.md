@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-09-21
+
+### Added
+- **FastMCP 4 Server Composition**: Modularized root server into dedicated domain sub-servers (`time`, `projects`, `admin`) with root gateway composition via `mount()`.
+- **Hierarchical Middleware Pipeline**: Added `ParentAuditMiddleware` for request timing, structured lifecycle logging, and secret redaction, and `ReadOnlyGateMiddleware` for global mutation gating.
+- **Domain Guardrails**: Added domain middleware (`TimeDomainGuardMiddleware`, `ProjectsDomainGuardMiddleware`, `AdminDomainGuardMiddleware`) validating realistic parameter bounds, non-empty project names, and batch limits.
+- **Dynamic Tool Search Transform**: Added opt-in dynamic regex search transform (`--enable-tool-search` / `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1`) for efficient tool discovery.
+- **Pydantic Settings Management**: Introduced `config.py` with `Settings` model binding `SMARTSHEET_RM_*` environment variables.
+- **Layered Composition Tests**: Added comprehensive test suite `tests/test_layered.py` reaching 100.0% statement coverage.
+
 ## [1.1.5] - 2026-09-13
 
 ### Changed
