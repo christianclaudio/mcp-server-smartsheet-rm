@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -361,11 +362,18 @@ async def test_ssrf_safe_async_transport() -> None:
     """Verify SSRFSafeAsyncTransport blocks outbound requests to private/reserved destinations."""
     transport = SSRFSafeAsyncTransport()
 
-    # Valid public resolution passes to base transport
-    with patch(
-        "socket.getaddrinfo",
-        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
-    ):
+    # Valid public resolution passes to base transport and offloads to worker thread
+    import threading
+
+    loop_thread = threading.get_ident()
+    dns_thread = None
+
+    def fake_getaddrinfo(*args: Any, **kwargs: Any) -> list[Any]:
+        nonlocal dns_thread
+        dns_thread = threading.get_ident()
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+
+    with patch("socket.getaddrinfo", side_effect=fake_getaddrinfo):
         with patch.object(
             httpx.AsyncHTTPTransport,
             "handle_async_request",
@@ -374,6 +382,8 @@ async def test_ssrf_safe_async_transport() -> None:
             req = httpx.Request("GET", "https://api.customdomain.org/data")
             resp = await transport.handle_async_request(req)
             assert resp.status_code == 200
+            assert dns_thread is not None
+            assert dns_thread != loop_thread
 
     # Private IP resolution raises SmartsheetRMAPIError at request time
     with patch(
