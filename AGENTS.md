@@ -97,7 +97,7 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
 ## 🛡️ Non-Negotiable Safety & Security Rules
 
 1. **Destructive Confirmation Gate**:
-   - Every mutating tool must accept `confirm: bool = False`. If `False`, return a dry-run / confirmation preview without executing the side-effect.
+   - Every destructive tool (e.g. deletion, bulk removal, or permanent deallocation) must accept `confirm: bool = False` and invoke `_destructive_gate`. If `False`, return a structured error document requiring explicit confirmation before executing side effects. Non-destructive mutations (creates, updates, workflows) are protected by `ReadOnlyGateMiddleware` without requiring interactive confirmation.
 2. **Secret Redaction**:
    - Error messages, logs, and tracebacks must pass through regex redaction (`_redact_secrets`) stripping Bearer tokens, passwords, and API keys.
 3. **Multi-Stage Non-Root Containers**:

@@ -38,6 +38,13 @@ async def main():
         "all_read_only": all(t.annotations and t.annotations.read_only_hint for t in tools),
         "names": sorted(t.name for t in tools),
         "read_only_names": sorted(t.name for t in tools if t.annotations and t.annotations.read_only_hint),
+        "destructive_has_confirm": all(
+            hasattr(t, "parameters")
+            and isinstance(t.parameters, dict)
+            and "confirm" in t.parameters.get("properties", {})
+            for t in tools
+            if t.annotations and t.annotations.destructive_hint
+        ),
     }))
 
 asyncio.run(main())
@@ -128,6 +135,7 @@ def main() -> int:
         "projects_bulk_delete_assignments" in base["names"],
         False,
     )
+    check("all destructive tools define confirm parameter", base["destructive_has_confirm"], True)
 
     print("\nSMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1:")
     bulk = probe(SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE="1")
@@ -142,6 +150,7 @@ def main() -> int:
         "projects_bulk_delete_assignments" in bulk["names"],
         True,
     )
+    check("all bulk destructive tools define confirm parameter", bulk["destructive_has_confirm"], True)
 
     print("\nSMARTSHEET_RM_READONLY=1:")
     ro = probe(SMARTSHEET_RM_READONLY="1")
