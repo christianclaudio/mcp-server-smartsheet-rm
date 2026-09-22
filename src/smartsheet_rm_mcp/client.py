@@ -118,7 +118,7 @@ class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
         hostname = request.url.host
         if hostname:
             try:
-                _validate_hostname_dns(hostname)
+                await asyncio.to_thread(_validate_hostname_dns, hostname)
             except ValueError as exc:
                 raise SmartsheetRMAPIError(
                     status_code=400,
