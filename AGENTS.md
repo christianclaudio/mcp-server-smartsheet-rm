@@ -69,21 +69,22 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
 - URL path parameters **must** be safely formatted and escaped.
 - Call `await self._request("METHOD", path, params=..., json=...)`.
 
-### 2. Tool Handler (`server.py`)
-- Register the tool with `@mcp.tool()` and wrap with the server decorator (`@rm_tool`).
+### 2. Tool Handler (`tools/time.py`, `tools/projects.py`, `tools/admin.py`)
+- Register the tool with `@server.tool(name=..., annotations=...)` in the appropriate domain sub-server module and wrap with `@rm_tool`.
 - Provide an explicit, agent-friendly docstring describing capabilities, parameters, and return shape.
 - Destructive operations (`POST`, `PUT`, `PATCH`, `DELETE` mutating state) **must** accept `confirm: bool = False`.
 
-### 3. Tool Annotations & Gating
-- Apply MCP `ToolAnnotations` post-registration via `mcp._tool_manager._tools`:
+### 3. Tool Annotations & Composition Mounting
+- Declare native MCP `ToolAnnotations` directly at tool registration in each domain sub-server:
   - `readOnlyHint`: `True` for inspection/GET; `False` for mutations.
   - `destructiveHint`: `True` for delete/archive/deactivate actions; `False` otherwise.
   - `idempotentHint`: `True` for GET, PUT, idempotent operations; `False` for creations.
   - `openWorldHint`: `True` when interacting with external networks/APIs.
-- Gating:
-  - Support `READONLY` mode (`SMARTSHEET_RM_READONLY=1` or `--readonly`) to filter out mutating tools.
-  - Support bulk protection (`SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) for mass-deletion endpoints (`bulk_delete_time`, `bulk_delete_assignments`).
-  - Support profile filtering (`SMARTSHEET_RM_PROFILE`: `time`, `projects`, `admin`, `full`).
+- FastMCP 4 Server Composition:
+  - Root gateway in `server.py` selectively mounts domain sub-servers with native domain namespaces (`namespace="time"`, `namespace="projects"`, `namespace="admin"`).
+  - Profile filtering (`SMARTSHEET_RM_PROFILE`: `time`, `projects`, `admin`, `full`, `readonly`) is achieved via selective mounting at composition time.
+  - Read-only gating (`SMARTSHEET_RM_READONLY=1` or `--readonly`) enforces fail-closed write protection via `ReadOnlyGateMiddleware` and selective tool registration.
+  - Bulk protection (`SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) controls inclusion of bulk deletion tools (`time_bulk_delete_time_entries`, `projects_bulk_delete_assignments`).
 
 ### 4. Pure Offline Testing & Contract Sync (`tests/`)
 - Add unit tests in `tests/` mocking responses via `respx` or `httpx.MockTransport`.

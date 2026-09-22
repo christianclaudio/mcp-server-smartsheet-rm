@@ -19,8 +19,8 @@ Enables AI coding agents, planners, and assistants (Claude, Cortex, Antigravity,
 graph TD
     Client["AI Agent (Claude / Cortex / Antigravity / Cursor)"] -->|"MCP Stdio / Streamable HTTP"| Server["mcp-server-smartsheet-rm Gateway"]
     Server --> Middle["Parent Middleware (Audit / ReadOnly Gate)"]
-    Middle --> SubTime["Time Sub-Server (15 tools)"]
-    Middle --> SubProj["Projects Sub-Server (25 tools)"]
+    Middle --> SubTime["Time Sub-Server (14 tools, 15 with bulk)"]
+    Middle --> SubProj["Projects Sub-Server (24 tools, 25 with bulk)"]
     Middle --> SubAdmin["Admin Sub-Server (60 tools)"]
     SubTime --> Guards["Domain Guardrails"]
     SubProj --> Guards

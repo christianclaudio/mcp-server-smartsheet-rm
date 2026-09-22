@@ -820,19 +820,19 @@ def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) 
 
         monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "time")
         importlib.reload(srv)
-        assert "rm_list_time_entries" in srv.mcp._tool_manager._tools
+        assert "time_list_time_entries" in srv.mcp._tool_manager._tools
 
         monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "full")
         monkeypatch.setenv("SMARTSHEET_RM_READONLY", "1")
         importlib.reload(srv)
-        assert "rm_delete_project" not in srv.mcp._tool_manager._tools
-        assert "rm_list_projects" in srv.mcp._tool_manager._tools
+        assert "projects_delete_project" not in srv.mcp._tool_manager._tools
+        assert "projects_list_projects" in srv.mcp._tool_manager._tools
 
         monkeypatch.delenv("SMARTSHEET_RM_READONLY", raising=False)
         monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "full")
         monkeypatch.setenv("SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE", "1")
         importlib.reload(srv)
-        assert "rm_bulk_delete_time_entries" in srv.mcp._tool_manager._tools
+        assert "time_bulk_delete_time_entries" in srv.mcp._tool_manager._tools
     finally:
         monkeypatch.undo()
         importlib.reload(srv)
@@ -862,7 +862,7 @@ async def test_server_streamable_http_dispatch() -> None:
                 "id": 1,
                 "method": "tools/call",
                 "params": {
-                    "name": "rm_list_projects",
+                    "name": "projects_list_projects",
                     "arguments": {},
                     "_meta": meta,
                 },
@@ -874,7 +874,7 @@ async def test_server_streamable_http_dispatch() -> None:
                     "Content-Type": "application/json",
                     "MCP-Protocol-Version": "2026-07-28",
                     "Mcp-Method": "tools/call",
-                    "Mcp-Name": "rm_list_projects",
+                    "Mcp-Name": "projects_list_projects",
                 },
             )
             assert res.status_code == 200

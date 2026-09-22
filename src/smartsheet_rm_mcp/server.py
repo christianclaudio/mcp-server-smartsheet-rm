@@ -34,7 +34,6 @@ from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.tools import FunctionTool
-from mcp.types import ToolAnnotations
 
 from smartsheet_rm_mcp import __version__
 from smartsheet_rm_mcp.client import DEFAULT_BASE_URL, SmartsheetRMClient
@@ -236,11 +235,14 @@ class _ToolManagerCompat:
             if hasattr(c, "name") and (getattr(c, "type", None) == "tool" or hasattr(c, "parameters")):
                 tools[c.name] = c
         for p in getattr(self._server, "providers", []):
-            sub = getattr(p, "server", None)
+            sub = getattr(p, "server", None) or getattr(getattr(p, "_inner", None), "server", None)
+            transforms = getattr(p, "_transforms", [])
+            ns = next((t for t in transforms if hasattr(t, "_transform_name")), None)
             if sub and hasattr(sub, "_local_provider"):
                 for c in sub._local_provider._components.values():
                     if hasattr(c, "name") and (getattr(c, "type", None) == "tool" or hasattr(c, "parameters")):
-                        tools[c.name] = c
+                        tool_name = ns._transform_name(c.name) if ns else c.name
+                        tools[tool_name] = c
         return tools
 
     @_tools.setter
@@ -257,8 +259,15 @@ class _ToolManagerCompat:
         except Exception:
             pass
         for p in getattr(self._server, "providers", []):
-            sub = getattr(p, "server", None)
+            sub = getattr(p, "server", None) or getattr(getattr(p, "_inner", None), "server", None)
+            transforms = getattr(p, "_transforms", [])
+            ns = next((t for t in transforms if hasattr(t, "_reverse_name")), None)
+            sub_name = ns._reverse_name(name) if ns else name
             if sub and hasattr(sub, "_local_provider"):
+                try:
+                    sub._local_provider.remove_tool(sub_name)
+                except Exception:
+                    pass
                 try:
                     sub._local_provider.remove_tool(name)
                 except Exception:
@@ -266,214 +275,11 @@ class _ToolManagerCompat:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TOOL ANNOTATIONS & PROFILE CONFIGURATIONS
+# SERVER COMPOSITION GATEWAY FACTORY
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True)
-_WRITE_SAFE = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=True)
-_DESTRUCTIVE = ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=True)
-_IDEMPOTENT = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=True)
-
-_RO_PREFIXES = ("rm_list_", "rm_get_")
-_RO_NAMES = {
-    "rm_list_time_entries",
-    "rm_get_time_entry",
-    "rm_list_user_suggestions",
-    "rm_list_projects",
-    "rm_get_project",
-    "rm_list_project_phases",
-    "rm_get_project_phase",
-    "rm_list_assignments",
-    "rm_get_assignment",
-    "rm_list_users",
-    "rm_get_user",
-    "rm_list_user_bill_rates",
-    "rm_get_user_availability",
-    "rm_get_user_utilization",
-    "rm_list_roles",
-    "rm_list_disciplines",
-    "rm_list_clients",
-    "rm_get_client",
-    "rm_list_client_contacts",
-    "rm_list_leave_types",
-    "rm_get_leave_type",
-    "rm_list_holidays",
-    "rm_get_holiday",
-    "rm_list_expenses",
-    "rm_get_expense",
-    "rm_list_expense_categories",
-    "rm_list_tags",
-    "rm_list_custom_fields",
-    "rm_get_custom_field",
-    "rm_list_custom_field_values",
-    "rm_list_approvals",
-    "rm_list_status_options",
-    "rm_get_user_statuses",
-    "rm_list_placeholder_resources",
-    "rm_list_assignment_subtasks",
-    "rm_get_report_rows",
-    "rm_get_report_totals",
-    "rm_list_webhooks",
-}
-
-_DESTRUCTIVE_NAMES = {
-    "rm_delete_time_entry",
-    "rm_delete_project",
-    "rm_delete_project_phase",
-    "rm_delete_assignment",
-    "rm_delete_user",
-    "rm_delete_role",
-    "rm_delete_discipline",
-    "rm_delete_client",
-    "rm_delete_client_contact",
-    "rm_delete_leave_type",
-    "rm_delete_holiday",
-    "rm_delete_expense",
-    "rm_delete_expense_category",
-    "rm_delete_tag",
-    "rm_delete_custom_field",
-    "rm_delete_approval",
-    "rm_delete_placeholder_resource",
-    "rm_delete_assignment_subtask",
-    "rm_delete_webhook",
-    "rm_bulk_delete_time_entries",
-    "rm_bulk_delete_assignments",
-}
-
-_IDEMPOTENT_NAMES = {
-    "rm_set_custom_field_values",
-    "rm_lock_timesheet",
-    "rm_update_time_approval_status",
-    "rm_set_user_status",
-}
-
-_TIME_TOOLS = {
-    "rm_list_time_entries",
-    "rm_get_time_entry",
-    "rm_create_time_entry",
-    "rm_update_time_entry",
-    "rm_delete_time_entry",
-    "rm_list_user_suggestions",
-    "rm_update_time_approval_status",
-    "rm_lock_timesheet",
-    "rm_list_leave_types",
-    "rm_get_leave_type",
-    "rm_list_holidays",
-    "rm_get_holiday",
-    "rm_list_approvals",
-    "rm_create_approval",
-    "rm_delete_approval",
-    "rm_get_user_statuses",
-    "rm_set_user_status",
-    "rm_fill_weekly_timesheet",
-    "rm_confirm_suggested_hours",
-    "rm_reconcile_and_submit_week",
-    "rm_bulk_delete_time_entries",
-}
-
-_PROJECTS_TOOLS = {
-    "rm_list_projects",
-    "rm_get_project",
-    "rm_create_project",
-    "rm_update_project",
-    "rm_delete_project",
-    "rm_list_project_users",
-    "rm_list_project_phases",
-    "rm_get_project_phase",
-    "rm_create_project_phase",
-    "rm_update_project_phase",
-    "rm_delete_project_phase",
-    "rm_list_assignments",
-    "rm_get_assignment",
-    "rm_create_assignment",
-    "rm_update_assignment",
-    "rm_delete_assignment",
-    "rm_list_status_options",
-    "rm_list_placeholder_resources",
-    "rm_create_placeholder_resource",
-    "rm_delete_placeholder_resource",
-    "rm_list_assignment_subtasks",
-    "rm_create_assignment_subtask",
-    "rm_delete_assignment_subtask",
-    "rm_clone_project_schedule",
-    "rm_bulk_delete_assignments",
-}
-
-_ADMIN_TOOLS = {
-    "rm_list_users",
-    "rm_get_user",
-    "rm_create_user",
-    "rm_update_user",
-    "rm_delete_user",
-    "rm_list_user_bill_rates",
-    "rm_create_user_bill_rate",
-    "rm_get_user_availability",
-    "rm_get_user_utilization",
-    "rm_list_roles",
-    "rm_create_role",
-    "rm_update_role",
-    "rm_delete_role",
-    "rm_list_disciplines",
-    "rm_create_discipline",
-    "rm_update_discipline",
-    "rm_delete_discipline",
-    "rm_list_clients",
-    "rm_get_client",
-    "rm_create_client",
-    "rm_update_client",
-    "rm_delete_client",
-    "rm_list_client_contacts",
-    "rm_create_client_contact",
-    "rm_delete_client_contact",
-    "rm_list_leave_types",
-    "rm_create_leave_type",
-    "rm_update_leave_type",
-    "rm_delete_leave_type",
-    "rm_list_holidays",
-    "rm_create_holiday",
-    "rm_update_holiday",
-    "rm_delete_holiday",
-    "rm_list_expenses",
-    "rm_get_expense",
-    "rm_create_expense",
-    "rm_update_expense",
-    "rm_delete_expense",
-    "rm_list_expense_categories",
-    "rm_create_expense_category",
-    "rm_delete_expense_category",
-    "rm_list_tags",
-    "rm_create_tag",
-    "rm_delete_tag",
-    "rm_list_custom_fields",
-    "rm_get_custom_field",
-    "rm_create_custom_field",
-    "rm_update_custom_field",
-    "rm_delete_custom_field",
-    "rm_list_custom_field_values",
-    "rm_set_custom_field_values",
-    "rm_list_approvals",
-    "rm_create_approval",
-    "rm_delete_approval",
-    "rm_list_status_options",
-    "rm_get_user_statuses",
-    "rm_set_user_status",
-    "rm_list_placeholder_resources",
-    "rm_create_placeholder_resource",
-    "rm_delete_placeholder_resource",
-    "rm_get_report_rows",
-    "rm_get_report_totals",
-    "rm_list_webhooks",
-    "rm_create_webhook",
-    "rm_delete_webhook",
-}
-
-_PROFILES = {
-    "time": _TIME_TOOLS,
-    "projects": _PROJECTS_TOOLS,
-    "admin": _ADMIN_TOOLS,
-}
-
-_BULK_DESTRUCTIVE_TOOLS = {"rm_bulk_delete_time_entries", "rm_bulk_delete_assignments"}
+_VALID_PROFILES = {"full", "time", "projects", "admin", "readonly"}
+_BULK_DESTRUCTIVE_TOOLS = {"time_bulk_delete_time_entries", "projects_bulk_delete_assignments"}
 
 
 def create_server(
@@ -484,10 +290,10 @@ def create_server(
 ) -> FastMCP:
     """Factory creating the composed root FastMCP gateway.
 
-    Mounts domain sub-servers (time, projects, admin) and enforces:
+    Mounts domain sub-servers (time, projects, admin) with namespaces and enforces:
     - Hierarchical middleware (ParentAuditMiddleware, ReadOnlyGateMiddleware)
-    - Tool annotations (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
-    - Profile filtering (full, time, projects, admin, readonly)
+    - Native tool annotations (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
+    - Profile filtering via selective mounting (full, time, projects, admin, readonly)
     - Read-only filtering (SMARTSHEET_RM_READONLY=1)
     - Bulk-destructive gating (SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1)
     - Opt-in tool search (RegexSearchTransform)
@@ -495,7 +301,7 @@ def create_server(
     raw_profile = profile or os.environ.get("SMARTSHEET_RM_PROFILE") or settings.PROFILE
     active_profile = raw_profile.lower()
 
-    if active_profile != "full" and active_profile not in _PROFILES and active_profile != "readonly":
+    if active_profile not in _VALID_PROFILES:
         raise ValueError(
             f"Unknown SMARTSHEET_RM_PROFILE {raw_profile!r}. Valid: time, projects, admin, full, readonly."
         )
@@ -534,39 +340,20 @@ def create_server(
     root.add_middleware(ParentAuditMiddleware())
     root.add_middleware(ReadOnlyGateMiddleware())
 
-    # 2. Server Composition via mount(subserver)
-    time_sub = create_time_server()
-    projects_sub = create_projects_server()
-    admin_sub = create_admin_server()
-
-    root.mount(time_sub)
-    root.mount(projects_sub)
-    root.mount(admin_sub)
+    # 2. Server Composition via selective mount(subserver, namespace=...)
+    if active_profile in ("full", "time", "readonly"):
+        root.mount(create_time_server(), namespace="time")
+    if active_profile in ("full", "projects", "readonly"):
+        root.mount(create_projects_server(), namespace="projects")
+    if active_profile in ("full", "admin", "readonly"):
+        root.mount(create_admin_server(), namespace="admin")
 
     # Compatibility bridge
     root.streamable_http_app = _streamable_http_app.__get__(root, FastMCP)  # type: ignore[attr-defined]
     tool_mgr = _ToolManagerCompat(root)
     root._tool_manager = tool_mgr  # type: ignore[attr-defined]
 
-    # 3. Apply Tool Annotations
-    for tool_name, tool_obj in tool_mgr._tools.items():
-        if tool_name in _DESTRUCTIVE_NAMES:
-            tool_obj.annotations = _DESTRUCTIVE
-        elif tool_name in _IDEMPOTENT_NAMES:
-            tool_obj.annotations = _IDEMPOTENT
-        elif tool_name in _RO_NAMES or any(tool_name.startswith(p) for p in _RO_PREFIXES):
-            tool_obj.annotations = _READ_ONLY
-        else:
-            tool_obj.annotations = _WRITE_SAFE
-
-    # 4. Profile Filtering
-    if active_profile in _PROFILES:
-        allowed = _PROFILES[active_profile]
-        to_remove = [name for name in list(tool_mgr._tools.keys()) if name not in allowed]
-        for name in to_remove:
-            tool_mgr.remove_tool(name)
-
-    # 5. Read-Only Filtering
+    # 3. Read-Only Filtering
     if active_readonly:
         ro_remove = [
             name
@@ -576,13 +363,13 @@ def create_server(
         for name in ro_remove:
             tool_mgr.remove_tool(name)
 
-    # 6. Bulk-Destructive Gating
+    # 4. Bulk-Destructive Gating
     if not active_allow_bulk:
         for name in _BULK_DESTRUCTIVE_TOOLS:
             if name in tool_mgr._tools:
                 tool_mgr.remove_tool(name)
 
-    # 7. Opt-In Dynamic Tool Search Transform
+    # 5. Opt-In Dynamic Tool Search Transform
     if active_tool_search:
         from fastmcp.server.transforms.search import RegexSearchTransform
 

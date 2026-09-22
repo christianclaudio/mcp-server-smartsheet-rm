@@ -9,6 +9,10 @@ from typing import Any
 from fastmcp import FastMCP
 
 from smartsheet_rm_mcp.common import (
+    ANNOTATION_DESTRUCTIVE,
+    ANNOTATION_IDEMPOTENT,
+    ANNOTATION_READ_ONLY,
+    ANNOTATION_WRITE_SAFE,
     _destructive_gate,
     _invalid_request,
     get_client,
@@ -422,22 +426,38 @@ def timesheet_reconciliation(user_id: str, week_start_date: str) -> str:
 4. If balanced, approve using rm_update_time_approval_status or prompt for confirmation."""
 
 
-_TOOLS = [
-    rm_list_time_entries,
-    rm_get_time_entry,
-    rm_create_time_entry,
-    rm_update_time_entry,
-    rm_delete_time_entry,
-    rm_list_user_suggestions,
-    rm_update_time_approval_status,
-    rm_lock_timesheet,
-    rm_fill_weekly_timesheet,
-    rm_confirm_suggested_hours,
-    rm_reconcile_and_submit_week,
-    rm_bulk_delete_time_entries,
-    rm_list_approvals,
-    rm_create_approval,
-    rm_delete_approval,
+list_time_entries = rm_list_time_entries
+get_time_entry = rm_get_time_entry
+create_time_entry = rm_create_time_entry
+update_time_entry = rm_update_time_entry
+delete_time_entry = rm_delete_time_entry
+list_user_suggestions = rm_list_user_suggestions
+update_time_approval_status = rm_update_time_approval_status
+lock_timesheet = rm_lock_timesheet
+fill_weekly_timesheet = rm_fill_weekly_timesheet
+confirm_suggested_hours = rm_confirm_suggested_hours
+reconcile_and_submit_week = rm_reconcile_and_submit_week
+bulk_delete_time_entries = rm_bulk_delete_time_entries
+list_approvals = rm_list_approvals
+create_approval = rm_create_approval
+delete_approval = rm_delete_approval
+
+_TIME_TOOLS_CONFIG = [
+    ("list_time_entries", rm_list_time_entries, ANNOTATION_READ_ONLY),
+    ("get_time_entry", rm_get_time_entry, ANNOTATION_READ_ONLY),
+    ("create_time_entry", rm_create_time_entry, ANNOTATION_WRITE_SAFE),
+    ("update_time_entry", rm_update_time_entry, ANNOTATION_WRITE_SAFE),
+    ("delete_time_entry", rm_delete_time_entry, ANNOTATION_DESTRUCTIVE),
+    ("list_user_suggestions", rm_list_user_suggestions, ANNOTATION_READ_ONLY),
+    ("update_time_approval_status", rm_update_time_approval_status, ANNOTATION_IDEMPOTENT),
+    ("lock_timesheet", rm_lock_timesheet, ANNOTATION_IDEMPOTENT),
+    ("fill_weekly_timesheet", rm_fill_weekly_timesheet, ANNOTATION_WRITE_SAFE),
+    ("confirm_suggested_hours", rm_confirm_suggested_hours, ANNOTATION_WRITE_SAFE),
+    ("reconcile_and_submit_week", rm_reconcile_and_submit_week, ANNOTATION_WRITE_SAFE),
+    ("bulk_delete_time_entries", rm_bulk_delete_time_entries, ANNOTATION_DESTRUCTIVE),
+    ("list_approvals", rm_list_approvals, ANNOTATION_READ_ONLY),
+    ("create_approval", rm_create_approval, ANNOTATION_WRITE_SAFE),
+    ("delete_approval", rm_delete_approval, ANNOTATION_DESTRUCTIVE),
 ]
 
 
@@ -445,8 +465,8 @@ def create_time_server() -> FastMCP:
     """Construct a fresh smartsheet-rm-time domain sub-server instance."""
     server = FastMCP("smartsheet-rm-time")
     server.add_middleware(TimeDomainGuardMiddleware())
-    for tool_fn in _TOOLS:
-        server.tool()(tool_fn)
+    for name, tool_fn, tool_annotations in _TIME_TOOLS_CONFIG:
+        server.tool(name=name, annotations=tool_annotations)(tool_fn)
     server.prompt()(timesheet_reconciliation)
     return server
 

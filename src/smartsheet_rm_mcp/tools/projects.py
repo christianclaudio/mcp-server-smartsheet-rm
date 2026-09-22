@@ -8,6 +8,9 @@ from typing import Any
 from fastmcp import FastMCP
 
 from smartsheet_rm_mcp.common import (
+    ANNOTATION_DESTRUCTIVE,
+    ANNOTATION_READ_ONLY,
+    ANNOTATION_WRITE_SAFE,
     _destructive_gate,
     _invalid_request,
     get_client,
@@ -548,32 +551,58 @@ def project_staffing_plan(project_id: str) -> str:
 3. Identify potential over-allocations or scheduling bottlenecks across disciplines."""
 
 
-_TOOLS = [
-    rm_list_projects,
-    rm_get_project,
-    rm_create_project,
-    rm_update_project,
-    rm_delete_project,
-    rm_list_project_users,
-    rm_list_project_phases,
-    rm_get_project_phase,
-    rm_create_project_phase,
-    rm_update_project_phase,
-    rm_delete_project_phase,
-    rm_list_assignments,
-    rm_get_assignment,
-    rm_create_assignment,
-    rm_update_assignment,
-    rm_delete_assignment,
-    rm_clone_project_schedule,
-    rm_bulk_delete_assignments,
-    rm_list_status_options,
-    rm_list_placeholder_resources,
-    rm_create_placeholder_resource,
-    rm_delete_placeholder_resource,
-    rm_list_assignment_subtasks,
-    rm_create_assignment_subtask,
-    rm_delete_assignment_subtask,
+list_projects = rm_list_projects
+get_project = rm_get_project
+create_project = rm_create_project
+update_project = rm_update_project
+delete_project = rm_delete_project
+list_project_users = rm_list_project_users
+list_project_phases = rm_list_project_phases
+get_project_phase = rm_get_project_phase
+create_project_phase = rm_create_project_phase
+update_project_phase = rm_update_project_phase
+delete_project_phase = rm_delete_project_phase
+list_assignments = rm_list_assignments
+get_assignment = rm_get_assignment
+create_assignment = rm_create_assignment
+update_assignment = rm_update_assignment
+delete_assignment = rm_delete_assignment
+clone_project_schedule = rm_clone_project_schedule
+bulk_delete_assignments = rm_bulk_delete_assignments
+list_status_options = rm_list_status_options
+list_placeholder_resources = rm_list_placeholder_resources
+create_placeholder_resource = rm_create_placeholder_resource
+delete_placeholder_resource = rm_delete_placeholder_resource
+list_assignment_subtasks = rm_list_assignment_subtasks
+create_assignment_subtask = rm_create_assignment_subtask
+delete_assignment_subtask = rm_delete_assignment_subtask
+
+_PROJECTS_TOOLS_CONFIG = [
+    ("list_projects", rm_list_projects, ANNOTATION_READ_ONLY),
+    ("get_project", rm_get_project, ANNOTATION_READ_ONLY),
+    ("create_project", rm_create_project, ANNOTATION_WRITE_SAFE),
+    ("update_project", rm_update_project, ANNOTATION_WRITE_SAFE),
+    ("delete_project", rm_delete_project, ANNOTATION_DESTRUCTIVE),
+    ("list_project_users", rm_list_project_users, ANNOTATION_READ_ONLY),
+    ("list_project_phases", rm_list_project_phases, ANNOTATION_READ_ONLY),
+    ("get_project_phase", rm_get_project_phase, ANNOTATION_READ_ONLY),
+    ("create_project_phase", rm_create_project_phase, ANNOTATION_WRITE_SAFE),
+    ("update_project_phase", rm_update_project_phase, ANNOTATION_WRITE_SAFE),
+    ("delete_project_phase", rm_delete_project_phase, ANNOTATION_DESTRUCTIVE),
+    ("list_assignments", rm_list_assignments, ANNOTATION_READ_ONLY),
+    ("get_assignment", rm_get_assignment, ANNOTATION_READ_ONLY),
+    ("create_assignment", rm_create_assignment, ANNOTATION_WRITE_SAFE),
+    ("update_assignment", rm_update_assignment, ANNOTATION_WRITE_SAFE),
+    ("delete_assignment", rm_delete_assignment, ANNOTATION_DESTRUCTIVE),
+    ("clone_project_schedule", rm_clone_project_schedule, ANNOTATION_WRITE_SAFE),
+    ("bulk_delete_assignments", rm_bulk_delete_assignments, ANNOTATION_DESTRUCTIVE),
+    ("list_status_options", rm_list_status_options, ANNOTATION_READ_ONLY),
+    ("list_placeholder_resources", rm_list_placeholder_resources, ANNOTATION_READ_ONLY),
+    ("create_placeholder_resource", rm_create_placeholder_resource, ANNOTATION_WRITE_SAFE),
+    ("delete_placeholder_resource", rm_delete_placeholder_resource, ANNOTATION_DESTRUCTIVE),
+    ("list_assignment_subtasks", rm_list_assignment_subtasks, ANNOTATION_READ_ONLY),
+    ("create_assignment_subtask", rm_create_assignment_subtask, ANNOTATION_WRITE_SAFE),
+    ("delete_assignment_subtask", rm_delete_assignment_subtask, ANNOTATION_DESTRUCTIVE),
 ]
 
 
@@ -581,8 +610,8 @@ def create_projects_server() -> FastMCP:
     """Construct a fresh smartsheet-rm-projects domain sub-server instance."""
     server = FastMCP("smartsheet-rm-projects")
     server.add_middleware(ProjectsDomainGuardMiddleware())
-    for tool_fn in _TOOLS:
-        server.tool()(tool_fn)
+    for name, tool_fn, tool_annotations in _PROJECTS_TOOLS_CONFIG:
+        server.tool(name=name, annotations=tool_annotations)(tool_fn)
     server.prompt()(project_staffing_plan)
     return server
 

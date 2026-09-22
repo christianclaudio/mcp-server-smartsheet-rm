@@ -11,8 +11,35 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from mcp.types import ToolAnnotations
+
 from smartsheet_rm_mcp.client import DEFAULT_BASE_URL, SmartsheetRMClient
 from smartsheet_rm_mcp.errors import SmartsheetRMAPIError, redact_secrets
+
+ANNOTATION_READ_ONLY = ToolAnnotations(
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=False,
+    open_world_hint=False,
+)
+ANNOTATION_DESTRUCTIVE = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=False,
+    open_world_hint=False,
+)
+ANNOTATION_IDEMPOTENT = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
+)
+ANNOTATION_WRITE_SAFE = ToolAnnotations(
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=False,
+    open_world_hint=False,
+)
 
 logger = logging.getLogger("smartsheet_rm_mcp")
 
@@ -109,6 +136,9 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
             raise ValueError("SMARTSHEET_RM_API_TOKEN environment variable or request 'auth' header must be set")
         _client = SmartsheetRMClient(token, base_url)
     return _client
+
+
+get_rm_client = get_client
 
 
 def rm_tool(fn: Callable[..., Any]) -> Callable[..., Any]:

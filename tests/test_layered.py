@@ -27,27 +27,27 @@ async def test_create_server_profiles() -> None:
     tools_full = await full_server.list_tools()
     assert len(tools_full) == 98
     names = {t.name for t in tools_full}
-    assert "rm_list_time_entries" in names
-    assert "rm_list_projects" in names
-    assert "rm_list_users" in names
+    assert "time_list_time_entries" in names
+    assert "projects_list_projects" in names
+    assert "admin_list_users" in names
 
     # 2. Time profile
     time_srv = create_server(profile="time")
     tools_time = await time_srv.list_tools()
-    assert len(tools_time) == 20
-    assert "rm_list_time_entries" in {t.name for t in tools_time}
+    assert len(tools_time) == 14
+    assert "time_list_time_entries" in {t.name for t in tools_time}
 
     # 3. Projects profile
     proj_srv = create_server(profile="projects")
     tools_proj = await proj_srv.list_tools()
     assert len(tools_proj) == 24
-    assert "rm_list_projects" in {t.name for t in tools_proj}
+    assert "projects_list_projects" in {t.name for t in tools_proj}
 
     # 4. Admin profile
     admin_srv = create_server(profile="admin")
     tools_admin = await admin_srv.list_tools()
-    assert len(tools_admin) == 65
-    assert "rm_list_users" in {t.name for t in tools_admin}
+    assert len(tools_admin) == 60
+    assert "admin_list_users" in {t.name for t in tools_admin}
 
     # 5. Readonly profile
     ro_srv = create_server(profile="readonly")

@@ -120,12 +120,12 @@ def main() -> int:
     check("unannotated tools", base["unannotated"], 0)
     check(
         "bulk_delete_time absent by default",
-        "rm_bulk_delete_time_entries" in base["names"],
+        "time_bulk_delete_time_entries" in base["names"],
         False,
     )
     check(
         "bulk_delete_assignments absent by default",
-        "rm_bulk_delete_assignments" in base["names"],
+        "projects_bulk_delete_assignments" in base["names"],
         False,
     )
 
@@ -134,12 +134,12 @@ def main() -> int:
     check("total tools", bulk["total"], EXPECTED_WITH_BULK)
     check(
         "bulk_delete_time present with opt-in",
-        "rm_bulk_delete_time_entries" in bulk["names"],
+        "time_bulk_delete_time_entries" in bulk["names"],
         True,
     )
     check(
         "bulk_delete_assignments present with opt-in",
-        "rm_bulk_delete_assignments" in bulk["names"],
+        "projects_bulk_delete_assignments" in bulk["names"],
         True,
     )
 
@@ -149,7 +149,7 @@ def main() -> int:
     check("every tool is read-only", ro["all_read_only"], True)
     check(
         "bulk_delete_time absent from readonly",
-        "rm_bulk_delete_time_entries" in ro["names"],
+        "time_bulk_delete_time_entries" in ro["names"],
         False,
     )
 
@@ -158,12 +158,12 @@ def main() -> int:
     check("combined: every tool is read-only", combined["all_read_only"], True)
     check(
         "combined: bulk_delete_time absent",
-        "rm_bulk_delete_time_entries" in combined["names"],
+        "time_bulk_delete_time_entries" in combined["names"],
         False,
     )
     check(
         "combined: bulk_delete_assignments absent",
-        "rm_bulk_delete_assignments" in combined["names"],
+        "projects_bulk_delete_assignments" in combined["names"],
         False,
     )
 

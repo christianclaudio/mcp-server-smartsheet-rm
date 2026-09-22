@@ -12,24 +12,24 @@ This skill provides expert instructions, architectural workflows, and safety pro
 ## 🎯 Core Agent Workflows
 
 ### 1. Weekly Timesheet Filling & Auto-Suggestions Workflow
-- **Step 1: Discover Active Assignments** — Call `rm_list_assignments(user_id=..., from_date="YYYY-MM-DD", to_date="YYYY-MM-DD")` to discover active projects and phases.
-- **Step 2: Inspect Scheduled Suggestions** — Call `rm_list_user_suggestions(user_id=..., from_date="YYYY-MM-DD", to_date="YYYY-MM-DD")` to preview scheduled hours vs logged time.
-- **Step 3: Auto-Confirm or Batch Log** — Use `rm_confirm_suggested_hours(user_id=..., from_date=..., to_date=...)` to convert schedule suggestions into confirmed time entries, or `rm_fill_weekly_timesheet(user_id=..., start_date="YYYY-MM-DD", daily_hours=8.0)` to log 8h/day (Mon–Fri) across project assignments in 1 call.
+- **Step 1: Discover Active Assignments** — Call `projects_list_assignments(user_id=..., from_date="YYYY-MM-DD", to_date="YYYY-MM-DD")` to discover active projects and phases.
+- **Step 2: Inspect Scheduled Suggestions** — Call `time_list_user_suggestions(user_id=..., from_date="YYYY-MM-DD", to_date="YYYY-MM-DD")` to preview scheduled hours vs logged time.
+- **Step 3: Auto-Confirm or Batch Log** — Use `time_confirm_suggested_hours(user_id=..., from_date=..., to_date=...)` to convert schedule suggestions into confirmed time entries, or `time_fill_weekly_timesheet(user_id=..., start_date="YYYY-MM-DD", daily_hours=8.0)` to log 8h/day (Mon–Fri) across project assignments in 1 call.
 
 ### 2. Timesheet Reconciliation, Approvals & Month-End Lock
-- **Step 1: Audit Capacity Variance** — Call `rm_reconcile_and_submit_week(user_id=..., start_date="YYYY-MM-DD", target_hours=40.0, auto_submit=False)` to check logged hours against the 40-hour standard baseline.
-- **Step 2: Manager Approvals** — Call `rm_update_time_approval_status(user_id=..., entry_ids=[...], status="approved", approver_notes="Approved weekly time")`.
-- **Step 3: Lock Timesheets** — Use `rm_lock_timesheet(user_id=..., lock_date="YYYY-MM-DD", unlock=False)` to prevent retroactive edits after billing closes.
+- **Step 1: Audit Capacity Variance** — Call `time_reconcile_and_submit_week(user_id=..., start_date="YYYY-MM-DD", target_hours=40.0, auto_submit=False)` to check logged hours against the 40-hour standard baseline.
+- **Step 2: Manager Approvals** — Call `time_update_time_approval_status(user_id=..., entry_ids=[...], status="approved", approver_notes="Approved weekly time")`.
+- **Step 3: Lock Timesheets** — Use `time_lock_timesheet(user_id=..., lock_date="YYYY-MM-DD", unlock=False)` to prevent retroactive edits after billing closes.
 
 ### 3. Project Staffing, Phases & Schedule Cloning
-- **Template Duplication** — Call `rm_clone_project_schedule(source_project_id=..., target_project_name="Client Rollout", new_start_date="YYYY-MM-DD")` to duplicate project budget settings, phase milestones, and staffing allocations in 1 call.
-- **Phase Milestones** — Create and maintain project milestones with `rm_create_project_phase` and `rm_update_project_phase`.
-- **Resource Allocation** — Assign users to phases using `rm_create_assignment` with `allocation_mode="percent"` or `hours_per_day`.
+- **Template Duplication** — Call `projects_clone_project_schedule(source_project_id=..., target_project_name="Client Rollout", new_start_date="YYYY-MM-DD")` to duplicate project budget settings, phase milestones, and staffing allocations in 1 call.
+- **Phase Milestones** — Create and maintain project milestones with `projects_create_project_phase` and `projects_update_project_phase`.
+- **Resource Allocation** — Assign users to phases using `projects_create_assignment` with `allocation_mode="percent"` or `hours_per_day`.
 
 ### 4. Capacity Planning & Utilization Analysis
-- **Availability Matrix** — Query scheduled vs available capacity via `rm_get_user_availability(user_id=..., from_date="YYYY-MM-DD", to_date="YYYY-MM-DD")`.
-- **Billable Utilization** — Query billable vs non-billable utilization percentages with `rm_get_user_utilization(user_id=..., from_date="YYYY-MM-DD", to_date="YYYY-MM-DD")`.
-- **Role & Discipline Scaling** — Manage staffing tiers with `rm_list_roles`, `rm_list_disciplines`, and `rm_create_user_bill_rate`.
+- **Availability Matrix** — Query scheduled vs available capacity via `admin_get_user_availability(user_id=..., from_date="YYYY-MM-DD", to_date="YYYY-MM-DD")`.
+- **Billable Utilization** — Query billable vs non-billable utilization percentages with `admin_get_user_utilization(user_id=..., from_date="YYYY-MM-DD", to_date="YYYY-MM-DD")`.
+- **Role & Discipline Scaling** — Manage staffing tiers with `admin_list_roles`, `admin_list_disciplines`, and `admin_create_user_bill_rate`.
 
 ---
 
@@ -37,19 +37,19 @@ This skill provides expert instructions, architectural workflows, and safety pro
 
 1. **Confirmation Gating on Destructive Tools**:
    All destructive deletion tools **MUST** explicitly receive `confirm=True` to execute. Calls with `confirm=False` (default) are automatically rejected:
-   - `rm_delete_time_entry`
-   - `rm_delete_project`, `rm_delete_project_phase`
-   - `rm_delete_assignment`
-   - `rm_delete_user`, `rm_delete_role`, `rm_delete_discipline`
-   - `rm_delete_client`, `rm_delete_client_contact`
-   - `rm_delete_leave_type`, `rm_delete_holiday`
-   - `rm_delete_expense`, `rm_delete_expense_category`
-   - `rm_delete_tag`, `rm_delete_custom_field`
-   - `rm_delete_approval`, `rm_delete_placeholder_resource`
-   - `rm_delete_assignment_subtask`, `rm_delete_webhook`
+   - `time_delete_time_entry`
+   - `projects_delete_project`, `projects_delete_project_phase`
+   - `projects_delete_assignment`
+   - `admin_delete_user`, `admin_delete_role`, `admin_delete_discipline`
+   - `admin_delete_client`, `admin_delete_client_contact`
+   - `admin_delete_leave_type`, `admin_delete_holiday`
+   - `admin_delete_expense`, `admin_delete_expense_category`
+   - `admin_delete_tag`, `admin_delete_custom_field`
+   - `time_delete_approval`, `projects_delete_placeholder_resource`
+   - `projects_delete_assignment_subtask`, `admin_delete_webhook`
 
 2. **Bulk-Destructive Safety Gating**:
-   `rm_bulk_delete_time_entries` and `rm_bulk_delete_assignments` require **both**:
+   `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` require **both**:
    - Environment variable `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1` set at server startup
    - Parameter `confirm=True` on invocation
 
@@ -58,9 +58,9 @@ This skill provides expert instructions, architectural workflows, and safety pro
 
 4. **Profile & Dynamic Discovery Selection**:
    Minimize token context in LLM prompts by setting `SMARTSHEET_RM_PROFILE` or `--profile`:
-   - `time`: Time tracking, PTO, suggestions, approvals, and timesheet recipes (20 tools).
-   - `projects`: Projects, phases, milestones, assignments, and schedule cloning (24 tools).
-   - `admin`: Users, roles, disciplines, clients, expenses, tags, custom fields (65 tools).
+   - `time`: Time tracking, PTO, suggestions, approvals, and timesheet recipes (14 tools, 15 with bulk).
+   - `projects`: Projects, phases, milestones, assignments, and schedule cloning (24 tools, 25 with bulk).
+   - `admin`: Users, roles, disciplines, clients, expenses, tags, custom fields (60 tools).
    - `readonly`: Pure read-only inspection queries across all domains (39 tools).
    - `full`: Complete catalog (98 default tools, 100 with bulk deletion opt-in).
 
@@ -71,30 +71,30 @@ This skill provides expert instructions, architectural workflows, and safety pro
 ## 📚 Resources & Guided Prompts
 
 ### Resources
-- `rm://capabilities` — Full documentation of server metadata, supported domains, authentication, and base URL.
-- `rm://quickstart` — Quickstart reference guide and common orchestration recipes.
+- `rm://admin/capabilities` — Full documentation of server metadata, supported domains, authentication, and base URL.
+- `rm://admin/quickstart` — Quickstart reference guide and common orchestration recipes.
 
 ### Prompts
-- `timesheet_reconciliation(user_id=..., week_start_date=...)` — Step-by-step assistant guide for auditing and balancing weekly logged time against 40-hour capacity targets.
-- `project_staffing_plan(project_id=...)` — Checklist for analyzing project phases, allocations, and discipline bottlenecks.
+- `time_timesheet_reconciliation(user_id=..., week_start_date=...)` — Step-by-step assistant guide for auditing and balancing weekly logged time against 40-hour capacity targets.
+- `projects_project_staffing_plan(project_id=...)` — Checklist for analyzing project phases, allocations, and discipline bottlenecks.
 
 ---
 
 ## 🏗️ FastMCP 4 Architecture & Server Composition
 
-The server is engineered as a modular, layered FastMCP 4 composition with domain sub-servers mounted onto a root FastMCP gateway:
+The server is engineered as a modular, layered FastMCP 4 composition with domain sub-servers mounted onto a root FastMCP gateway with native domain namespaces:
 
 ```
 FastMCP Gateway (create_server)
 ├── Global Middleware Pipeline
 │   ├── ParentAuditMiddleware (timing, structured JSON logging, secret scrubbing)
 │   └── ReadOnlyGateMiddleware (fail-closed write protection when READONLY=1)
-├── Mounted Domain Sub-Servers
-│   ├── Time Sub-Server (tools/time.py, 15 tools + timesheet_reconciliation prompt)
+├── Mounted Domain Sub-Servers (Selective Namespace Mounting)
+│   ├── Time Sub-Server (tools/time.py, namespace="time", 14 tools + time_timesheet_reconciliation prompt)
 │   │   └── TimeDomainGuardMiddleware (hours range & sanity validation)
-│   ├── Projects Sub-Server (tools/projects.py, 25 tools + project_staffing_plan prompt)
+│   ├── Projects Sub-Server (tools/projects.py, namespace="projects", 24 tools + projects_project_staffing_plan prompt)
 │   │   └── ProjectsDomainGuardMiddleware (non-empty naming validation)
-│   └── Admin Sub-Server (tools/admin.py, 60 tools + rm://capabilities, rm://quickstart resources)
+│   └── Admin Sub-Server (tools/admin.py, namespace="admin", 60 tools + rm://admin/* resources)
 │       └── AdminDomainGuardMiddleware (pagination batch cap validation)
 └── Configuration & Safety Filtering
     ├── SmartsheetRMSettings (Pydantic BaseSettings binding SMARTSHEET_RM_*)
@@ -111,5 +111,5 @@ FastMCP Gateway (create_server)
 | **Common** | `@rm_tool` & `get_client` (`common.py`) | Standardized execution wrapper, client caching, and fail-closed secret redaction. |
 | **Middleware** | `ParentAuditMiddleware`, `ReadOnlyGateMiddleware`, Guards (`middleware.py`) | Hierarchical invocation logging, read-only gating, and domain argument validation. |
 | **Domain Tools** | `time.py`, `projects.py`, `admin.py` (`tools/`) | Autonomous domain sub-servers with dedicated tools, prompts, and resources. |
-| **Root Gateway** | `create_server()` (`server.py`) | Factory composing sub-servers, applying annotations, profile filters, and search transforms. |
+| **Root Gateway** | `create_server()` (`server.py`) | Factory composing sub-servers via `mount(..., namespace="...")`, applying annotations, profile filters, and search transforms. |
 
