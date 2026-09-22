@@ -115,6 +115,7 @@ class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
     """Async HTTP transport enforcing DNS destination validation at request connection time."""
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        """Validate destination hostname via worker thread before dispatching HTTP request."""
         hostname = request.url.host
         if hostname:
             try:
