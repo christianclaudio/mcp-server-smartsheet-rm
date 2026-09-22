@@ -175,10 +175,12 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
         yield {"client": _client}
     finally:
         logger.info("Shutting down Smartsheet RM MCP resources")
-        if _client is not None and hasattr(_client, "close"):
-            res = _client.close()
-            if inspect.isawaitable(res):
-                await res
+        if _client is not None:
+            closer = getattr(_client, "close", None) or getattr(_client, "aclose", None)
+            if closer is not None:
+                res = closer()
+                if inspect.isawaitable(res):
+                    await res
         for c in list(_HEADER_CLIENT_CACHE.values()):
             if hasattr(c, "close"):
                 res = c.close()

@@ -80,7 +80,10 @@ class ParentAuditMiddleware(Middleware):
             sanitized_msg = redact_secrets(str(exc))
             logger.error("✗ MCP Request failed: %s in %.2fms: %s", target, duration_ms, sanitized_msg)
             if str(exc) != sanitized_msg:
-                sanitized_exc = type(exc)(sanitized_msg)
+                try:
+                    sanitized_exc: Exception = type(exc)(sanitized_msg)
+                except Exception:
+                    sanitized_exc = RuntimeError(sanitized_msg)
                 sanitized_exc.__traceback__ = exc.__traceback__
                 raise sanitized_exc from None
             raise

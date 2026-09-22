@@ -883,10 +883,10 @@ def rm_quickstart_resource() -> str:
     return """# Smartsheet Resource Management (10,000ft) MCP Quickstart
 
 ## Essential Workflows:
-1. **Timesheet Reconciliation**: Run `rm_reconcile_and_submit_week(user_id=123, start_date='2026-08-10')`.
-2. **Weekly Time Filling**: Batch-fill working days via `rm_fill_weekly_timesheet(user_id=123, start_date='2026-08-10', daily_hours=8.0)`.
-3. **Project Schedule Cloning**: Duplicate templates with `rm_clone_project_schedule(source_project_id=456, target_project_name='Client X Rollout')`.
-4. **Capacity Planning**: Inspect capacity with `rm_get_user_availability(user_id=123, from_date='2026-08-01', to_date='2026-08-31')`.
+1. **Timesheet Reconciliation**: Run `time_reconcile_and_submit_week(user_id=123, start_date='2026-08-10')`.
+2. **Weekly Time Filling**: Batch-fill working days via `time_fill_weekly_timesheet(user_id=123, start_date='2026-08-10', daily_hours=8.0)`.
+3. **Project Schedule Cloning**: Duplicate templates with `projects_clone_project_schedule(source_project_id=456, target_project_name='Client X Rollout')`.
+4. **Capacity Planning**: Inspect capacity with `admin_get_user_availability(user_id=123, from_date='2026-08-01', to_date='2026-08-31')`.
 """
 
 

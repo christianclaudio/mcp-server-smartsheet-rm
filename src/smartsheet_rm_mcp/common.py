@@ -106,7 +106,9 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
     global _client
     srv = sys.modules.get("smartsheet_rm_mcp.server")
     if srv is not None and hasattr(srv, "_client"):
-        _client = srv._client
+        injected = getattr(srv, "_client")
+        if injected is not _client:
+            _client = injected
 
     raw_headers: dict[str, Any] = {}
     if ctx is not None:
@@ -145,6 +147,8 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
         if not token:
             raise ValueError("SMARTSHEET_RM_API_TOKEN environment variable or request 'auth' header must be set")
         _client = SmartsheetRMClient(token, base_url)
+        if srv is not None and hasattr(srv, "_client"):
+            setattr(srv, "_client", _client)
     return _client
 
 

@@ -708,12 +708,15 @@ def test_resources_and_prompts() -> None:
 
     quick = srv.rm_quickstart_resource()
     assert "Timesheet Reconciliation" in quick
+    assert "time_reconcile_and_submit_week" in quick
 
     p1 = srv.timesheet_reconciliation("123", "2026-08-10")
     assert "user ID 123" in p1
+    assert "time_list_time_entries" in p1
 
     p2 = srv.project_staffing_plan("456")
     assert "project ID 456" in p2
+    assert "projects_get_project" in p2
 
 
 def test_main_cli_argparsing(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:

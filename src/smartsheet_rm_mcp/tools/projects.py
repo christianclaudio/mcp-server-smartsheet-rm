@@ -546,8 +546,8 @@ async def rm_delete_assignment_subtask(
 def project_staffing_plan(project_id: str) -> str:
     """Analyze resource assignments and phase timelines for a project."""
     return f"""Evaluate resource assignments and capacity for project ID {project_id}.
-1. Fetch project details and phases with rm_get_project and rm_list_project_phases.
-2. List scheduled assignments using rm_list_assignments(project_id={project_id}).
+1. Fetch project details and phases with projects_get_project and projects_list_project_phases.
+2. List scheduled assignments using projects_list_assignments(project_id={project_id}).
 3. Identify potential over-allocations or scheduling bottlenecks across disciplines."""
 
 

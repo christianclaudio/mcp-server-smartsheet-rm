@@ -83,7 +83,7 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
 - FastMCP 4 Server Composition:
   - Root gateway in `server.py` selectively mounts domain sub-servers with native domain namespaces (`namespace="time"`, `namespace="projects"`, `namespace="admin"`).
   - Profile filtering (`SMARTSHEET_RM_PROFILE`: `time`, `projects`, `admin`, `full`, `readonly`) is achieved via selective mounting at composition time.
-  - Read-only gating (`SMARTSHEET_RM_READONLY=1` or `--readonly`) enforces fail-closed write protection via `ReadOnlyGateMiddleware` and selective tool registration.
+  - Read-only gating (`SMARTSHEET_RM_READONLY=1` or `--profile readonly`) enforces fail-closed write protection via `ReadOnlyGateMiddleware` and selective tool registration.
   - Bulk protection (`SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) controls inclusion of bulk deletion tools (`time_bulk_delete_time_entries`, `projects_bulk_delete_assignments`).
 
 ### 4. Pure Offline Testing & Contract Sync (`tests/`)

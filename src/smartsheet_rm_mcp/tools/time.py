@@ -420,10 +420,10 @@ async def rm_delete_approval(approval_id: int | str, confirm: bool = False) -> s
 def timesheet_reconciliation(user_id: str, week_start_date: str) -> str:
     """Audit and reconcile weekly timesheets against 40-hour capacity target."""
     return f"""Audit timesheets for user ID {user_id} for the week starting {week_start_date}.
-1. Call rm_list_time_entries for user {user_id} with from_date={week_start_date}.
-2. Check for suggestions via rm_list_user_suggestions and unconfirmed entries.
+1. Call time_list_time_entries for user {user_id} with from_date={week_start_date}.
+2. Check for suggestions via time_list_user_suggestions and unconfirmed entries.
 3. Compute total logged hours vs 40-hour target.
-4. If balanced, approve using rm_update_time_approval_status or prompt for confirmation."""
+4. If balanced, approve using time_update_time_approval_status or prompt for confirmation."""
 
 
 list_time_entries = rm_list_time_entries

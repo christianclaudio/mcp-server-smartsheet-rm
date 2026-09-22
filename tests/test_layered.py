@@ -111,6 +111,19 @@ async def test_parent_audit_middleware_error() -> None:
         await mw.on_message(ctx, fake_clean_next)
     assert str(clean_exc.value) == "Plain clean failure"
 
+    # Exception with non-standard constructor falling back to RuntimeError
+    class ComplexCustomError(Exception):
+        def __init__(self, code: int, details: dict[str, str]) -> None:
+            super().__init__(f"code={code}: {details}")
+
+    async def fake_complex_next(_ctx: MiddlewareContext) -> None:
+        raise ComplexCustomError(500, {"token": "Bearer secret-token-nested"})
+
+    with pytest.raises(RuntimeError) as fallback_exc:
+        await mw.on_message(ctx, fake_complex_next)
+    assert "***REDACTED***" in str(fallback_exc.value)
+    assert "secret-token-nested" not in str(fallback_exc.value)
+
 
 @pytest.mark.asyncio
 async def test_read_only_gate_middleware(monkeypatch: pytest.MonkeyPatch) -> None:
