@@ -9,12 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2026-09-21
 
+### Breaking Changes
+- **Domain Tool Namespacing**: Tools are now registered via domain sub-servers mounted with native prefixes (`time_*`, `projects_*`, `admin_*`). Clients invoking legacy `rm_*` tool names (e.g. `rm_list_time_entries`, `rm_get_project`, `rm_list_users`) must update tool calls to their respective namespaced counterparts:
+  - `time_*`: Time entries, user suggestions, approvals, timesheet locking, weekly fills (`time_list_time_entries`, `time_get_time_entry`, etc.).
+  - `projects_*`: Projects, phases, milestones, assignments, placeholders, clone schedules (`projects_list_projects`, `projects_get_project`, etc.).
+  - `admin_*`: Users, roles, clients, bill rates, custom fields, disciplines, tags, expenses, reports (`admin_list_users`, `admin_get_user`, etc.).
+
 ### Added
 - **FastMCP 4 Server Composition**: Modularized root server into dedicated domain sub-servers (`time`, `projects`, `admin`) with root gateway composition via `mount()`.
 - **Hierarchical Middleware Pipeline**: Added `ParentAuditMiddleware` for request timing, structured lifecycle logging, and secret redaction, and `ReadOnlyGateMiddleware` for global mutation gating.
 - **Domain Guardrails**: Added domain middleware (`TimeDomainGuardMiddleware`, `ProjectsDomainGuardMiddleware`, `AdminDomainGuardMiddleware`) validating realistic parameter bounds, non-empty project names, and batch limits.
 - **Dynamic Tool Search Transform**: Added opt-in dynamic regex search transform (`--enable-tool-search` / `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1`) for efficient tool discovery.
 - **Pydantic Settings Management**: Introduced `config.py` with `Settings` model binding `SMARTSHEET_RM_*` environment variables.
+- **SSRF and DNS-Rebinding Mitigations**: Added hostname resolution validation and non-global IP rejection in `common.py`, with optional explicit allowlist via `SMARTSHEET_RM_ALLOWED_HOSTS`.
 - **Layered Composition Tests**: Added comprehensive test suite `tests/test_layered.py` reaching 100.0% statement coverage.
 
 ## [1.1.5] - 2026-09-13

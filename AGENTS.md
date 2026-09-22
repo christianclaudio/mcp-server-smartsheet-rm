@@ -24,6 +24,16 @@ Before designing, implementing, or updating any MCP tool, always consult the off
 | **Model Context Protocol (Official)** | [`https://modelcontextprotocol.io/llms.txt`](https://modelcontextprotocol.io/llms.txt) | Wire protocol spec, Streamable HTTP framing, tool annotations, elicitation |
 | **Smartsheet RM Developer Portal** | [`https://developer.smartsheet.com/10000ft-api/`](https://developer.smartsheet.com/10000ft-api/) | Smartsheet RM (10,000ft) REST API reference, endpoints, schemas, authentication |
 
+### Live Documentation MCP Servers
+Both ecosystems publish live, queryable Documentation MCP servers exposing full search and doc navigation tools:
+
+1. **FastMCP Documentation Server**:
+   - **Endpoint**: `https://gofastmcp.com/mcp` (SSE / Streamable HTTP)
+   - **Tools**: `search_fast_mcp(query)`, `query_docs_filesystem_fast_mcp(path)`, `submit_feedback(...)`
+2. **Anthropic Model Context Protocol Server**:
+   - **Endpoint**: `https://modelcontextprotocol.io/mcp` (SSE / Streamable HTTP)
+   - **Tools**: `search_model_context_protocol(query)`, `query_docs_filesystem_model_context_protocol(path)`, `submit_feedback(...)`
+
 ---
 
 ## 🎯 Project Overview
