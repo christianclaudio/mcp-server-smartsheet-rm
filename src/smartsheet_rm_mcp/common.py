@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
@@ -45,22 +46,23 @@ logger = logging.getLogger("smartsheet_rm_mcp")
 
 _client: SmartsheetRMClient | None = None
 _HEADER_CLIENT_CACHE: dict[tuple[str, str], SmartsheetRMClient] = {}
+_CACHE_LOCK: asyncio.Lock = asyncio.Lock()
 
 
 class StructuredJSONFormatter(logging.Formatter):
     """JSON formatter for enterprise log aggregators (Datadog/CloudWatch/Splunk)."""
 
     def format(self, record: logging.LogRecord) -> str:
-        log_obj: dict[str, Any] = {
+        log_obj: dict[str, str | float | None] = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "name": record.name,
             "message": _redact_secrets(record.getMessage()),
         }
         if hasattr(record, "tool_name"):
-            log_obj["mcp_tool"] = record.tool_name
+            log_obj["mcp_tool"] = str(getattr(record, "tool_name"))
         if hasattr(record, "duration_ms"):
-            log_obj["duration_ms"] = record.duration_ms
+            log_obj["duration_ms"] = float(getattr(record, "duration_ms"))
         if record.exc_info:
             log_obj["exception"] = _redact_secrets(self.formatException(record.exc_info))
         return json.dumps(log_obj)
@@ -133,13 +135,14 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
 
         if req_token:
             cache_key = (req_token, req_base_url)
-            if cache_key not in _HEADER_CLIENT_CACHE:
-                if len(_HEADER_CLIENT_CACHE) >= 100:
-                    oldest_key = next(iter(_HEADER_CLIENT_CACHE))
-                    old_c = _HEADER_CLIENT_CACHE.pop(oldest_key)
-                    await old_c.aclose()
-                _HEADER_CLIENT_CACHE[cache_key] = SmartsheetRMClient(req_token, req_base_url)
-            return _HEADER_CLIENT_CACHE[cache_key]
+            async with _CACHE_LOCK:
+                if cache_key not in _HEADER_CLIENT_CACHE:
+                    if len(_HEADER_CLIENT_CACHE) >= 100:
+                        oldest_key = next(iter(_HEADER_CLIENT_CACHE))
+                        old_c = _HEADER_CLIENT_CACHE.pop(oldest_key)
+                        await old_c.aclose()
+                    _HEADER_CLIENT_CACHE[cache_key] = SmartsheetRMClient(req_token, req_base_url)
+                return _HEADER_CLIENT_CACHE[cache_key]
 
     if _client is None:
         token = os.environ.get("SMARTSHEET_RM_API_TOKEN", "").strip()
@@ -169,10 +172,8 @@ def rm_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
         except SmartsheetRMAPIError as e:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error("Tool failed with API error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms})
-            err = e.to_dict()
-            if isinstance(err.get("detail"), str):
-                err["detail"] = _redact_secrets(err["detail"])
-            return json.dumps({"error": err})
+            err_doc = json.dumps({"error": e.to_dict()})
+            return _redact_secrets(err_doc)
         except Exception as e:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error(
