@@ -123,6 +123,12 @@ def _validate_base_url(url: str) -> str:
     if hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith(".local") or hostname.endswith(".internal"):
         raise ValueError(f"Blocked internal/loopback hostname in base URL: {hostname}")
 
+    allowed_env = os.environ.get("SMARTSHEET_RM_ALLOWED_HOSTS", "").strip()
+    if allowed_env:
+        allowed = {h.strip().lower() for h in allowed_env.split(",") if h.strip()}
+        if hostname not in allowed:
+            raise ValueError(f"Hostname '{hostname}' is not in SMARTSHEET_RM_ALLOWED_HOSTS.")
+
     try:
         ip = ipaddress.ip_address(hostname)
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or not ip.is_global:
@@ -143,14 +149,8 @@ def _validate_base_url(url: str) -> str:
                     or not resolved_ip.is_global
                 ):
                     raise ValueError(f"Blocked hostname '{hostname}' resolving to private/reserved IP: {sockaddr[0]}")
-        except socket.gaierror:
-            pass
-
-    allowed_env = os.environ.get("SMARTSHEET_RM_ALLOWED_HOSTS", "").strip()
-    if allowed_env:
-        allowed = {h.strip().lower() for h in allowed_env.split(",") if h.strip()}
-        if hostname not in allowed:
-            raise ValueError(f"Hostname '{hostname}' is not in SMARTSHEET_RM_ALLOWED_HOSTS.")
+        except socket.gaierror as exc:
+            raise ValueError(f"Could not resolve hostname in base URL: {hostname}") from exc
 
     return url
 
