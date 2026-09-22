@@ -37,18 +37,18 @@ async def test_stdio_jsonrpc_handshake_and_dispatch() -> None:
             # Tool listing
             tools_result = await session.list_tools()
             tool_names = {t.name for t in tools_result.tools}
-            assert "rm_list_time_entries" in tool_names
-            assert "rm_list_projects" in tool_names
+            assert "time_list_time_entries" in tool_names
+            assert "projects_list_projects" in tool_names
 
             # Resource listing
             resources_result = await session.list_resources()
             resource_uris = {str(r.uri) for r in resources_result.resources}
-            assert "rm://capabilities" in resource_uris
+            assert "rm://admin/capabilities" in resource_uris
 
             # Prompt listing
             prompts_result = await session.list_prompts()
             prompt_names = {p.name for p in prompts_result.prompts}
-            assert "timesheet_reconciliation" in prompt_names
+            assert "time_timesheet_reconciliation" in prompt_names
 
 
 @pytest.mark.asyncio
@@ -129,7 +129,7 @@ async def test_stateless_streamable_http_standalone_post(monkeypatch: pytest.Mon
                 "id": 3,
                 "method": "tools/call",
                 "params": {
-                    "name": "rm_list_roles",
+                    "name": "admin_list_roles",
                     "arguments": {},
                     "_meta": meta,
                 },
@@ -142,7 +142,7 @@ async def test_stateless_streamable_http_standalone_post(monkeypatch: pytest.Mon
                     "Content-Type": "application/json",
                     "MCP-Protocol-Version": "2026-07-28",
                     "Mcp-Method": "tools/call",
-                    "Mcp-Name": "rm_list_roles",
+                    "Mcp-Name": "admin_list_roles",
                 },
             )
             assert res_tool.status_code == 200
@@ -173,7 +173,7 @@ async def test_fastmcp_in_memory_client(monkeypatch: pytest.MonkeyPatch) -> None
     async with Client(server.mcp) as client:
         tools = await client.list_tools()
         assert len(tools) > 0
-        res = await client.call_tool("rm_list_roles", {})
+        res = await client.call_tool("admin_list_roles", {})
         assert res is not None
         assert not res.is_error
         assert len(res.content) > 0

@@ -1,6 +1,38 @@
+---
+vcs:
+  system: github
+  owner: christianclaudio
+  repo: mcp-server-smartsheet-rm
+  default_branch: main
+  branch_policy: pr_only
+---
+
 # AGENTS.md
 
 Instructions for AI coding agents (Antigravity, Claude Code, Copilot, Cursor, Windsurf) working on this repository or integrating Smartsheet Resource Management capabilities.
+
+---
+
+## 📚 Canonical Documentation & Live Doc MCPs
+
+Before designing, implementing, or updating any MCP tool, always consult the official machine-readable documentation indexes ("the bibles") and live documentation MCP servers:
+
+### Machine-Readable Documentation Indexes (`llms.txt`)
+| Resource | URL | Focus Areas |
+| :--- | :--- | :--- |
+| **FastMCP 4 Framework** | [`https://gofastmcp.com/llms.txt`](https://gofastmcp.com/llms.txt) | Server composition (`mount`), hierarchical middleware, transforms, lifespans, in-memory testing |
+| **Model Context Protocol (Official)** | [`https://modelcontextprotocol.io/llms.txt`](https://modelcontextprotocol.io/llms.txt) | Wire protocol spec, Streamable HTTP framing, tool annotations, elicitation |
+| **Smartsheet RM Developer Portal** | [`https://developer.smartsheet.com/10000ft-api/`](https://developer.smartsheet.com/10000ft-api/) | Smartsheet RM (10,000ft) REST API reference, endpoints, schemas, authentication |
+
+### Live Documentation MCP Servers
+Both ecosystems publish live, queryable Documentation MCP servers exposing full search and doc navigation tools:
+
+1. **FastMCP Documentation Server**:
+   - **Endpoint**: `https://gofastmcp.com/mcp` (SSE / Streamable HTTP)
+   - **Tools**: `search_fast_mcp(query)`, `query_docs_filesystem_fast_mcp(command)`, `submit_feedback(...)`
+2. **Anthropic Model Context Protocol Server**:
+   - **Endpoint**: `https://modelcontextprotocol.io/mcp` (SSE / Streamable HTTP)
+   - **Tools**: `search_model_context_protocol(query)`, `query_docs_filesystem_model_context_protocol(command)`, `submit_feedback(...)`
 
 ---
 
@@ -19,9 +51,17 @@ Expose deep resource planning, allocation, time-tracking, project management, an
 mcp-server-smartsheet-rm/
 ├── src/smartsheet_rm_mcp/
 │   ├── __init__.py               # Package version (__version__) and public exports
-│   ├── server.py                 # FastMCP 4 server instance, @mcp.tool() registrations, prompts, resources
+│   ├── server.py                 # FastMCP 4 root gateway, composition mounting, profiles, tool search
+│   ├── middleware.py             # Gateway audit/readonly middleware & domain guardrails
+│   ├── common.py                 # Client resolution, decorator (@rm_tool), secret redaction, structured logging
+│   ├── config.py                 # Pydantic settings with SMARTSHEET_RM_* env bindings
 │   ├── client.py                 # Async HTTP client (httpx.AsyncClient, retries, jitter, auth headers)
-│   └── errors.py                 # Structured API exceptions and automatic secret redaction
+│   ├── errors.py                 # Structured API exceptions and regex secret redaction
+│   └── tools/                    # Modular domain sub-servers
+│       ├── __init__.py           # Sub-server and tool function re-exports
+│       ├── time.py               # Time tracking, suggestions, approval, timesheets sub-server
+│       ├── projects.py           # Projects, phases, assignments, placeholders sub-server
+│       └── admin.py              # Users, roles, clients, expenses, tags, reports sub-server
 ├── scripts/
 │   ├── check_conformance.sh      # MCP Protocol conformance suite verification script
 │   ├── check_tool_contract.py    # AST/reflection contract testing total tool & annotation counts
@@ -32,6 +72,7 @@ mcp-server-smartsheet-rm/
 │   ├── test_client.py            # Unit tests for HTTP client, retries, headers, and error handling
 │   ├── test_determine_bump.py    # Unit tests for determine_bump.py SemVer calculation
 │   ├── test_server.py            # Tests for tool execution, parameter validation, and confirmation gating
+│   ├── test_layered.py           # FastMCP 4 composition, profiles, middleware, and domain guard tests
 │   ├── test_errors.py            # Tests for error formatting and regex credential redaction
 │   ├── test_scripts.py           # Unit tests for contract and drift validation scripts
 │   └── test_protocol.py          # FastMCP 4 in-memory & stdio/streamable HTTP protocol verification
@@ -60,21 +101,22 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
 - URL path parameters **must** be safely formatted and escaped.
 - Call `await self._request("METHOD", path, params=..., json=...)`.
 
-### 2. Tool Handler (`server.py`)
-- Register the tool with `@mcp.tool()` and wrap with the server decorator (`@rm_tool`).
+### 2. Tool Handler (`tools/time.py`, `tools/projects.py`, `tools/admin.py`)
+- Register the tool with `@server.tool(name=..., annotations=...)` in the appropriate domain sub-server module and wrap with `@rm_tool`.
 - Provide an explicit, agent-friendly docstring describing capabilities, parameters, and return shape.
 - Destructive operations (`POST`, `PUT`, `PATCH`, `DELETE` mutating state) **must** accept `confirm: bool = False`.
 
-### 3. Tool Annotations & Gating
-- Apply MCP `ToolAnnotations` post-registration via `mcp._tool_manager._tools`:
+### 3. Tool Annotations & Composition Mounting
+- Declare native MCP `ToolAnnotations` directly at tool registration in each domain sub-server:
   - `readOnlyHint`: `True` for inspection/GET; `False` for mutations.
   - `destructiveHint`: `True` for delete/archive/deactivate actions; `False` otherwise.
   - `idempotentHint`: `True` for GET, PUT, idempotent operations; `False` for creations.
   - `openWorldHint`: `True` when interacting with external networks/APIs.
-- Gating:
-  - Support `READONLY` mode (`SMARTSHEET_RM_READONLY=1` or `--readonly`) to filter out mutating tools.
-  - Support bulk protection (`SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) for mass-deletion endpoints (`bulk_delete_time`, `bulk_delete_assignments`).
-  - Support profile filtering (`SMARTSHEET_RM_PROFILE`: `time`, `projects`, `admin`, `full`).
+- FastMCP 4 Server Composition:
+  - Root gateway in `server.py` selectively mounts domain sub-servers with native domain namespaces (`namespace="time"`, `namespace="projects"`, `namespace="admin"`).
+  - Profile filtering (`SMARTSHEET_RM_PROFILE`: `time`, `projects`, `admin`, `full`, `readonly`) is achieved via selective mounting at composition time.
+  - Read-only gating (`SMARTSHEET_RM_READONLY=1` or `--profile readonly`) enforces fail-closed write protection via `ReadOnlyGateMiddleware` and selective tool registration.
+  - Bulk protection (`SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) controls inclusion of bulk deletion tools (`time_bulk_delete_time_entries`, `projects_bulk_delete_assignments`).
 
 ### 4. Pure Offline Testing & Contract Sync (`tests/`)
 - Add unit tests in `tests/` mocking responses via `respx` or `httpx.MockTransport`.
@@ -87,7 +129,7 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
 ## 🛡️ Non-Negotiable Safety & Security Rules
 
 1. **Destructive Confirmation Gate**:
-   - Every mutating tool must accept `confirm: bool = False`. If `False`, return a dry-run / confirmation preview without executing the side-effect.
+   - Every destructive tool (e.g. deletion, bulk removal, or permanent deallocation) must accept `confirm: bool = False` and invoke `_destructive_gate`. If `False`, return a structured error document requiring explicit confirmation before executing side effects. Non-destructive mutations (creates, updates, workflows) are protected by `ReadOnlyGateMiddleware` without requiring interactive confirmation.
 2. **Secret Redaction**:
    - Error messages, logs, and tracebacks must pass through regex redaction (`_redact_secrets`) stripping Bearer tokens, passwords, and API keys.
 3. **Multi-Stage Non-Root Containers**:

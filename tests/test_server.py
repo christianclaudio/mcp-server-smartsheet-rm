@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,6 +13,8 @@ import httpx
 import pytest
 
 import smartsheet_rm_mcp.server as srv
+from smartsheet_rm_mcp.client import SmartsheetRMClient
+from smartsheet_rm_mcp.common import _validate_base_url
 from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
 
 
@@ -143,16 +146,23 @@ def test_logging_and_formatter() -> None:
     assert data["mcp_tool"] == "rm_test_tool"
     assert data["duration_ms"] == 45.6
 
-    # With exception info
+    # With exception info and credential redaction
     try:
-        raise ValueError("Boom")
+        raise ValueError("Failed with Bearer secret-in-traceback")
     except ValueError:
         import sys
 
         record.exc_info = sys.exc_info()
         res_exc = formatter.format(record)
         data_exc = json.loads(res_exc)
-        assert "Boom" in data_exc["exception"]
+        assert "secret-in-traceback" not in data_exc["exception"]
+        assert "***REDACTED***" in data_exc["exception"]
+
+    record_sec = logging.LogRecord("test", logging.INFO, "path.py", 10, "Bearer secret-in-log", (), None)
+    res_sec = formatter.format(record_sec)
+    data_sec = json.loads(res_sec)
+    assert "secret-in-log" not in data_sec["message"]
+    assert "***REDACTED***" in data_sec["message"]
 
     with patch.dict(os.environ, {"SMARTSHEET_RM_LOG_FORMAT": "json"}):
         srv.configure_logging()
@@ -182,27 +192,83 @@ async def test_get_client_resolution_and_cache() -> None:
             await srv.get_client()
         assert "SMARTSHEET_RM_API_TOKEN" in str(exc.value)
 
-    # Per-request context header resolution
-    srv._HEADER_CLIENT_CACHE.clear()
-    ctx = {"headers": {"x-smartsheet-rm-token": "header-token", "x-smartsheet-rm-base-url": "https://api.custom.com"}}
-    client_ctx = await srv.get_client(ctx)
-    assert client_ctx.api_token == "header-token"
-    assert client_ctx.base_url == "https://api.custom.com"
+    # Per-request context header resolution and SSRF protections with mocked global DNS
+    with patch(
+        "socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+    ):
+        srv._HEADER_CLIENT_CACHE.clear()
+        ctx = {
+            "headers": {"x-smartsheet-rm-token": "header-token", "x-smartsheet-rm-base-url": "https://api.custom.com"}
+        }
+        client_ctx = await srv.get_client(ctx)
+        assert client_ctx.api_token == "header-token"
+        assert client_ctx.base_url == "https://api.custom.com"
 
-    # Context with request_context object
-    req_ctx_mock = MagicMock()
-    req_ctx_mock.request_context.headers = {"auth": "auth-header-token"}
-    client_ctx2 = await srv.get_client(req_ctx_mock)
-    assert client_ctx2.api_token == "auth-header-token"
+        # Context with request_context object
+        req_ctx_mock = MagicMock()
+        req_ctx_mock.request_context.headers = {"auth": "auth-header-token"}
+        client_ctx2 = await srv.get_client(req_ctx_mock)
+        assert client_ctx2.api_token == "auth-header-token"
 
-    # Cache limit eviction (>100)
-    srv._HEADER_CLIENT_CACHE.clear()
-    for i in range(105):
-        m = MagicMock()
-        m.aclose = AsyncMock()
-        srv._HEADER_CLIENT_CACHE[(f"tok-{i}", "url")] = m
-    await srv.get_client({"headers": {"x-smartsheet-rm-token": "new-tok"}})
-    assert len(srv._HEADER_CLIENT_CACHE) == 105
+        # FastMCP dependency get_http_headers fallback when ctx is None
+        with patch("fastmcp.server.dependencies.get_http_headers", return_value={"x-smartsheet-rm-token": "dep-token"}):
+            c_dep = await srv.get_client()
+            assert c_dep.api_token == "dep-token"
+
+        # Cache limit eviction (>100)
+        srv._HEADER_CLIENT_CACHE.clear()
+        for i in range(105):
+            m = MagicMock()
+            m.aclose = AsyncMock()
+            srv._HEADER_CLIENT_CACHE[(f"tok-{i}", "url")] = m
+        await srv.get_client({"headers": {"x-smartsheet-rm-token": "new-tok"}})
+        assert len(srv._HEADER_CLIENT_CACHE) == 105
+
+        # SSRF protections on base URL
+        with pytest.raises(ValueError, match="Only HTTPS is permitted"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "http://api.custom.com"}})
+        with pytest.raises(ValueError, match="missing hostname"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://"}})
+        with pytest.raises(ValueError, match="Blocked internal/loopback"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://localhost"}})
+        with pytest.raises(ValueError, match="Blocked internal/loopback"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://127.0.0.1"}})
+        with pytest.raises(ValueError, match="Blocked internal/loopback"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://server.local"}})
+        with pytest.raises(ValueError, match="Blocked internal/loopback"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://host.internal"}})
+        with pytest.raises(ValueError, match="Blocked private/reserved"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://10.0.0.1"}})
+        with pytest.raises(ValueError, match="Blocked private/reserved"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://127.0.0.2"}})
+        with pytest.raises(ValueError, match="Blocked private/reserved"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://192.168.1.1"}})
+        with pytest.raises(ValueError, match="Blocked private/reserved"):
+            await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://169.254.169.254"}})
+
+        # Allowed hosts check
+        with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "api.custom.com, api.rm.smartsheet.com"}):
+            with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+                await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://unauthorized.com"}})
+            c_allowed = await srv.get_client(
+                {"headers": {"x-smartsheet-rm-token": "tok", "x-smartsheet-rm-base-url": "https://api.custom.com"}}
+            )
+            assert c_allowed.base_url == "https://api.custom.com"
+
+        # Direct unit test of _validate_base_url
+        assert _validate_base_url("") == srv.DEFAULT_BASE_URL
+
+        # Hostname resolving to private/reserved IP via DNS
+        with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]):
+            with pytest.raises(ValueError, match="resolving to private/reserved IP"):
+                _validate_base_url("https://malicious-dns.com")
+
+        # Hostname failing DNS resolution (gaierror fails closed)
+        with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
+            with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
+                _validate_base_url("https://unresolvable-domain.com")
+            with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
+                await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://unresolvable-domain.com"}})
 
 
 @pytest.mark.asyncio
@@ -580,21 +646,67 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     assert data3_var["variance"] == -8.0
 
     # 4. rm_clone_project_schedule
+    # Error when new_start_date is provided but source project lacks starts_at
     setup_mock_client.get_project.return_value = {
         "id": 100,
         "name": "Template",
         "project_state": "Confirmed",
         "client_id": 5,
     }
+    res4_no_start = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01")
+    assert "Source project has no starts_at date" in json.loads(res4_no_start)["error"]["message"]
+
+    # Error when new_start_date has invalid date format
+    setup_mock_client.get_project.return_value["starts_at"] = "2026-08-01"
+    res4_bad_date = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="invalid-date")
+    assert "Invalid date format" in json.loads(res4_bad_date)["error"]["message"]
+
+    # Success: shifting timeline (source: 2026-08-01 to 2026-08-31 shifted to 2026-09-01 -> 31 day shift)
+    setup_mock_client.get_project.return_value = {
+        "id": 100,
+        "name": "Template",
+        "project_state": "Confirmed",
+        "client_id": 5,
+        "starts_at": "2026-08-01",
+        "ends_at": "2026-08-31",
+    }
     setup_mock_client.list_project_phases.return_value = {
-        "data": [{"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"}]
+        "data": [
+            {"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"},
+            {"name": "Phase 2", "starts_at": "invalid-phase-start", "ends_at": "invalid-phase-end"},
+            {"name": "Phase 3"},
+        ]
     }
     res4 = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01", client_id=9)
     data4 = json.loads(res4)
     assert data4["status"] == "success"
-    assert data4["cloned_phases_count"] == 1
+    assert data4["cloned_phases_count"] == 3
 
-    # Clone without explicit client_id (uses source client_id fallback)
+    # Verify shifted dates passed to client.create_project
+    created_proj_payload = setup_mock_client.create_project.call_args[0][0]
+    assert created_proj_payload["starts_at"] == "2026-09-01"
+    assert created_proj_payload["ends_at"] == "2026-10-01"
+    assert created_proj_payload["client_id"] == 9
+
+    # Verify shifted dates passed to client.create_project_phase
+    phase_payloads = [call[0][1] for call in setup_mock_client.create_project_phase.call_args_list[-3:]]
+    assert phase_payloads[0]["starts_at"] == "2026-09-01"
+    assert phase_payloads[0]["ends_at"] == "2026-09-15"
+    assert phase_payloads[1]["starts_at"] == "invalid-phase-start"
+    assert phase_payloads[2]["starts_at"] is None
+
+    # Source project with invalid ends_at handled gracefully
+    setup_mock_client.get_project.return_value["ends_at"] = "invalid-end-date"
+    res4_bad_end = await srv.rm_clone_project_schedule(100, "Cloned Project Bad End", new_start_date="2026-09-01")
+    assert json.loads(res4_bad_end)["status"] == "success"
+
+    # Clone without explicit client_id and without new_start_date (uses source client_id fallback and keeps dates)
+    setup_mock_client.get_project.return_value = {
+        "id": 100,
+        "name": "Template",
+        "client_id": 5,
+        "starts_at": "2026-08-01",
+    }
     res4_fallback = await srv.rm_clone_project_schedule(100, "Cloned Project 2")
     assert json.loads(res4_fallback)["status"] == "success"
 
@@ -689,6 +801,68 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     assert json.loads(await srv.rm_delete_webhook(1, confirm=True))["status"] == "deleted"
 
 
+@pytest.mark.asyncio
+async def test_clone_project_schedule_transport_respx(respx_mock: Any) -> None:
+    real_client = SmartsheetRMClient("test-token", "https://api.rm.smartsheet.com/api/v1")
+    old_client = srv._client
+    srv._client = real_client
+    try:
+        respx_mock.get("https://api.rm.smartsheet.com/api/v1/projects/100").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id": 100,
+                    "name": "Template Project",
+                    "project_state": "Confirmed",
+                    "client_id": 5,
+                    "starts_at": "2026-08-01",
+                    "ends_at": "2026-08-31",
+                },
+            )
+        )
+        respx_mock.get("https://api.rm.smartsheet.com/api/v1/projects/100/phases").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"},
+                        {"name": "Phase 2", "starts_at": "2026-08-16", "ends_at": "2026-08-31"},
+                    ]
+                },
+            )
+        )
+        create_proj_route = respx_mock.post("https://api.rm.smartsheet.com/api/v1/projects").mock(
+            return_value=httpx.Response(200, json={"id": 200, "name": "Cloned Project"})
+        )
+        create_phase_route = respx_mock.post("https://api.rm.smartsheet.com/api/v1/projects/200/phases").mock(
+            return_value=httpx.Response(200, json={"id": 201, "name": "Cloned Phase"})
+        )
+
+        res = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01", client_id=9)
+        data = json.loads(res)
+        assert data["status"] == "success"
+        assert data["cloned_phases_count"] == 2
+
+        # Verify transport-level wire payloads
+        assert create_proj_route.called
+        proj_req = json.loads(create_proj_route.calls.last.request.content)
+        assert proj_req["starts_at"] == "2026-09-01"
+        assert proj_req["ends_at"] == "2026-10-01"
+        assert proj_req["client_id"] == 9
+
+        assert create_phase_route.call_count == 2
+        phase1_req = json.loads(create_phase_route.calls[0].request.content)
+        assert phase1_req["starts_at"] == "2026-09-01"
+        assert phase1_req["ends_at"] == "2026-09-15"
+
+        phase2_req = json.loads(create_phase_route.calls[1].request.content)
+        assert phase2_req["starts_at"] == "2026-09-16"
+        assert phase2_req["ends_at"] == "2026-10-01"
+    finally:
+        await real_client.aclose()
+        srv._client = old_client
+
+
 def test_resources_and_prompts() -> None:
     cap = srv.rm_capabilities_resource()
     assert "Time Tracking & Approvals" in cap
@@ -696,12 +870,15 @@ def test_resources_and_prompts() -> None:
 
     quick = srv.rm_quickstart_resource()
     assert "Timesheet Reconciliation" in quick
+    assert "time_reconcile_and_submit_week" in quick
 
     p1 = srv.timesheet_reconciliation("123", "2026-08-10")
     assert "user ID 123" in p1
+    assert "time_list_time_entries" in p1
 
     p2 = srv.project_staffing_plan("456")
     assert "project ID 456" in p2
+    assert "projects_get_project" in p2
 
 
 def test_main_cli_argparsing(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
@@ -820,19 +997,19 @@ def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) 
 
         monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "time")
         importlib.reload(srv)
-        assert "rm_list_time_entries" in srv.mcp._tool_manager._tools
+        assert "time_list_time_entries" in srv.mcp._tool_manager._tools
 
         monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "full")
         monkeypatch.setenv("SMARTSHEET_RM_READONLY", "1")
         importlib.reload(srv)
-        assert "rm_delete_project" not in srv.mcp._tool_manager._tools
-        assert "rm_list_projects" in srv.mcp._tool_manager._tools
+        assert "projects_delete_project" not in srv.mcp._tool_manager._tools
+        assert "projects_list_projects" in srv.mcp._tool_manager._tools
 
         monkeypatch.delenv("SMARTSHEET_RM_READONLY", raising=False)
         monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "full")
         monkeypatch.setenv("SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE", "1")
         importlib.reload(srv)
-        assert "rm_bulk_delete_time_entries" in srv.mcp._tool_manager._tools
+        assert "time_bulk_delete_time_entries" in srv.mcp._tool_manager._tools
     finally:
         monkeypatch.undo()
         importlib.reload(srv)
@@ -862,7 +1039,7 @@ async def test_server_streamable_http_dispatch() -> None:
                 "id": 1,
                 "method": "tools/call",
                 "params": {
-                    "name": "rm_list_projects",
+                    "name": "projects_list_projects",
                     "arguments": {},
                     "_meta": meta,
                 },
@@ -874,7 +1051,7 @@ async def test_server_streamable_http_dispatch() -> None:
                     "Content-Type": "application/json",
                     "MCP-Protocol-Version": "2026-07-28",
                     "Mcp-Method": "tools/call",
-                    "Mcp-Name": "rm_list_projects",
+                    "Mcp-Name": "projects_list_projects",
                 },
             )
             assert res.status_code == 200

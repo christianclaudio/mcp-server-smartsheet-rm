@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 from typing import Any
 
 _REDACT_KEYS = {
@@ -15,6 +17,32 @@ _REDACT_KEYS = {
     "password",
     "authorization",
 }
+
+_SECRET_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"(?i)bearer\s+[a-zA-Z0-9\-\._~\+\/]+=*"),
+    re.compile(r"(?i)auth:\s*[a-zA-Z0-9\-\._~\+\/]+"),
+    re.compile(r"(?i)(api_token=|\"api_token\":\s*\")[a-zA-Z0-9\-\._~\+\/]+=*\"?"),
+    re.compile(r"(?i)(SMARTSHEET_RM_API_TOKEN=)[a-zA-Z0-9\-\._~\+\/]+"),
+    re.compile(r"(?i)(api_key=|\"api_key\":\s*\"?)[a-zA-Z0-9\-\._~\+\/]+=*\"?"),
+    re.compile(r"(?i)(password=|\"password\":\s*\"?)[^\s,}\"]+\"?"),
+]
+
+
+def redact_secrets(text: str, extra_secret: str | None = None) -> str:
+    """Redact tokens, credentials, and API secrets from output and logs."""
+    if not text:
+        return text
+    secret = os.environ.get("SMARTSHEET_RM_API_TOKEN", "")
+    if secret and secret in text:
+        text = text.replace(secret, "***REDACTED***")
+    if extra_secret and extra_secret in text:
+        text = text.replace(extra_secret, "***REDACTED***")
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub("***REDACTED***", text)
+    return text
+
+
+_redact_secrets = redact_secrets
 
 
 def _is_secret_key(key: str) -> bool:

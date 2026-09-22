@@ -16,140 +16,140 @@ from smartsheet_rm_mcp.server import _redact_secrets, mcp
 
 SAFE_TOOL_FIXTURES: dict[str, dict[str, Any]] = {
     # Destructive tools (tested safely with confirm=False)
-    "rm_delete_time_entry": {"entry_id": 999999, "confirm": False},
-    "rm_delete_project": {"project_id": 999999, "confirm": False},
-    "rm_delete_project_phase": {"project_id": 999999, "phase_id": 999999, "confirm": False},
-    "rm_delete_assignment": {"assignment_id": 999999, "confirm": False},
-    "rm_delete_user": {"user_id": 999999, "confirm": False},
-    "rm_delete_role": {"role_id": 999999, "confirm": False},
-    "rm_delete_discipline": {"discipline_id": 999999, "confirm": False},
-    "rm_delete_client": {"client_id": 999999, "confirm": False},
-    "rm_delete_client_contact": {"client_id": 999999, "contact_id": 999999, "confirm": False},
-    "rm_delete_leave_type": {"leave_type_id": 999999, "confirm": False},
-    "rm_delete_holiday": {"holiday_id": 999999, "confirm": False},
-    "rm_delete_expense": {"expense_id": 999999, "confirm": False},
-    "rm_delete_expense_category": {"category_id": 999999, "confirm": False},
-    "rm_delete_tag": {"tag_id": 999999, "confirm": False},
-    "rm_delete_custom_field": {"custom_field_id": 999999, "confirm": False},
-    "rm_delete_approval": {"approval_id": 999999, "confirm": False},
-    "rm_delete_placeholder_resource": {"placeholder_id": 999999, "confirm": False},
-    "rm_delete_assignment_subtask": {
+    "time_delete_time_entry": {"entry_id": 999999, "confirm": False},
+    "projects_delete_project": {"project_id": 999999, "confirm": False},
+    "projects_delete_project_phase": {"project_id": 999999, "phase_id": 999999, "confirm": False},
+    "projects_delete_assignment": {"assignment_id": 999999, "confirm": False},
+    "admin_delete_user": {"user_id": 999999, "confirm": False},
+    "admin_delete_role": {"role_id": 999999, "confirm": False},
+    "admin_delete_discipline": {"discipline_id": 999999, "confirm": False},
+    "admin_delete_client": {"client_id": 999999, "confirm": False},
+    "admin_delete_client_contact": {"client_id": 999999, "contact_id": 999999, "confirm": False},
+    "admin_delete_leave_type": {"leave_type_id": 999999, "confirm": False},
+    "admin_delete_holiday": {"holiday_id": 999999, "confirm": False},
+    "admin_delete_expense": {"expense_id": 999999, "confirm": False},
+    "admin_delete_expense_category": {"category_id": 999999, "confirm": False},
+    "admin_delete_tag": {"tag_id": 999999, "confirm": False},
+    "admin_delete_custom_field": {"custom_field_id": 999999, "confirm": False},
+    "time_delete_approval": {"approval_id": 999999, "confirm": False},
+    "projects_delete_placeholder_resource": {"placeholder_id": 999999, "confirm": False},
+    "projects_delete_assignment_subtask": {
         "project_id": 999999,
         "assignment_id": 999999,
         "subtask_id": 999999,
         "confirm": False,
     },
-    "rm_delete_webhook": {"webhook_id": 999999, "confirm": False},
-    "rm_bulk_delete_time_entries": {"entry_ids": [999999], "confirm": False},
-    "rm_bulk_delete_assignments": {"assignment_ids": [999999], "confirm": False},
+    "admin_delete_webhook": {"webhook_id": 999999, "confirm": False},
+    "time_bulk_delete_time_entries": {"entry_ids": [999999], "confirm": False},
+    "projects_bulk_delete_assignments": {"assignment_ids": [999999], "confirm": False},
     # Parameterized read tools with probe IDs
-    "rm_get_time_entry": {"entry_id": 999999},
-    "rm_list_user_suggestions": {"user_id": 999999},
-    "rm_get_project": {"project_id": 999999},
-    "rm_list_project_users": {"project_id": 999999},
-    "rm_list_project_phases": {"project_id": 999999},
-    "rm_get_project_phase": {"project_id": 999999, "phase_id": 999999},
-    "rm_get_assignment": {"assignment_id": 999999},
-    "rm_get_user": {"user_id": 999999},
-    "rm_list_user_bill_rates": {"user_id": 999999},
-    "rm_get_user_availability": {"user_id": 999999},
-    "rm_get_user_utilization": {"user_id": 999999},
-    "rm_get_client": {"client_id": 999999},
-    "rm_list_client_contacts": {"client_id": 999999},
-    "rm_get_leave_type": {"leave_type_id": 999999},
-    "rm_get_holiday": {"holiday_id": 999999},
-    "rm_get_expense": {"expense_id": 999999},
-    "rm_get_custom_field": {"custom_field_id": 999999},
-    "rm_get_user_statuses": {"user_id": 999999},
-    "rm_list_assignment_subtasks": {"project_id": 999999, "assignment_id": 999999},
-    "rm_get_report_rows": {"report_parameters": {"from": "2026-08-01", "to": "2026-08-07"}},
-    "rm_get_report_totals": {"report_parameters": {"from": "2026-08-01", "to": "2026-08-07"}},
+    "time_get_time_entry": {"entry_id": 999999},
+    "time_list_user_suggestions": {"user_id": 999999},
+    "projects_get_project": {"project_id": 999999},
+    "projects_list_project_users": {"project_id": 999999},
+    "projects_list_project_phases": {"project_id": 999999},
+    "projects_get_project_phase": {"project_id": 999999, "phase_id": 999999},
+    "projects_get_assignment": {"assignment_id": 999999},
+    "admin_get_user": {"user_id": 999999},
+    "admin_list_user_bill_rates": {"user_id": 999999},
+    "admin_get_user_availability": {"user_id": 999999},
+    "admin_get_user_utilization": {"user_id": 999999},
+    "admin_get_client": {"client_id": 999999},
+    "admin_list_client_contacts": {"client_id": 999999},
+    "admin_get_leave_type": {"leave_type_id": 999999},
+    "admin_get_holiday": {"holiday_id": 999999},
+    "admin_get_expense": {"expense_id": 999999},
+    "admin_get_custom_field": {"custom_field_id": 999999},
+    "admin_get_user_statuses": {"user_id": 999999},
+    "projects_list_assignment_subtasks": {"project_id": 999999, "assignment_id": 999999},
+    "admin_get_report_rows": {"report_parameters": {"from": "2026-08-01", "to": "2026-08-07"}},
+    "admin_get_report_totals": {"report_parameters": {"from": "2026-08-01", "to": "2026-08-07"}},
 }
 
 SAFE_ARGUMENTLESS_LIST_TOOLS: set[str] = {
-    "rm_list_time_entries",
-    "rm_list_projects",
-    "rm_list_assignments",
-    "rm_list_users",
-    "rm_list_roles",
-    "rm_list_disciplines",
-    "rm_list_clients",
-    "rm_list_leave_types",
-    "rm_list_holidays",
-    "rm_list_expenses",
-    "rm_list_expense_categories",
-    "rm_list_tags",
-    "rm_list_custom_fields",
-    "rm_list_custom_field_values",
-    "rm_list_approvals",
-    "rm_list_status_options",
-    "rm_list_placeholder_resources",
-    "rm_list_webhooks",
+    "time_list_time_entries",
+    "projects_list_projects",
+    "projects_list_assignments",
+    "admin_list_users",
+    "admin_list_roles",
+    "admin_list_disciplines",
+    "admin_list_clients",
+    "admin_list_leave_types",
+    "admin_list_holidays",
+    "admin_list_expenses",
+    "admin_list_expense_categories",
+    "admin_list_tags",
+    "admin_list_custom_fields",
+    "admin_list_custom_field_values",
+    "time_list_approvals",
+    "projects_list_status_options",
+    "projects_list_placeholder_resources",
+    "admin_list_webhooks",
 }
 
 SAFE_PROBE_EXPECTED_NOT_FOUND_TOOLS: set[str] = {
-    "rm_get_time_entry",
-    "rm_list_user_suggestions",
-    "rm_get_project",
-    "rm_list_project_users",
-    "rm_list_project_phases",
-    "rm_get_project_phase",
-    "rm_get_assignment",
-    "rm_get_user",
-    "rm_list_user_bill_rates",
-    "rm_get_user_availability",
-    "rm_get_user_utilization",
-    "rm_get_client",
-    "rm_list_client_contacts",
-    "rm_get_leave_type",
-    "rm_get_holiday",
-    "rm_get_expense",
-    "rm_get_custom_field",
-    "rm_get_user_statuses",
-    "rm_list_assignment_subtasks",
+    "time_get_time_entry",
+    "time_list_user_suggestions",
+    "projects_get_project",
+    "projects_list_project_users",
+    "projects_list_project_phases",
+    "projects_get_project_phase",
+    "projects_get_assignment",
+    "admin_get_user",
+    "admin_list_user_bill_rates",
+    "admin_get_user_availability",
+    "admin_get_user_utilization",
+    "admin_get_client",
+    "admin_list_client_contacts",
+    "admin_get_leave_type",
+    "admin_get_holiday",
+    "admin_get_expense",
+    "admin_get_custom_field",
+    "admin_get_user_statuses",
+    "projects_list_assignment_subtasks",
 }
 
 INTENTIONALLY_SKIPPED_MUTATING_TOOLS: set[str] = {
-    "rm_create_time_entry",
-    "rm_update_time_entry",
-    "rm_update_time_approval_status",
-    "rm_lock_timesheet",
-    "rm_create_project",
-    "rm_update_project",
-    "rm_create_project_phase",
-    "rm_update_project_phase",
-    "rm_create_assignment",
-    "rm_update_assignment",
-    "rm_create_user",
-    "rm_update_user",
-    "rm_create_user_bill_rate",
-    "rm_create_role",
-    "rm_update_role",
-    "rm_create_discipline",
-    "rm_update_discipline",
-    "rm_create_client",
-    "rm_update_client",
-    "rm_create_client_contact",
-    "rm_create_leave_type",
-    "rm_update_leave_type",
-    "rm_create_holiday",
-    "rm_update_holiday",
-    "rm_create_expense",
-    "rm_update_expense",
-    "rm_create_expense_category",
-    "rm_create_tag",
-    "rm_create_custom_field",
-    "rm_update_custom_field",
-    "rm_set_custom_field_values",
-    "rm_fill_weekly_timesheet",
-    "rm_confirm_suggested_hours",
-    "rm_reconcile_and_submit_week",
-    "rm_clone_project_schedule",
-    "rm_create_approval",
-    "rm_set_user_status",
-    "rm_create_placeholder_resource",
-    "rm_create_assignment_subtask",
-    "rm_create_webhook",
+    "time_create_time_entry",
+    "time_update_time_entry",
+    "time_update_time_approval_status",
+    "time_lock_timesheet",
+    "projects_create_project",
+    "projects_update_project",
+    "projects_create_project_phase",
+    "projects_update_project_phase",
+    "projects_create_assignment",
+    "projects_update_assignment",
+    "admin_create_user",
+    "admin_update_user",
+    "admin_create_user_bill_rate",
+    "admin_create_role",
+    "admin_update_role",
+    "admin_create_discipline",
+    "admin_update_discipline",
+    "admin_create_client",
+    "admin_update_client",
+    "admin_create_client_contact",
+    "admin_create_leave_type",
+    "admin_update_leave_type",
+    "admin_create_holiday",
+    "admin_update_holiday",
+    "admin_create_expense",
+    "admin_update_expense",
+    "admin_create_expense_category",
+    "admin_create_tag",
+    "admin_create_custom_field",
+    "admin_update_custom_field",
+    "admin_set_custom_field_values",
+    "time_fill_weekly_timesheet",
+    "time_confirm_suggested_hours",
+    "time_reconcile_and_submit_week",
+    "projects_clone_project_schedule",
+    "time_create_approval",
+    "admin_set_user_status",
+    "projects_create_placeholder_resource",
+    "projects_create_assignment_subtask",
+    "admin_create_webhook",
 }
 
 
@@ -217,7 +217,7 @@ async def test_dispatch_tool_call_offline(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(server, "_client", SmartsheetRMClient(api_token="test-token", http_client=mock_http))
 
     # 1. Successful non-destructive parameterized read tool
-    status, is_err, err = await dispatch_tool_call("rm_get_user", is_destructive=False, required_args=["user_id"])
+    status, is_err, err = await dispatch_tool_call("admin_get_user", is_destructive=False, required_args=["user_id"])
     assert status == "PASS"
     assert not is_err
     assert err is None
@@ -225,25 +225,27 @@ async def test_dispatch_tool_call_offline(monkeypatch: pytest.MonkeyPatch) -> No
     # 2. Destructive tool intercepted by safety confirmation gate
     requests_before_delete = request_count
     status, is_err, err = await dispatch_tool_call(
-        "rm_delete_project", is_destructive=True, required_args=["project_id"]
+        "projects_delete_project", is_destructive=True, required_args=["project_id"]
     )
     assert status == "PASS"
     assert not is_err
     assert request_count == requests_before_delete
 
     # 3. List tool from positive allowlist with per_page pagination argument
-    status, is_err, err = await dispatch_tool_call("rm_list_projects", is_destructive=False)
+    status, is_err, err = await dispatch_tool_call("projects_list_projects", is_destructive=False)
     assert status == "PASS"
     assert not is_err
 
     # 4. Intentionally skipped mutating tool
-    status, is_err, err = await dispatch_tool_call("rm_create_project", is_destructive=False, required_args=["name"])
+    status, is_err, err = await dispatch_tool_call(
+        "projects_create_project", is_destructive=False, required_args=["name"]
+    )
     assert status == "SKIP"
     assert not is_err
 
     # 5. Unclassified unknown tool returns FAIL rather than executing unchecked
     status, is_err, err = await dispatch_tool_call(
-        "rm_unknown_future_tool", is_destructive=False, required_args=["foo"]
+        "projects_unknown_future_tool", is_destructive=False, required_args=["foo"]
     )
     assert status == "FAIL"
     assert is_err
@@ -257,12 +259,12 @@ async def test_dispatch_tool_call_offline(monkeypatch: pytest.MonkeyPatch) -> No
     nf_http = httpx.AsyncClient(transport=nf_transport, base_url="https://api.rm.smartsheet.com/api/v1")
     monkeypatch.setattr(server, "_client", SmartsheetRMClient(api_token="test-token", http_client=nf_http))
 
-    status, is_err, err = await dispatch_tool_call("rm_get_user", is_destructive=False, required_args=["user_id"])
+    status, is_err, err = await dispatch_tool_call("admin_get_user", is_destructive=False, required_args=["user_id"])
     assert status == "PASS"
     assert not is_err
 
     # 7. 404 on non-probe report endpoint returns FAIL (reports must return valid report documents)
-    status, is_err, err = await dispatch_tool_call("rm_get_report_rows", is_destructive=False)
+    status, is_err, err = await dispatch_tool_call("admin_get_report_rows", is_destructive=False)
     assert status == "FAIL"
     assert is_err
 
@@ -274,7 +276,7 @@ async def test_dispatch_tool_call_offline(monkeypatch: pytest.MonkeyPatch) -> No
     br_http = httpx.AsyncClient(transport=br_transport, base_url="https://api.rm.smartsheet.com/api/v1")
     monkeypatch.setattr(server, "_client", SmartsheetRMClient(api_token="test-token", http_client=br_http))
 
-    status, is_err, err = await dispatch_tool_call("rm_get_user", is_destructive=False, required_args=["user_id"])
+    status, is_err, err = await dispatch_tool_call("admin_get_user", is_destructive=False, required_args=["user_id"])
     assert status == "FAIL"
     assert is_err
 
@@ -286,7 +288,7 @@ async def test_dispatch_tool_call_offline(monkeypatch: pytest.MonkeyPatch) -> No
     err_http = httpx.AsyncClient(transport=err_transport, base_url="https://api.rm.smartsheet.com/api/v1")
     monkeypatch.setattr(server, "_client", SmartsheetRMClient(api_token="test-token", http_client=err_http))
 
-    status, is_err, err = await dispatch_tool_call("rm_get_user", is_destructive=False, required_args=["user_id"])
+    status, is_err, err = await dispatch_tool_call("admin_get_user", is_destructive=False, required_args=["user_id"])
     assert status == "FAIL"
     assert is_err
 
@@ -300,7 +302,7 @@ async def test_dispatch_tool_call_offline(monkeypatch: pytest.MonkeyPatch) -> No
     exc_http = httpx.AsyncClient(transport=exc_transport, base_url="https://api.rm.smartsheet.com/api/v1")
     monkeypatch.setattr(server, "_client", SmartsheetRMClient(api_token="e2e-secret-token", http_client=exc_http))
 
-    status, is_err, err = await dispatch_tool_call("rm_get_user", is_destructive=False, required_args=["user_id"])
+    status, is_err, err = await dispatch_tool_call("admin_get_user", is_destructive=False, required_args=["user_id"])
     assert status == "FAIL"
     assert is_err
     assert err is not None
