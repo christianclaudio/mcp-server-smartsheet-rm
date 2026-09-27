@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **README**: Pin host `uvx` examples to `mcp-server-smartsheet-rm==1.2.0` (`smartsheet-rm-mcp`), document FastMCP 4 namespaced tools (`time_*`, `projects_*`, `admin_*`), correct the idempotent annotation count to 43, and point Streamable HTTP clients at `/mcp`.
+
 ## [1.2.0] - 2026-09-21
 
 ### Breaking Changes
