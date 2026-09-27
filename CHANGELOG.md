@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SSRF and DNS-Rebinding Mitigations**: Added hostname resolution validation and non-global IP rejection in `common.py`, with optional explicit allowlist via `SMARTSHEET_RM_ALLOWED_HOSTS`.
 - **Layered Composition Tests**: Added comprehensive test suite `tests/test_layered.py` reaching 100.0% statement coverage.
 
+### Changed
+- **FastMCP Floor**: Mode A raises the `fastmcp` dependency floor from `>=4.0.5` to `>=4.0.10` in `pyproject.toml` and `fastmcp.json`, and refreshes `uv.lock` so the locked resolution is 4.0.10.
+- **Locked CI Installs**: Replaced unbound `pip install -e ".[dev]"` steps in CI with `uv sync --locked --extra dev` (commands via `uv run`) so a green run cannot float past the lockfile. SemVer stays **1.2.0** (first ship of this untagged mainline).
+
 ## [1.1.5] - 2026-09-13
 
 ### Changed
