@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Docs**: README `uvx` install examples are intentionally unpinned (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`). SemVer stays in package manifests, the release tag, and this changelog. Pin a freeze from GitHub Releases or this changelog when a host needs one.
+
 ## [1.2.1] - 2026-09-27
 
 ### Changed
