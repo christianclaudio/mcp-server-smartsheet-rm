@@ -79,12 +79,12 @@ Agents call these `tools/list` names. Counts for time and projects include the b
 
 ## 🚀 Quickstart & Installation
 
-### 1. Run via `uvx` (pinned)
+### 1. Run via `uvx`
 
-Console scripts in `[project.scripts]` both call `smartsheet_rm_mcp.server:main`: `smartsheet-rm-mcp` (used below) and `mcp-server-smartsheet-rm`. Pin the package and pass the script:
+Console scripts in `[project.scripts]` both call `smartsheet_rm_mcp.server:main`: `smartsheet-rm-mcp` (used below) and `mcp-server-smartsheet-rm`. Install examples stay unpinned. To freeze a release, pin the version from [Releases](https://github.com/christianclaudio/mcp-server-smartsheet-rm/releases) or [CHANGELOG](CHANGELOG.md).
 
 ```bash
-uvx --from mcp-server-smartsheet-rm==1.2.0 smartsheet-rm-mcp
+uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp
 ```
 
 After an upgrade, reload the MCP host so the live process start time is after the new binary mtime (stale process ≠ new package).
@@ -123,7 +123,7 @@ pip install mcp-server-smartsheet-rm
   "mcpServers": {
     "smartsheet-rm": {
       "command": "uvx",
-      "args": ["--from", "mcp-server-smartsheet-rm==1.2.0", "smartsheet-rm-mcp"],
+      "args": ["--from", "mcp-server-smartsheet-rm", "smartsheet-rm-mcp"],
       "env": {
         "SMARTSHEET_RM_API_TOKEN": "your-api-token"
       },
@@ -140,7 +140,7 @@ pip install mcp-server-smartsheet-rm
   "servers": {
     "smartsheet-rm": {
       "command": "uvx",
-      "args": ["--from", "mcp-server-smartsheet-rm==1.2.0", "smartsheet-rm-mcp"],
+      "args": ["--from", "mcp-server-smartsheet-rm", "smartsheet-rm-mcp"],
       "env": {
         "SMARTSHEET_RM_API_TOKEN": "your-api-token"
       }
@@ -156,7 +156,7 @@ pip install mcp-server-smartsheet-rm
   "mcpServers": {
     "smartsheet-rm": {
       "command": "uvx",
-      "args": ["--from", "mcp-server-smartsheet-rm==1.2.0", "smartsheet-rm-mcp"],
+      "args": ["--from", "mcp-server-smartsheet-rm", "smartsheet-rm-mcp"],
       "env": {
         "SMARTSHEET_RM_API_TOKEN": "your-api-token"
       }
@@ -170,7 +170,7 @@ pip install mcp-server-smartsheet-rm
 Prefer Streamable HTTP. `--transport sse` is deprecated (MCP spec SEP-2577); `main()` logs a migration warning and does not advertise `/sse` as the client path.
 
 ```bash
-uvx --from mcp-server-smartsheet-rm==1.2.0 smartsheet-rm-mcp --transport streamable-http --host 127.0.0.1 --port 8000
+uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
 Connect clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTTP path). `run(transport="streamable-http")` does not set a custom path. Binding to `0.0.0.0` or `::` requires an explicit `--allowed-host` (a wildcard `*` is rejected).
