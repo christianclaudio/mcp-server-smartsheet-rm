@@ -106,7 +106,8 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
 
     Checks request context for per-request credentials (headers:
     auth or x-smartsheet-rm-token, x-smartsheet-rm-base-url), falling back to
-    SMARTSHEET_RM_API_TOKEN and SMARTSHEET_RM_BASE_URL.
+    SMARTSHEET_RM_API_TOKEN and SMARTSHEET_RM_BASE_URL. Base URL overrides must
+    name a host in SMARTSHEET_RM_ALLOWED_HOSTS (default api.rm.smartsheet.com).
     Dynamically inspects server module for mock client injection during tests.
     """
     global _client

@@ -192,17 +192,51 @@ async def test_get_client_resolution_and_cache() -> None:
             await srv.get_client()
         assert "SMARTSHEET_RM_API_TOKEN" in str(exc.value)
 
+    # Configured base URL must stay on the default allowlist unless explicitly expanded
+    srv._client = None
+    with patch.dict(
+        os.environ,
+        {"SMARTSHEET_RM_API_TOKEN": "env-token", "SMARTSHEET_RM_BASE_URL": "https://api.custom.com/api/v1"},
+    ):
+        os.environ.pop("SMARTSHEET_RM_ALLOWED_HOSTS", None)
+        with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+            await srv.get_client()
+    srv._client = None
+    with patch.dict(
+        os.environ,
+        {
+            "SMARTSHEET_RM_API_TOKEN": "env-token",
+            "SMARTSHEET_RM_BASE_URL": "https://api.custom.com/api/v1",
+            "SMARTSHEET_RM_ALLOWED_HOSTS": "api.custom.com",
+        },
+    ):
+        c_custom_env = await srv.get_client()
+        assert c_custom_env.base_url == "https://api.custom.com/api/v1"
+    srv._client = None
+
     # Per-request context header resolution and SSRF protections with mocked global DNS
     with patch(
         "socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
     ):
         srv._HEADER_CLIENT_CACHE.clear()
         ctx = {
-            "headers": {"x-smartsheet-rm-token": "header-token", "x-smartsheet-rm-base-url": "https://api.custom.com"}
+            "headers": {
+                "x-smartsheet-rm-token": "header-token",
+                "x-smartsheet-rm-base-url": "https://api.rm.smartsheet.com/api/v1",
+            }
         }
         client_ctx = await srv.get_client(ctx)
         assert client_ctx.api_token == "header-token"
-        assert client_ctx.base_url == "https://api.custom.com"
+        assert client_ctx.base_url == "https://api.rm.smartsheet.com/api/v1"
+        with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+            await srv.get_client(
+                {
+                    "headers": {
+                        "x-smartsheet-rm-token": "header-token",
+                        "x-smartsheet-rm-base-url": "https://api.custom.com",
+                    }
+                }
+            )
 
         # Context with request_context object
         req_ctx_mock = MagicMock()
@@ -245,6 +279,11 @@ async def test_get_client_resolution_and_cache() -> None:
             await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://192.168.1.1"}})
         with pytest.raises(ValueError, match="Blocked private/reserved"):
             await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://169.254.169.254"}})
+        with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "169.254.169.254,localhost"}):
+            with pytest.raises(ValueError, match="Blocked private/reserved"):
+                await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://169.254.169.254"}})
+            with pytest.raises(ValueError, match="Blocked internal/loopback"):
+                await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://localhost"}})
 
         # Allowed hosts check
         with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "api.custom.com, api.rm.smartsheet.com"}):
@@ -261,22 +300,31 @@ async def test_get_client_resolution_and_cache() -> None:
         # Hostname resolving to private/reserved IP via DNS (when check_dns=True)
         with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]):
             with pytest.raises(ValueError, match="resolving to private/reserved IP"):
-                _validate_base_url("https://malicious-dns.com", check_dns=True)
+                _validate_base_url(
+                    "https://malicious-dns.com",
+                    allowed_hosts_str="malicious-dns.com",
+                    check_dns=True,
+                )
 
         # Hostname failing DNS resolution (gaierror fails closed when check_dns=True)
         with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
             with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
-                _validate_base_url("https://unresolvable-domain.com", check_dns=True)
+                _validate_base_url(
+                    "https://unresolvable-domain.com",
+                    allowed_hosts_str="unresolvable-domain.com",
+                    check_dns=True,
+                )
             # get_client uses check_dns=False (DNS validation is connection-bound)
-            c_unres = await srv.get_client(
-                {
-                    "headers": {
-                        "x-smartsheet-rm-token": "tok",
-                        "x-smartsheet-rm-base-url": "https://unresolvable-domain.com",
+            with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "unresolvable-domain.com"}):
+                c_unres = await srv.get_client(
+                    {
+                        "headers": {
+                            "x-smartsheet-rm-token": "tok",
+                            "x-smartsheet-rm-base-url": "https://unresolvable-domain.com",
+                        }
                     }
-                }
-            )
-            assert c_unres.base_url == "https://unresolvable-domain.com"
+                )
+                assert c_unres.base_url == "https://unresolvable-domain.com"
 
 
 @pytest.mark.asyncio
@@ -814,58 +862,67 @@ async def test_clone_project_schedule_transport_respx(respx_mock: Any) -> None:
     real_client = SmartsheetRMClient("test-token", "https://api.rm.smartsheet.com/api/v1")
     old_client = srv._client
     srv._client = real_client
+    pinned = "https://93.184.216.34/api/v1"
     try:
-        respx_mock.get("https://api.rm.smartsheet.com/api/v1/projects/100").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "id": 100,
-                    "name": "Template Project",
-                    "project_state": "Confirmed",
-                    "client_id": 5,
-                    "starts_at": "2026-08-01",
-                    "ends_at": "2026-08-31",
-                },
+        # TCP is pinned to the validated IP. Host stays the original API name.
+        with patch(
+            "socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+        ):
+            respx_mock.get(f"{pinned}/projects/100").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "id": 100,
+                        "name": "Template Project",
+                        "project_state": "Confirmed",
+                        "client_id": 5,
+                        "starts_at": "2026-08-01",
+                        "ends_at": "2026-08-31",
+                    },
+                )
             )
-        )
-        respx_mock.get("https://api.rm.smartsheet.com/api/v1/projects/100/phases").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "data": [
-                        {"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"},
-                        {"name": "Phase 2", "starts_at": "2026-08-16", "ends_at": "2026-08-31"},
-                    ]
-                },
+            respx_mock.get(f"{pinned}/projects/100/phases").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"},
+                            {"name": "Phase 2", "starts_at": "2026-08-16", "ends_at": "2026-08-31"},
+                        ]
+                    },
+                )
             )
-        )
-        create_proj_route = respx_mock.post("https://api.rm.smartsheet.com/api/v1/projects").mock(
-            return_value=httpx.Response(200, json={"id": 200, "name": "Cloned Project"})
-        )
-        create_phase_route = respx_mock.post("https://api.rm.smartsheet.com/api/v1/projects/200/phases").mock(
-            return_value=httpx.Response(200, json={"id": 201, "name": "Cloned Phase"})
-        )
+            create_proj_route = respx_mock.post(f"{pinned}/projects").mock(
+                return_value=httpx.Response(200, json={"id": 200, "name": "Cloned Project"})
+            )
+            create_phase_route = respx_mock.post(f"{pinned}/projects/200/phases").mock(
+                return_value=httpx.Response(200, json={"id": 201, "name": "Cloned Phase"})
+            )
 
-        res = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01", client_id=9)
-        data = json.loads(res)
-        assert data["status"] == "success"
-        assert data["cloned_phases_count"] == 2
+            res = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01", client_id=9)
+            data = json.loads(res)
+            assert data["status"] == "success"
+            assert data["cloned_phases_count"] == 2
 
-        # Verify transport-level wire payloads
-        assert create_proj_route.called
-        proj_req = json.loads(create_proj_route.calls.last.request.content)
-        assert proj_req["starts_at"] == "2026-09-01"
-        assert proj_req["ends_at"] == "2026-10-01"
-        assert proj_req["client_id"] == 9
+            # Verify transport-level wire payloads
+            assert create_proj_route.called
+            proj_call = create_proj_route.calls.last.request
+            assert proj_call.headers["host"] == "api.rm.smartsheet.com"
+            assert proj_call.extensions["sni_hostname"] == "api.rm.smartsheet.com"
+            proj_req = json.loads(proj_call.content)
+            assert proj_req["starts_at"] == "2026-09-01"
+            assert proj_req["ends_at"] == "2026-10-01"
+            assert proj_req["client_id"] == 9
 
-        assert create_phase_route.call_count == 2
-        phase1_req = json.loads(create_phase_route.calls[0].request.content)
-        assert phase1_req["starts_at"] == "2026-09-01"
-        assert phase1_req["ends_at"] == "2026-09-15"
+            assert create_phase_route.call_count == 2
+            phase1_req = json.loads(create_phase_route.calls[0].request.content)
+            assert phase1_req["starts_at"] == "2026-09-01"
+            assert phase1_req["ends_at"] == "2026-09-15"
 
-        phase2_req = json.loads(create_phase_route.calls[1].request.content)
-        assert phase2_req["starts_at"] == "2026-09-16"
-        assert phase2_req["ends_at"] == "2026-10-01"
+            phase2_req = json.loads(create_phase_route.calls[1].request.content)
+            assert phase2_req["starts_at"] == "2026-09-16"
+            assert phase2_req["ends_at"] == "2026-10-01"
     finally:
         await real_client.aclose()
         srv._client = old_client

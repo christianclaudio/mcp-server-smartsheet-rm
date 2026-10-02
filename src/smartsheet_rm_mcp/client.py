@@ -31,6 +31,83 @@ from .errors import SmartsheetRMAPIError
 JSONValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
 DEFAULT_BASE_URL = "https://api.rm.smartsheet.com/api/v1"
+# Credentialed calls stay on this host unless SMARTSHEET_RM_ALLOWED_HOSTS replaces it.
+DEFAULT_ALLOWED_HOSTS = "api.rm.smartsheet.com"
+# RFC 2606 names are not resolved, so tests stay offline. Pin them to example.com's
+# public address instead of connecting by hostname after a separate lookup.
+_EXAMPLE_PINNED_IP = "93.184.216.34"
+
+
+def _resolve_allowed_hosts(allowed_hosts_str: str | None) -> set[str]:
+    """Resolve the hostname allowlist for credentialed base URLs.
+
+    A non-blank ``SMARTSHEET_RM_ALLOWED_HOSTS`` value (or ``allowed_hosts_str``)
+    replaces the default. An unset or blank value fail-closes to
+    ``api.rm.smartsheet.com``.
+    """
+    if allowed_hosts_str is None:
+        raw = os.environ.get("SMARTSHEET_RM_ALLOWED_HOSTS", "")
+    else:
+        raw = allowed_hosts_str
+    raw = raw.strip()
+    if not raw:
+        raw = DEFAULT_ALLOWED_HOSTS
+    return {part.strip().lower() for part in raw.split(",") if part.strip()}
+
+
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Return True for loopback, private, link-local, metadata, mapped, or non-global addresses."""
+    if getattr(ip, "ipv4_mapped", None) is not None:
+        return True
+    return bool(
+        ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or not ip.is_global
+    )
+
+
+def _looks_like_ipv4_literal(hostname: str) -> bool:
+    """Return True for decimal, hex, octal, and shortened IPv4 spellings."""
+    labels = hostname.split(".")
+    if not 1 <= len(labels) <= 4:
+        return False
+    for label in labels:
+        lowered = label.lower()
+        if lowered.startswith("0x"):
+            hex_body = lowered[2:]
+            if not hex_body or any(char not in "0123456789abcdef" for char in hex_body):
+                return False
+        elif not label.isdigit():
+            return False
+    return True
+
+
+def _literal_ip(hostname: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """Parse an IP literal, including forms that bypass ``ip_address`` strings."""
+    try:
+        return ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    if not _looks_like_ipv4_literal(hostname):
+        return None
+    try:
+        packed = socket.inet_aton(hostname)
+    except OSError:
+        return None
+    return ipaddress.ip_address(packed)
+
+
+def _raise_if_blocked_destination(hostname: str, *, context: str) -> None:
+    """Fail closed on loopback, link-local, private, and other non-global targets."""
+    if hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith((".local", ".internal")):
+        raise ValueError(f"Blocked internal/loopback hostname in {context}: {hostname}")
+    literal = _literal_ip(hostname)
+    if literal is not None and _is_blocked_ip(literal):
+        raise ValueError(f"Blocked private/reserved IP address in {context}: {hostname}")
+
+
+def _reject_userinfo(parsed_username: str | None, parsed_password: str | None, *, context: str) -> None:
+    """Reject userinfo so the allowlisted host cannot be hidden in the user part."""
+    if parsed_username is not None or parsed_password is not None:
+        raise ValueError(f"{context} must not include userinfo.")
 
 
 def _validate_base_url(
@@ -38,7 +115,14 @@ def _validate_base_url(
     allowed_hosts_str: str | None = None,
     check_dns: bool = False,
 ) -> str:
-    """Validate target base URL against SSRF, loopback, private IPs, and DNS rebinding."""
+    """Validate a credentialed API base URL against SSRF and the host allowlist.
+
+    Requires HTTPS. Loopback, private, link-local, and other non-global targets
+    are rejected even when listed in the allowlist. The hostname must be in
+    ``SMARTSHEET_RM_ALLOWED_HOSTS`` when that variable is set; otherwise only
+    ``api.rm.smartsheet.com`` is permitted. The default path prefix remains
+    ``/api/v1``.
+    """
     if not url:
         return DEFAULT_BASE_URL
 
@@ -50,76 +134,143 @@ def _validate_base_url(
     if not hostname:
         raise ValueError("Invalid base URL: missing hostname.")
 
-    if hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith(".local") or hostname.endswith(".internal"):
-        raise ValueError(f"Blocked internal/loopback hostname in base URL: {hostname}")
+    _raise_if_blocked_destination(hostname, context="base URL")
+    _reject_userinfo(parsed.username, parsed.password, context="Base URL")
 
-    allowed_raw = (
-        allowed_hosts_str
-        if allowed_hosts_str is not None
-        else os.environ.get("SMARTSHEET_RM_ALLOWED_HOSTS", "").strip()
-    )
-    if allowed_raw:
-        allowed = {h.strip().lower() for h in allowed_raw.split(",") if h.strip()}
-        if hostname not in allowed:
-            raise ValueError(f"Hostname '{hostname}' is not in SMARTSHEET_RM_ALLOWED_HOSTS.")
+    allowed = _resolve_allowed_hosts(allowed_hosts_str)
+    if hostname not in allowed:
+        raise ValueError(f"Hostname '{hostname}' is not in SMARTSHEET_RM_ALLOWED_HOSTS.")
 
     try:
-        ip = ipaddress.ip_address(hostname)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or not ip.is_global:
-            raise ValueError(f"Blocked private/reserved IP address in base URL: {hostname}")
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        if check_dns:
+            _validate_hostname_dns(hostname)
         return url.rstrip("/")
-    except ValueError as e:
-        if "Blocked" in str(e):
-            raise
-
-    if check_dns:
-        _validate_hostname_dns(hostname)
-
     return url.rstrip("/")
 
 
-def _validate_hostname_dns(hostname: str) -> None:
-    """Validate resolved DNS IP addresses to defend against private IP binding and DNS rebinding."""
-    # Allow canonical RFC 2606 reserved example domain for placeholder templates/tests
-    if hostname == "example.com" or hostname.endswith(".example.com"):
-        return
+def _parse_outbound_https(url: str) -> tuple[str, str]:
+    """Return ``(url, hostname)`` after HTTPS, userinfo, and literal-address checks."""
+    candidate = url.strip()
+    if not candidate:
+        raise ValueError("Outbound URL is required.")
 
-    try:
-        ip = ipaddress.ip_address(hostname)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or not ip.is_global:
+    parsed = urlparse(candidate)
+    if parsed.scheme.lower() != "https":
+        raise ValueError("Only HTTPS is permitted for outbound URL.")
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("Invalid outbound URL: missing hostname.")
+
+    _raise_if_blocked_destination(hostname, context="outbound URL")
+    _reject_userinfo(parsed.username, parsed.password, context="Outbound URL")
+    return candidate, hostname
+
+
+def validate_outbound_url(url: str) -> str:
+    """Validate a maintainer-supplied outbound URL before a non-following GET.
+
+    Enforces HTTPS and the same fail-closed loopback, private, and metadata
+    blocks as credentialed base URLs. Does not apply the API host allowlist,
+    because this fetch does not send the Resource Management token. Connecting
+    must go through ``fetch_pinned_https`` so TCP uses the validated IP.
+    """
+    candidate, hostname = _parse_outbound_https(url)
+    _validate_hostname_dns(hostname)
+    return candidate
+
+
+def _host_header(hostname: str, port: int | None) -> str:
+    """Host header value preserving a non-default port and the original name."""
+    if port is not None and port != 443:
+        return f"{hostname}:{port}"
+    return hostname
+
+
+def _pin_request(request: httpx.Request, hostname: str, validated_ip: str) -> None:
+    """Point TCP at ``validated_ip`` while Host and SNI stay on ``hostname``."""
+    request.headers["Host"] = _host_header(hostname, request.url.port)
+    request.extensions["sni_hostname"] = hostname
+    request.url = request.url.copy_with(host=validated_ip)
+
+
+def fetch_pinned_https(url: str, *, timeout: float = 30.0) -> httpx.Response:
+    """GET ``url`` over HTTPS with redirects disabled and TCP pinned to a checked IP.
+
+    DNS is resolved once. The socket connects to an address that passed the
+    public-IP checks. The Host header, TLS SNI, and certificate verification
+    stay on the original hostname.
+    """
+    candidate, hostname = _parse_outbound_https(url)
+    validated_ip = _validate_hostname_dns(hostname)
+    original = httpx.URL(candidate)
+    pinned = original.copy_with(host=validated_ip)
+    headers = {"Host": _host_header(hostname, original.port)}
+    extensions: dict[str, str] = {"sni_hostname": hostname}
+    with httpx.Client(verify=True, follow_redirects=False, timeout=timeout) as client:
+        response = client.get(
+            pinned,
+            headers=headers,
+            extensions=extensions,
+            follow_redirects=False,
+            timeout=timeout,
+        )
+        response.read()
+    return response
+
+
+def _validate_hostname_dns(hostname: str) -> str:
+    """Resolve ``hostname`` once and return a public IP safe to connect to.
+
+    Every returned address must be global. IPv4-mapped IPv6 and alternative
+    integer spellings of private addresses are rejected. RFC 2606 names return
+    ``_EXAMPLE_PINNED_IP`` without a network lookup.
+    """
+    if hostname == "example.com" or hostname.endswith(".example.com"):
+        return _EXAMPLE_PINNED_IP
+
+    literal = _literal_ip(hostname)
+    if literal is not None:
+        if _is_blocked_ip(literal):
             raise ValueError(f"Blocked private/reserved IP address: {hostname}")
-        return
-    except ValueError as e:
-        if "Blocked" in str(e):
-            raise
+        return str(literal)
 
     try:
         resolved_addrs = socket.getaddrinfo(hostname, None)
-        for _, _, _, _, sockaddr in resolved_addrs:
-            resolved_ip = ipaddress.ip_address(sockaddr[0])
-            if (
-                resolved_ip.is_private
-                or resolved_ip.is_loopback
-                or resolved_ip.is_link_local
-                or resolved_ip.is_multicast
-                or resolved_ip.is_reserved
-                or not resolved_ip.is_global
-            ):
-                msg = f"Blocked hostname '{hostname}' resolving to private/reserved IP: {sockaddr[0]}"
-                raise ValueError(msg)
     except socket.gaierror as exc:
         raise ValueError(f"Could not resolve hostname in base URL: {hostname}") from exc
 
+    validated_ip: str | None = None
+    for _, _, _, _, sockaddr in resolved_addrs:
+        resolved_ip = ipaddress.ip_address(sockaddr[0])
+        if _is_blocked_ip(resolved_ip):
+            msg = f"Blocked hostname '{hostname}' resolving to private/reserved IP: {sockaddr[0]}"
+            raise ValueError(msg)
+        if validated_ip is None:
+            validated_ip = str(resolved_ip)
+    if validated_ip is None:
+        raise ValueError(f"No IP addresses resolved for hostname: {hostname}")
+    return validated_ip
+
 
 class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
-    """Async HTTP transport enforcing DNS destination validation at request connection time."""
+    """Async HTTP transport that connects to the IP validated at request time."""
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        """Validate destination hostname via worker thread before dispatching HTTP request."""
+        """Pin TCP to a public IP while Host and SNI stay on the original hostname."""
         hostname = request.url.host
+        if (request.url.scheme or "").lower() != "https":
+            raise SmartsheetRMAPIError(
+                status_code=400,
+                path=str(request.url),
+                method=request.method,
+                detail=f"Only HTTPS is permitted for outbound requests to {hostname}.",
+            )
         if hostname:
             try:
-                await asyncio.to_thread(_validate_hostname_dns, hostname)
+                validated_ip = await asyncio.to_thread(_validate_hostname_dns, hostname)
             except ValueError as exc:
                 raise SmartsheetRMAPIError(
                     status_code=400,
@@ -127,6 +278,7 @@ class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
                     method=request.method,
                     detail=f"SSRF validation blocked request to {hostname}: {exc}",
                 ) from exc
+            _pin_request(request, hostname, validated_ip)
         return await super().handle_async_request(request)
 
 
@@ -153,7 +305,7 @@ class SmartsheetRMClient:
             self._http = http_client
         else:
             transport = SSRFSafeAsyncTransport(verify=True)
-            self._http = httpx.AsyncClient(transport=transport, timeout=60.0)
+            self._http = httpx.AsyncClient(transport=transport, timeout=60.0, follow_redirects=False)
 
     async def aclose(self) -> None:
         """Close the underlying HTTP transport if owned by this client."""
@@ -224,6 +376,7 @@ class SmartsheetRMClient:
                 params=clean_params,
                 json=json_data,
                 timeout=60.0,
+                follow_redirects=False,
             )
 
             if r.status_code != 429:

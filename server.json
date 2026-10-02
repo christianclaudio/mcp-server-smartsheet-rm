@@ -7,12 +7,12 @@
     "url": "https://github.com/christianclaudio/mcp-server-smartsheet-rm",
     "source": "github"
   },
-  "version": "1.2.1",
+  "version": "1.2.2",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-server-smartsheet-rm",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
@@ -27,7 +27,7 @@
         },
         {
           "name": "SMARTSHEET_RM_BASE_URL",
-          "description": "Smartsheet RM API Base URL (defaults to https://api.rm.smartsheet.com/api/v1)",
+          "description": "API base URL. Host must be in SMARTSHEET_RM_ALLOWED_HOSTS (default api.rm.smartsheet.com).",
           "isRequired": false,
           "format": "string",
           "isSecret": false
