@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Docs**: README `uvx` install examples are intentionally unpinned (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`). SemVer stays in package manifests, the release tag, and this changelog. Pin a freeze from GitHub Releases or this changelog when a host needs one.
 
+## [1.2.2] - 2026-10-02
+
+### Security
+- **Default API host allowlist**: `SMARTSHEET_RM_BASE_URL` and the `x-smartsheet-rm-base-url` header must name a host in `SMARTSHEET_RM_ALLOWED_HOSTS`. When that variable is unset or blank, the allowlist is `api.rm.smartsheet.com` and the client path prefix stays `https://api.rm.smartsheet.com/api/v1`. An explicit allowlist replaces the default. Loopback, link-local, private, and other non-global destinations stay blocked even if they are listed. Credentialed requests do not follow redirects.
+- **OpenAPI drift fetch**: `scripts/check_openapi_drift.py --spec-url` validates the URL (HTTPS, no loopback/private/metadata targets) before GET and does not follow redirects.
+
 ## [1.2.1] - 2026-09-27
 
 ### Changed

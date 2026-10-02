@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
+import httpx
 import pytest
 from scripts import check_openapi_drift, check_tool_contract
 
@@ -88,9 +89,30 @@ def test_drift_main_with_spec_file(tmp_path: Path) -> None:
 
 
 def test_drift_main_with_spec_url() -> None:
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"paths": {}}
-    mock_resp.raise_for_status = MagicMock()
-    with patch("httpx.get", return_value=mock_resp):
+    request = httpx.Request("GET", "https://api.example.com/spec.json")
+    mock_resp = httpx.Response(200, json={"paths": {}}, request=request)
+    with patch("httpx.get", return_value=mock_resp) as get:
         with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "https://api.example.com/spec.json"]):
             assert check_openapi_drift.main() == 0
+        get.assert_called_once_with("https://api.example.com/spec.json", timeout=30.0, follow_redirects=False)
+
+
+def test_drift_spec_url_blocks_ssrf_and_redirects(capsys: pytest.CaptureFixture[str]) -> None:
+    with patch("httpx.get") as get:
+        with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "https://169.254.169.254/latest/meta-data"]):
+            assert check_openapi_drift.main() == 2
+        get.assert_not_called()
+    err = capsys.readouterr().err
+    assert "ERROR fetching spec-url" in err
+    assert "Blocked private/reserved" in err
+
+    with patch("httpx.get") as get:
+        with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "http://api.example.com/spec.json"]):
+            assert check_openapi_drift.main() == 2
+        get.assert_not_called()
+
+    redirect = httpx.Response(302, headers={"location": "http://127.0.0.1/secret"})
+    with patch("httpx.get", return_value=redirect) as get:
+        with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "https://api.example.com/spec.json"]):
+            assert check_openapi_drift.main() == 2
+        assert get.call_args.kwargs["follow_redirects"] is False

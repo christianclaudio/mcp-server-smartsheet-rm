@@ -19,7 +19,7 @@ import httpx
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
-from smartsheet_rm_mcp.client import SmartsheetRMClient  # noqa: E402
+from smartsheet_rm_mcp.client import SmartsheetRMClient, validate_outbound_url  # noqa: E402
 from smartsheet_rm_mcp.server import mcp  # noqa: E402
 
 ENDPOINT_TO_METHOD: dict[tuple[str, str], str] = {
@@ -437,7 +437,11 @@ def main() -> int:
             return 2
     elif args.spec_url:
         try:
-            resp = httpx.get(args.spec_url, timeout=30.0, follow_redirects=True)
+            safe_url = validate_outbound_url(args.spec_url)
+            resp = httpx.get(safe_url, timeout=30.0, follow_redirects=False)
+            if resp.is_redirect:
+                location = resp.headers.get("location", "")
+                raise ValueError(f"Refusing to follow redirect for spec URL (HTTP {resp.status_code} -> {location}).")
             resp.raise_for_status()
             raw_spec = resp.json()
         except Exception as e:

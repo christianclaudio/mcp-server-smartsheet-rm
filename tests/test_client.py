@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,11 +11,13 @@ import httpx
 import pytest
 
 from smartsheet_rm_mcp.client import (
+    DEFAULT_ALLOWED_HOSTS,
     DEFAULT_BASE_URL,
     SmartsheetRMClient,
     SSRFSafeAsyncTransport,
     _validate_base_url,
     _validate_hostname_dns,
+    validate_outbound_url,
 )
 from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
 
@@ -70,6 +73,7 @@ async def test_request_success_and_path_encoding() -> None:
     mock_http.request.assert_called_once()
     call_args = mock_http.request.call_args
     assert "with%20special" in call_args[0][1]
+    assert call_args.kwargs["follow_redirects"] is False
 
 
 @pytest.mark.asyncio
@@ -295,8 +299,9 @@ def test_extract_list_and_extract_dict() -> None:
 
 def test_validate_base_url_ssrf_protections() -> None:
     """Verify base URL validation protects against SSRF and non-global destinations."""
-    # Default fallback
+    # Default fallback keeps the official path prefix
     assert _validate_base_url("") == DEFAULT_BASE_URL
+    assert DEFAULT_ALLOWED_HOSTS == "api.rm.smartsheet.com"
 
     # HTTPS enforcement
     with pytest.raises(ValueError, match="Only HTTPS is permitted"):
@@ -306,33 +311,81 @@ def test_validate_base_url_ssrf_protections() -> None:
     with pytest.raises(ValueError, match="missing hostname"):
         _validate_base_url("https://")
 
-    # Internal/loopback hostnames
+    # Userinfo cannot hide a different host
+    with pytest.raises(ValueError, match="must not include userinfo"):
+        _validate_base_url("https://api.rm.smartsheet.com@evil.com/api/v1")
+    with pytest.raises(ValueError, match="must not include userinfo"):
+        _validate_base_url("https://user:secret@api.rm.smartsheet.com/api/v1")
+
+    # Internal/loopback hostnames, including when someone tries to allowlist them
     for host in ["localhost", "127.0.0.1", "[::1]", "service.local", "db.internal"]:
         with pytest.raises(ValueError, match="Blocked internal/loopback"):
             _validate_base_url(f"https://{host}")
+    with pytest.raises(ValueError, match="Blocked internal/loopback"):
+        _validate_base_url("https://localhost/api/v1", allowed_hosts_str="localhost")
+    with pytest.raises(ValueError, match="Blocked internal/loopback"):
+        _validate_base_url(
+            "https://metadata.google.internal/",
+            allowed_hosts_str="metadata.google.internal",
+        )
 
-    # Private IP literals
+    # Private IP literals stay blocked even if named in the allowlist
     for ip in ["10.0.0.1", "172.16.0.1", "192.168.1.1", "169.254.169.254", "127.0.0.2"]:
         with pytest.raises(ValueError, match="Blocked private/reserved"):
             _validate_base_url(f"https://{ip}")
+    with pytest.raises(ValueError, match="Blocked private/reserved"):
+        _validate_base_url("https://169.254.169.254", allowed_hosts_str="169.254.169.254")
 
-    # Valid globally routable public IP
-    assert _validate_base_url("https://93.184.216.34") == "https://93.184.216.34"
-
-    # Allowed hosts check
+    # Public IPs and other hosts are denied unless the allowlist names them
     with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
-        _validate_base_url("https://untrusted.example.com", allowed_hosts_str="api.rm.smartsheet.com")
-    assert (
-        _validate_base_url("https://api.rm.smartsheet.com", allowed_hosts_str="api.rm.smartsheet.com")
-        == "https://api.rm.smartsheet.com"
-    )
+        _validate_base_url("https://93.184.216.34")
+    assert _validate_base_url("https://93.184.216.34", allowed_hosts_str="93.184.216.34") == "https://93.184.216.34"
 
-    # Valid global domain name via DNS resolution
+    # Default allowlist is the official host; blank config does not open the gate
+    assert _validate_base_url("https://API.RM.SMARTSHEET.COM/api/v1/") == "https://API.RM.SMARTSHEET.COM/api/v1"
+    with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+        _validate_base_url("https://api.custom.com")
+    with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+        _validate_base_url("https://api.rm.smartsheet.com.evil.com/api/v1")
+    with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+        _validate_base_url("https://evil.api.rm.smartsheet.com/api/v1")
+    with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+        _validate_base_url("https://api.custom.com", allowed_hosts_str="")
+    with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+        _validate_base_url("https://api.custom.com", allowed_hosts_str="   ")
+    with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "  "}):
+        assert _validate_base_url("https://api.rm.smartsheet.com/api/v1/") == "https://api.rm.smartsheet.com/api/v1"
+
+    # Explicit allowlist replaces the default (comma gaps are ignored)
+    with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+        _validate_base_url("https://untrusted.example.com", allowed_hosts_str="api.rm.smartsheet.com, ,")
+    assert (
+        _validate_base_url(
+            "https://api.custom.com",
+            allowed_hosts_str="api.custom.com, , api.rm.smartsheet.com",
+        )
+        == "https://api.custom.com"
+    )
+    with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "api.custom.com"}):
+        with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+            _validate_base_url("https://api.rm.smartsheet.com/api/v1")
+        assert _validate_base_url("https://api.custom.com") == "https://api.custom.com"
+
+    # Valid global domain name via DNS resolution, only after the allowlist admits it
     with patch(
         "socket.getaddrinfo",
         return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
     ):
-        assert _validate_base_url("https://api.customdomain.org", check_dns=True) == "https://api.customdomain.org"
+        with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+            _validate_base_url("https://api.customdomain.org", check_dns=True)
+        assert (
+            _validate_base_url(
+                "https://api.customdomain.org",
+                allowed_hosts_str="api.customdomain.org",
+                check_dns=True,
+            )
+            == "https://api.customdomain.org"
+        )
 
     # DNS resolving to private IP
     with patch(
@@ -340,12 +393,20 @@ def test_validate_base_url_ssrf_protections() -> None:
         return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))],
     ):
         with pytest.raises(ValueError, match="resolving to private/reserved IP"):
-            _validate_base_url("https://malicious-rebinding.com", check_dns=True)
+            _validate_base_url(
+                "https://malicious-rebinding.com",
+                allowed_hosts_str="malicious-rebinding.com",
+                check_dns=True,
+            )
 
     # DNS resolution failure (fail-closed)
     with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
         with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
-            _validate_base_url("https://unresolvable-domain.com", check_dns=True)
+            _validate_base_url(
+                "https://unresolvable-domain.com",
+                allowed_hosts_str="unresolvable-domain.com",
+                check_dns=True,
+            )
 
     # Private IP literal in _validate_hostname_dns
     with pytest.raises(ValueError, match="Blocked private/reserved"):
@@ -355,6 +416,45 @@ def test_validate_base_url_ssrf_protections() -> None:
     _validate_hostname_dns("example.com")
     _validate_hostname_dns("api.example.com")
     _validate_hostname_dns("93.184.216.34")
+
+
+def test_validate_outbound_url() -> None:
+    """Maintainer spec fetches block private targets and do not use the API allowlist."""
+    with pytest.raises(ValueError, match="Outbound URL is required"):
+        validate_outbound_url("   ")
+    with pytest.raises(ValueError, match="Only HTTPS is permitted for outbound URL"):
+        validate_outbound_url("http://api.example.com/spec.json")
+    with pytest.raises(ValueError, match="missing hostname"):
+        validate_outbound_url("https://")
+    with pytest.raises(ValueError, match="Blocked internal/loopback"):
+        validate_outbound_url("https://localhost/spec.json")
+    with pytest.raises(ValueError, match="Blocked private/reserved"):
+        validate_outbound_url("https://169.254.169.254/latest/meta-data")
+    with pytest.raises(ValueError, match="must not include userinfo"):
+        validate_outbound_url("https://user@api.example.com/spec.json")
+
+    assert validate_outbound_url("  https://api.example.com/spec.json  ") == "https://api.example.com/spec.json"
+    assert validate_outbound_url("https://93.184.216.34/openapi.json") == "https://93.184.216.34/openapi.json"
+
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ):
+        assert (
+            validate_outbound_url("https://developer.smartsheet.com/openapi.json")
+            == "https://developer.smartsheet.com/openapi.json"
+        )
+
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", 443))],
+    ):
+        with pytest.raises(ValueError, match="resolving to private/reserved IP"):
+            validate_outbound_url("https://metadata.example.net/spec.json")
+
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
+        with pytest.raises(ValueError, match="Could not resolve hostname"):
+            validate_outbound_url("https://unresolvable-spec.example.net/spec.json")
 
 
 @pytest.mark.asyncio

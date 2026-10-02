@@ -47,10 +47,11 @@ This restricts registration exclusively to **38 read-only tools**, completely re
 - **Bulk Destructive Operations:** `rm_bulk_delete_time_entries` and `rm_bulk_delete_assignments` are excluded from registration by default and require `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1` plus `confirm=True`.
 
 ### 5. SSRF & Host Validation
-When running in multi-tenant environments where callers may provide per-request `x-smartsheet-rm-base-url` headers:
-- Base URLs are strictly restricted to the HTTPS scheme.
-- Loopback addresses (`localhost`, `127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`), private RFC1918 subnets, and hostnames resolving to non-global IP addresses are blocked fail-closed.
-- In zero-trust deployments where time-of-check/time-of-use (TOCTOU) DNS rebinding is a concern, configure `SMARTSHEET_RM_ALLOWED_HOSTS` to explicitly restrict outbound traffic to trusted hostnames (e.g. `SMARTSHEET_RM_ALLOWED_HOSTS=api.rm.smartsheet.com`).
+When running in multi-tenant environments where callers may provide per-request `x-smartsheet-rm-base-url` headers or `SMARTSHEET_RM_BASE_URL`:
+- Base URLs are strictly restricted to the HTTPS scheme and must not include userinfo.
+- By default only `api.rm.smartsheet.com` is allowed (the client path prefix remains `https://api.rm.smartsheet.com/api/v1`). Set `SMARTSHEET_RM_ALLOWED_HOSTS` to a comma-separated hostname list to replace that default. Include `api.rm.smartsheet.com` in the list if the official API should remain reachable.
+- Loopback addresses (`localhost`, `127.0.0.0/8`, `::1`), `.local` / `.internal` names, link-local (`169.254.0.0/16`, including the cloud metadata address), private RFC1918 subnets, and hostnames resolving to non-global IP addresses are blocked fail-closed, including when they appear in the allowlist.
+- Credentialed API requests do not follow redirects.
 
 ---
 

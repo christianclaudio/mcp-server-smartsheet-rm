@@ -192,17 +192,51 @@ async def test_get_client_resolution_and_cache() -> None:
             await srv.get_client()
         assert "SMARTSHEET_RM_API_TOKEN" in str(exc.value)
 
+    # Configured base URL must stay on the default allowlist unless explicitly expanded
+    srv._client = None
+    with patch.dict(
+        os.environ,
+        {"SMARTSHEET_RM_API_TOKEN": "env-token", "SMARTSHEET_RM_BASE_URL": "https://api.custom.com/api/v1"},
+    ):
+        os.environ.pop("SMARTSHEET_RM_ALLOWED_HOSTS", None)
+        with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+            await srv.get_client()
+    srv._client = None
+    with patch.dict(
+        os.environ,
+        {
+            "SMARTSHEET_RM_API_TOKEN": "env-token",
+            "SMARTSHEET_RM_BASE_URL": "https://api.custom.com/api/v1",
+            "SMARTSHEET_RM_ALLOWED_HOSTS": "api.custom.com",
+        },
+    ):
+        c_custom_env = await srv.get_client()
+        assert c_custom_env.base_url == "https://api.custom.com/api/v1"
+    srv._client = None
+
     # Per-request context header resolution and SSRF protections with mocked global DNS
     with patch(
         "socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
     ):
         srv._HEADER_CLIENT_CACHE.clear()
         ctx = {
-            "headers": {"x-smartsheet-rm-token": "header-token", "x-smartsheet-rm-base-url": "https://api.custom.com"}
+            "headers": {
+                "x-smartsheet-rm-token": "header-token",
+                "x-smartsheet-rm-base-url": "https://api.rm.smartsheet.com/api/v1",
+            }
         }
         client_ctx = await srv.get_client(ctx)
         assert client_ctx.api_token == "header-token"
-        assert client_ctx.base_url == "https://api.custom.com"
+        assert client_ctx.base_url == "https://api.rm.smartsheet.com/api/v1"
+        with pytest.raises(ValueError, match="not in SMARTSHEET_RM_ALLOWED_HOSTS"):
+            await srv.get_client(
+                {
+                    "headers": {
+                        "x-smartsheet-rm-token": "header-token",
+                        "x-smartsheet-rm-base-url": "https://api.custom.com",
+                    }
+                }
+            )
 
         # Context with request_context object
         req_ctx_mock = MagicMock()
@@ -245,6 +279,11 @@ async def test_get_client_resolution_and_cache() -> None:
             await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://192.168.1.1"}})
         with pytest.raises(ValueError, match="Blocked private/reserved"):
             await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://169.254.169.254"}})
+        with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "169.254.169.254,localhost"}):
+            with pytest.raises(ValueError, match="Blocked private/reserved"):
+                await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://169.254.169.254"}})
+            with pytest.raises(ValueError, match="Blocked internal/loopback"):
+                await srv.get_client({"headers": {"x-smartsheet-rm-base-url": "https://localhost"}})
 
         # Allowed hosts check
         with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "api.custom.com, api.rm.smartsheet.com"}):
@@ -261,22 +300,31 @@ async def test_get_client_resolution_and_cache() -> None:
         # Hostname resolving to private/reserved IP via DNS (when check_dns=True)
         with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]):
             with pytest.raises(ValueError, match="resolving to private/reserved IP"):
-                _validate_base_url("https://malicious-dns.com", check_dns=True)
+                _validate_base_url(
+                    "https://malicious-dns.com",
+                    allowed_hosts_str="malicious-dns.com",
+                    check_dns=True,
+                )
 
         # Hostname failing DNS resolution (gaierror fails closed when check_dns=True)
         with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
             with pytest.raises(ValueError, match="Could not resolve hostname in base URL"):
-                _validate_base_url("https://unresolvable-domain.com", check_dns=True)
+                _validate_base_url(
+                    "https://unresolvable-domain.com",
+                    allowed_hosts_str="unresolvable-domain.com",
+                    check_dns=True,
+                )
             # get_client uses check_dns=False (DNS validation is connection-bound)
-            c_unres = await srv.get_client(
-                {
-                    "headers": {
-                        "x-smartsheet-rm-token": "tok",
-                        "x-smartsheet-rm-base-url": "https://unresolvable-domain.com",
+            with patch.dict(os.environ, {"SMARTSHEET_RM_ALLOWED_HOSTS": "unresolvable-domain.com"}):
+                c_unres = await srv.get_client(
+                    {
+                        "headers": {
+                            "x-smartsheet-rm-token": "tok",
+                            "x-smartsheet-rm-base-url": "https://unresolvable-domain.com",
+                        }
                     }
-                }
-            )
-            assert c_unres.base_url == "https://unresolvable-domain.com"
+                )
+                assert c_unres.base_url == "https://unresolvable-domain.com"
 
 
 @pytest.mark.asyncio

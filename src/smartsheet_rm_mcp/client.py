@@ -31,6 +31,43 @@ from .errors import SmartsheetRMAPIError
 JSONValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
 DEFAULT_BASE_URL = "https://api.rm.smartsheet.com/api/v1"
+# Credentialed calls stay on this host unless SMARTSHEET_RM_ALLOWED_HOSTS replaces it.
+DEFAULT_ALLOWED_HOSTS = "api.rm.smartsheet.com"
+
+
+def _resolve_allowed_hosts(allowed_hosts_str: str | None) -> set[str]:
+    """Resolve the hostname allowlist for credentialed base URLs.
+
+    A non-blank ``SMARTSHEET_RM_ALLOWED_HOSTS`` value (or ``allowed_hosts_str``)
+    replaces the default. An unset or blank value fail-closes to
+    ``api.rm.smartsheet.com``.
+    """
+    if allowed_hosts_str is None:
+        raw = os.environ.get("SMARTSHEET_RM_ALLOWED_HOSTS", "")
+    else:
+        raw = allowed_hosts_str
+    raw = raw.strip()
+    if not raw:
+        raw = DEFAULT_ALLOWED_HOSTS
+    return {part.strip().lower() for part in raw.split(",") if part.strip()}
+
+
+def _raise_if_blocked_destination(hostname: str, *, context: str) -> None:
+    """Fail closed on loopback, link-local, private, and other non-global targets."""
+    if hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith((".local", ".internal")):
+        raise ValueError(f"Blocked internal/loopback hostname in {context}: {hostname}")
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        return
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or not ip.is_global:
+        raise ValueError(f"Blocked private/reserved IP address in {context}: {hostname}")
+
+
+def _reject_userinfo(parsed_username: str | None, parsed_password: str | None, *, context: str) -> None:
+    """Reject userinfo so the allowlisted host cannot be hidden in the user part."""
+    if parsed_username is not None or parsed_password is not None:
+        raise ValueError(f"{context} must not include userinfo.")
 
 
 def _validate_base_url(
@@ -38,7 +75,14 @@ def _validate_base_url(
     allowed_hosts_str: str | None = None,
     check_dns: bool = False,
 ) -> str:
-    """Validate target base URL against SSRF, loopback, private IPs, and DNS rebinding."""
+    """Validate a credentialed API base URL against SSRF and the host allowlist.
+
+    Requires HTTPS. Loopback, private, link-local, and other non-global targets
+    are rejected even when listed in the allowlist. The hostname must be in
+    ``SMARTSHEET_RM_ALLOWED_HOSTS`` when that variable is set; otherwise only
+    ``api.rm.smartsheet.com`` is permitted. The default path prefix remains
+    ``/api/v1``.
+    """
     if not url:
         return DEFAULT_BASE_URL
 
@@ -50,32 +94,46 @@ def _validate_base_url(
     if not hostname:
         raise ValueError("Invalid base URL: missing hostname.")
 
-    if hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith(".local") or hostname.endswith(".internal"):
-        raise ValueError(f"Blocked internal/loopback hostname in base URL: {hostname}")
+    _raise_if_blocked_destination(hostname, context="base URL")
+    _reject_userinfo(parsed.username, parsed.password, context="Base URL")
 
-    allowed_raw = (
-        allowed_hosts_str
-        if allowed_hosts_str is not None
-        else os.environ.get("SMARTSHEET_RM_ALLOWED_HOSTS", "").strip()
-    )
-    if allowed_raw:
-        allowed = {h.strip().lower() for h in allowed_raw.split(",") if h.strip()}
-        if hostname not in allowed:
-            raise ValueError(f"Hostname '{hostname}' is not in SMARTSHEET_RM_ALLOWED_HOSTS.")
+    allowed = _resolve_allowed_hosts(allowed_hosts_str)
+    if hostname not in allowed:
+        raise ValueError(f"Hostname '{hostname}' is not in SMARTSHEET_RM_ALLOWED_HOSTS.")
 
     try:
-        ip = ipaddress.ip_address(hostname)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or not ip.is_global:
-            raise ValueError(f"Blocked private/reserved IP address in base URL: {hostname}")
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        if check_dns:
+            _validate_hostname_dns(hostname)
         return url.rstrip("/")
-    except ValueError as e:
-        if "Blocked" in str(e):
-            raise
-
-    if check_dns:
-        _validate_hostname_dns(hostname)
-
     return url.rstrip("/")
+
+
+def validate_outbound_url(url: str) -> str:
+    """Validate a maintainer-supplied outbound URL before a non-following GET.
+
+    Enforces HTTPS and the same fail-closed loopback, private, and metadata
+    blocks as credentialed base URLs. Does not apply the API host allowlist,
+    because this fetch does not send the Resource Management token. Callers
+    must request the returned URL with ``follow_redirects=False``.
+    """
+    candidate = url.strip()
+    if not candidate:
+        raise ValueError("Outbound URL is required.")
+
+    parsed = urlparse(candidate)
+    if parsed.scheme.lower() != "https":
+        raise ValueError("Only HTTPS is permitted for outbound URL.")
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("Invalid outbound URL: missing hostname.")
+
+    _raise_if_blocked_destination(hostname, context="outbound URL")
+    _reject_userinfo(parsed.username, parsed.password, context="Outbound URL")
+    _validate_hostname_dns(hostname)
+    return candidate
 
 
 def _validate_hostname_dns(hostname: str) -> None:
@@ -153,7 +211,7 @@ class SmartsheetRMClient:
             self._http = http_client
         else:
             transport = SSRFSafeAsyncTransport(verify=True)
-            self._http = httpx.AsyncClient(transport=transport, timeout=60.0)
+            self._http = httpx.AsyncClient(transport=transport, timeout=60.0, follow_redirects=False)
 
     async def aclose(self) -> None:
         """Close the underlying HTTP transport if owned by this client."""
@@ -224,6 +282,7 @@ class SmartsheetRMClient:
                 params=clean_params,
                 json=json_data,
                 timeout=60.0,
+                follow_redirects=False,
             )
 
             if r.status_code != 429:
