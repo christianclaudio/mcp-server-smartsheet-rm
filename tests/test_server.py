@@ -862,58 +862,67 @@ async def test_clone_project_schedule_transport_respx(respx_mock: Any) -> None:
     real_client = SmartsheetRMClient("test-token", "https://api.rm.smartsheet.com/api/v1")
     old_client = srv._client
     srv._client = real_client
+    pinned = "https://93.184.216.34/api/v1"
     try:
-        respx_mock.get("https://api.rm.smartsheet.com/api/v1/projects/100").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "id": 100,
-                    "name": "Template Project",
-                    "project_state": "Confirmed",
-                    "client_id": 5,
-                    "starts_at": "2026-08-01",
-                    "ends_at": "2026-08-31",
-                },
+        # TCP is pinned to the validated IP. Host stays the original API name.
+        with patch(
+            "socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+        ):
+            respx_mock.get(f"{pinned}/projects/100").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "id": 100,
+                        "name": "Template Project",
+                        "project_state": "Confirmed",
+                        "client_id": 5,
+                        "starts_at": "2026-08-01",
+                        "ends_at": "2026-08-31",
+                    },
+                )
             )
-        )
-        respx_mock.get("https://api.rm.smartsheet.com/api/v1/projects/100/phases").mock(
-            return_value=httpx.Response(
-                200,
-                json={
-                    "data": [
-                        {"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"},
-                        {"name": "Phase 2", "starts_at": "2026-08-16", "ends_at": "2026-08-31"},
-                    ]
-                },
+            respx_mock.get(f"{pinned}/projects/100/phases").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "data": [
+                            {"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-15"},
+                            {"name": "Phase 2", "starts_at": "2026-08-16", "ends_at": "2026-08-31"},
+                        ]
+                    },
+                )
             )
-        )
-        create_proj_route = respx_mock.post("https://api.rm.smartsheet.com/api/v1/projects").mock(
-            return_value=httpx.Response(200, json={"id": 200, "name": "Cloned Project"})
-        )
-        create_phase_route = respx_mock.post("https://api.rm.smartsheet.com/api/v1/projects/200/phases").mock(
-            return_value=httpx.Response(200, json={"id": 201, "name": "Cloned Phase"})
-        )
+            create_proj_route = respx_mock.post(f"{pinned}/projects").mock(
+                return_value=httpx.Response(200, json={"id": 200, "name": "Cloned Project"})
+            )
+            create_phase_route = respx_mock.post(f"{pinned}/projects/200/phases").mock(
+                return_value=httpx.Response(200, json={"id": 201, "name": "Cloned Phase"})
+            )
 
-        res = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01", client_id=9)
-        data = json.loads(res)
-        assert data["status"] == "success"
-        assert data["cloned_phases_count"] == 2
+            res = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01", client_id=9)
+            data = json.loads(res)
+            assert data["status"] == "success"
+            assert data["cloned_phases_count"] == 2
 
-        # Verify transport-level wire payloads
-        assert create_proj_route.called
-        proj_req = json.loads(create_proj_route.calls.last.request.content)
-        assert proj_req["starts_at"] == "2026-09-01"
-        assert proj_req["ends_at"] == "2026-10-01"
-        assert proj_req["client_id"] == 9
+            # Verify transport-level wire payloads
+            assert create_proj_route.called
+            proj_call = create_proj_route.calls.last.request
+            assert proj_call.headers["host"] == "api.rm.smartsheet.com"
+            assert proj_call.extensions["sni_hostname"] == "api.rm.smartsheet.com"
+            proj_req = json.loads(proj_call.content)
+            assert proj_req["starts_at"] == "2026-09-01"
+            assert proj_req["ends_at"] == "2026-10-01"
+            assert proj_req["client_id"] == 9
 
-        assert create_phase_route.call_count == 2
-        phase1_req = json.loads(create_phase_route.calls[0].request.content)
-        assert phase1_req["starts_at"] == "2026-09-01"
-        assert phase1_req["ends_at"] == "2026-09-15"
+            assert create_phase_route.call_count == 2
+            phase1_req = json.loads(create_phase_route.calls[0].request.content)
+            assert phase1_req["starts_at"] == "2026-09-01"
+            assert phase1_req["ends_at"] == "2026-09-15"
 
-        phase2_req = json.loads(create_phase_route.calls[1].request.content)
-        assert phase2_req["starts_at"] == "2026-09-16"
-        assert phase2_req["ends_at"] == "2026-10-01"
+            phase2_req = json.loads(create_phase_route.calls[1].request.content)
+            assert phase2_req["starts_at"] == "2026-09-16"
+            assert phase2_req["ends_at"] == "2026-10-01"
     finally:
         await real_client.aclose()
         srv._client = old_client

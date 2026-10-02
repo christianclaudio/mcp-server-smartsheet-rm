@@ -17,6 +17,7 @@ from smartsheet_rm_mcp.client import (
     SSRFSafeAsyncTransport,
     _validate_base_url,
     _validate_hostname_dns,
+    fetch_pinned_https,
     validate_outbound_url,
 )
 from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
@@ -413,9 +414,52 @@ def test_validate_base_url_ssrf_protections() -> None:
         _validate_hostname_dns("10.0.0.1")
 
     # Example.com and global public IP in _validate_hostname_dns
-    _validate_hostname_dns("example.com")
-    _validate_hostname_dns("api.example.com")
-    _validate_hostname_dns("93.184.216.34")
+    assert _validate_hostname_dns("example.com") == "93.184.216.34"
+    assert _validate_hostname_dns("api.example.com") == "93.184.216.34"
+    assert _validate_hostname_dns("93.184.216.34") == "93.184.216.34"
+
+    # Alternative spellings and IPv4-mapped addresses stay fail-closed
+    for literal in ("2130706433", "0x7f000001", "0177.0.0.1", "127.1", "127.0.1", "[::ffff:127.0.0.1]"):
+        host = literal.strip("[]")
+        with pytest.raises(ValueError, match="Blocked private/reserved"):
+            _validate_hostname_dns(host)
+        with pytest.raises(ValueError, match="Blocked private/reserved"):
+            _validate_base_url(f"https://{literal}/", allowed_hosts_str=host)
+    with pytest.raises(ValueError, match="Blocked private/reserved"):
+        _validate_base_url(
+            "https://[::ffff:93.184.216.34]/",
+            allowed_hosts_str="::ffff:93.184.216.34",
+        )
+    assert _validate_hostname_dns("0x5d581622") == "93.88.22.34"
+    assert _validate_base_url("https://0x5d581622/api", allowed_hosts_str="0x5d581622") == "https://0x5d581622/api"
+
+    # Non-addresses that resemble literals fall through to DNS and still fail closed
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
+        for host in ("999.999.999.999", "0x", "0xzz", "1.2.3.4.5"):
+            with pytest.raises(ValueError, match="Could not resolve hostname"):
+                _validate_hostname_dns(host)
+
+    # Every resolved address must be global; the first good answer is the connect target
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443)),
+        ],
+    ):
+        with pytest.raises(ValueError, match="resolving to private/reserved IP"):
+            _validate_hostname_dns("mixed.example.net")
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001:4860:4860::8888", 443, 0, 0)),
+        ],
+    ):
+        assert _validate_hostname_dns("dual.example.net") == "1.1.1.1"
+    with patch("socket.getaddrinfo", return_value=[]):
+        with pytest.raises(ValueError, match="No IP addresses resolved"):
+            _validate_hostname_dns("empty.example.net")
 
 
 def test_validate_outbound_url() -> None:
@@ -457,6 +501,53 @@ def test_validate_outbound_url() -> None:
             validate_outbound_url("https://unresolvable-spec.example.net/spec.json")
 
 
+def test_fetch_pinned_https_connects_to_validated_ip() -> None:
+    """Spec fetches connect to the checked IP and keep Host plus SNI on the name."""
+    response = httpx.Response(
+        200,
+        json={"ok": True},
+        request=httpx.Request("GET", "https://93.184.216.34/spec.json"),
+    )
+    client = MagicMock()
+    client.__enter__.return_value = client
+    client.get.return_value = response
+
+    with patch("httpx.Client", return_value=client) as client_cls:
+        fetched = fetch_pinned_https("https://api.example.com/spec.json?x=1", timeout=30.0)
+
+    assert fetched.status_code == 200
+    client_cls.assert_called_once()
+    assert client_cls.call_args.kwargs["follow_redirects"] is False
+    client.get.assert_called_once()
+    target = client.get.call_args.args[0]
+    assert str(target) == "https://93.184.216.34/spec.json?x=1"
+    assert client.get.call_args.kwargs["headers"]["Host"] == "api.example.com"
+    assert client.get.call_args.kwargs["extensions"]["sni_hostname"] == "api.example.com"
+    assert client.get.call_args.kwargs["follow_redirects"] is False
+
+    calls = {"n": 0}
+
+    def once(*_args: Any, **_kwargs: Any) -> list[Any]:
+        calls["n"] += 1
+        if calls["n"] > 1:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+
+    with patch("socket.getaddrinfo", side_effect=once):
+        with patch("httpx.Client", return_value=client):
+            fetch_pinned_https("https://developer.smartsheet.com:8443/openapi.json")
+    assert calls["n"] == 1
+    pinned = client.get.call_args.args[0]
+    assert str(pinned) == "https://93.184.216.34:8443/openapi.json"
+    assert client.get.call_args.kwargs["headers"]["Host"] == "developer.smartsheet.com:8443"
+    assert client.get.call_args.kwargs["extensions"]["sni_hostname"] == "developer.smartsheet.com"
+
+    with patch("httpx.Client") as blocked_client:
+        with pytest.raises(ValueError, match="Blocked private/reserved"):
+            fetch_pinned_https("https://169.254.169.254/latest/meta-data")
+        blocked_client.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_ssrf_safe_async_transport() -> None:
     """Verify SSRFSafeAsyncTransport blocks outbound requests to private/reserved destinations."""
@@ -484,6 +575,31 @@ async def test_ssrf_safe_async_transport() -> None:
             assert resp.status_code == 200
             assert dns_thread is not None
             assert dns_thread != loop_thread
+            assert req.url.host == "93.184.216.34"
+            assert req.headers["Host"] == "api.customdomain.org"
+            assert req.extensions["sni_hostname"] == "api.customdomain.org"
+
+    # Non-HTTPS never reaches DNS
+    with pytest.raises(SmartsheetRMAPIError) as scheme_exc:
+        await transport.handle_async_request(httpx.Request("GET", "http://api.customdomain.org/data"))
+    assert "Only HTTPS is permitted" in str(scheme_exc.value.detail)
+
+    # Explicit port stays on the Host header; SNI stays the bare hostname
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
+    ):
+        with patch.object(
+            httpx.AsyncHTTPTransport,
+            "handle_async_request",
+            return_value=httpx.Response(200),
+        ):
+            port_req = httpx.Request("GET", "https://api.customdomain.org:8443/data")
+            await transport.handle_async_request(port_req)
+            assert port_req.url.host == "93.184.216.34"
+            assert port_req.url.port == 8443
+            assert port_req.headers["Host"] == "api.customdomain.org:8443"
+            assert port_req.extensions["sni_hostname"] == "api.customdomain.org"
 
     # Private IP resolution raises SmartsheetRMAPIError at request time
     with patch(

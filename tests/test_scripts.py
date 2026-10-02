@@ -89,30 +89,58 @@ def test_drift_main_with_spec_file(tmp_path: Path) -> None:
 
 
 def test_drift_main_with_spec_url() -> None:
-    request = httpx.Request("GET", "https://api.example.com/spec.json")
+    request = httpx.Request("GET", "https://93.184.216.34/spec.json")
     mock_resp = httpx.Response(200, json={"paths": {}}, request=request)
-    with patch("httpx.get", return_value=mock_resp) as get:
+    with patch("scripts.check_openapi_drift.fetch_pinned_https", return_value=mock_resp) as fetch:
         with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "https://api.example.com/spec.json"]):
             assert check_openapi_drift.main() == 0
-        get.assert_called_once_with("https://api.example.com/spec.json", timeout=30.0, follow_redirects=False)
+        fetch.assert_called_once_with("https://api.example.com/spec.json", timeout=30.0)
 
 
 def test_drift_spec_url_blocks_ssrf_and_redirects(capsys: pytest.CaptureFixture[str]) -> None:
-    with patch("httpx.get") as get:
+    with patch("httpx.Client") as client:
         with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "https://169.254.169.254/latest/meta-data"]):
             assert check_openapi_drift.main() == 2
-        get.assert_not_called()
+        client.assert_not_called()
     err = capsys.readouterr().err
     assert "ERROR fetching spec-url" in err
     assert "Blocked private/reserved" in err
 
-    with patch("httpx.get") as get:
+    with patch("httpx.Client") as client:
         with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "http://api.example.com/spec.json"]):
             assert check_openapi_drift.main() == 2
-        get.assert_not_called()
+        client.assert_not_called()
 
-    redirect = httpx.Response(302, headers={"location": "http://127.0.0.1/secret"})
-    with patch("httpx.get", return_value=redirect) as get:
+    redirect = httpx.Response(
+        302,
+        headers={"location": "http://127.0.0.1/secret"},
+        request=httpx.Request("GET", "https://93.184.216.34/spec.json"),
+    )
+    with patch("scripts.check_openapi_drift.fetch_pinned_https", return_value=redirect) as fetch:
         with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "https://api.example.com/spec.json"]):
             assert check_openapi_drift.main() == 2
-        assert get.call_args.kwargs["follow_redirects"] is False
+        fetch.assert_called_once()
+    err = capsys.readouterr().err
+    assert "Refusing to follow redirect" in err
+    assert "Only HTTPS is permitted" in err
+
+    safe_redirect = httpx.Response(
+        302,
+        headers={"location": "/other.json"},
+        request=httpx.Request("GET", "https://93.184.216.34/spec.json"),
+    )
+    with patch("scripts.check_openapi_drift.fetch_pinned_https", return_value=safe_redirect):
+        with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "https://api.example.com/spec.json"]):
+            assert check_openapi_drift.main() == 2
+    err = capsys.readouterr().err
+    assert "Refusing to follow redirect" in err
+    assert "-> /other.json" in err
+
+    empty_redirect = httpx.Response(
+        301,
+        headers={},
+        request=httpx.Request("GET", "https://93.184.216.34/spec.json"),
+    )
+    with patch("scripts.check_openapi_drift.fetch_pinned_https", return_value=empty_redirect):
+        with patch("sys.argv", ["check_openapi_drift.py", "--spec-url", "https://api.example.com/spec.json"]):
+            assert check_openapi_drift.main() == 2

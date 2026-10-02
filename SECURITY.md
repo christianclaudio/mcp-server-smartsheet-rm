@@ -52,6 +52,7 @@ When running in multi-tenant environments where callers may provide per-request 
 - By default only `api.rm.smartsheet.com` is allowed (the client path prefix remains `https://api.rm.smartsheet.com/api/v1`). Set `SMARTSHEET_RM_ALLOWED_HOSTS` to a comma-separated hostname list to replace that default. Include `api.rm.smartsheet.com` in the list if the official API should remain reachable.
 - Loopback addresses (`localhost`, `127.0.0.0/8`, `::1`), `.local` / `.internal` names, link-local (`169.254.0.0/16`, including the cloud metadata address), private RFC1918 subnets, and hostnames resolving to non-global IP addresses are blocked fail-closed, including when they appear in the allowlist.
 - Credentialed API requests do not follow redirects.
+- At connect time the client resolves the hostname once and opens TCP to an address that passed those checks. The `Host` header, TLS SNI, and certificate verification stay on the original hostname, so a later DNS answer cannot move the connection onto a private or metadata address.
 
 ---
 

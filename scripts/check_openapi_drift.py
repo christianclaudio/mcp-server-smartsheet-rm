@@ -12,14 +12,17 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-import httpx
+from urllib.parse import urljoin
 
 # Add src to path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
-from smartsheet_rm_mcp.client import SmartsheetRMClient, validate_outbound_url  # noqa: E402
+from smartsheet_rm_mcp.client import (  # noqa: E402
+    SmartsheetRMClient,
+    fetch_pinned_https,
+    validate_outbound_url,
+)
 from smartsheet_rm_mcp.server import mcp  # noqa: E402
 
 ENDPOINT_TO_METHOD: dict[tuple[str, str], str] = {
@@ -437,11 +440,16 @@ def main() -> int:
             return 2
     elif args.spec_url:
         try:
-            safe_url = validate_outbound_url(args.spec_url)
-            resp = httpx.get(safe_url, timeout=30.0, follow_redirects=False)
+            resp = fetch_pinned_https(args.spec_url, timeout=30.0)
             if resp.is_redirect:
                 location = resp.headers.get("location", "")
-                raise ValueError(f"Refusing to follow redirect for spec URL (HTTP {resp.status_code} -> {location}).")
+                detail = f"Refusing to follow redirect for spec URL (HTTP {resp.status_code} -> {location})."
+                if location:
+                    try:
+                        validate_outbound_url(urljoin(args.spec_url, location))
+                    except ValueError as exc:
+                        raise ValueError(f"{detail} {exc}") from exc
+                raise ValueError(detail)
             resp.raise_for_status()
             raw_spec = resp.json()
         except Exception as e:
