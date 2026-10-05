@@ -88,7 +88,7 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
 
 ### 4. Pure Offline Testing & Contract Sync (`tests/`)
 - Add unit tests in `tests/` mocking responses via `respx` or `httpx.MockTransport`.
-- **Zero live network calls during tests.** Tests must run 100% offline in CI.
+- **Zero live network calls in the default suite.** Tests must run 100% offline in CI. The opt-in live module is `tests/test_e2e_live.py` (`-m e2e`, skips unless `SMARTSHEET_RM_API_TOKEN` is set).
 - Update expected tool count in `scripts/check_tool_contract.py` and `README.md`.
 - Ensure test statement coverage remains at **100.0%** (`--cov-fail-under=100`). Branch coverage is not enabled.
 
