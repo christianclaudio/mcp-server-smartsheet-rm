@@ -7,12 +7,12 @@
     "url": "https://github.com/christianclaudio/mcp-server-smartsheet-rm",
     "source": "github"
   },
-  "version": "1.2.2",
+  "version": "1.2.3",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "mcp-server-smartsheet-rm",
-      "version": "1.2.2",
+      "version": "1.2.3",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
