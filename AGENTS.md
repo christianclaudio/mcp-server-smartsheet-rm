@@ -38,56 +38,24 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 ## 🎯 Project Overview
 
-This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server exposing 98 tools by default (100 with bulk-destructive operations enabled) covering the entire REST API surface for **Resource Management by Smartsheet** (formerly 10,000ft API).
+This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server covering the entire REST API surface for **Resource Management by Smartsheet** (formerly 10,000ft API). Bulk-destructive tools register only when enabled; the expected default and bulk tool counts live in `scripts/check_tool_contract.py`.
 
 **Primary Purpose**:
 Expose deep resource planning, allocation, time-tracking, project management, and budget telemetry to AI agents with strict enterprise safety gates, offline testing, and multi-tenant token isolation.
 
 ---
 
-## 🏗️ Architecture Blueprint
+## 🏗️ Key Paths
 
-```
-mcp-server-smartsheet-rm/
-├── src/smartsheet_rm_mcp/
-│   ├── __init__.py               # Package version (__version__) and public exports
-│   ├── server.py                 # FastMCP 4 root gateway, composition mounting, profiles, tool search
-│   ├── middleware.py             # Gateway audit/readonly middleware & domain guardrails
-│   ├── common.py                 # Client resolution, decorator (@rm_tool), secret redaction, structured logging
-│   ├── config.py                 # Pydantic settings with SMARTSHEET_RM_* env bindings
-│   ├── client.py                 # Async HTTP client (httpx.AsyncClient, retries, jitter, auth headers)
-│   ├── errors.py                 # Structured API exceptions and regex secret redaction
-│   └── tools/                    # Modular domain sub-servers
-│       ├── __init__.py           # Sub-server and tool function re-exports
-│       ├── time.py               # Time tracking, suggestions, approval, timesheets sub-server
-│       ├── projects.py           # Projects, phases, assignments, placeholders sub-server
-│       └── admin.py              # Users, roles, clients, expenses, tags, reports sub-server
-├── scripts/
-│   ├── check_conformance.sh      # MCP Protocol conformance suite verification script
-│   ├── check_tool_contract.py    # AST/reflection contract testing total tool & annotation counts
-│   ├── check_openapi_drift.py    # AST visitor checking client methods against upstream API routes
-│   └── determine_bump.py         # SemVer release bump recommendation based on git log
-├── tests/
-│   ├── conftest.py               # Shared fixtures and mock HTTP transports (offline only)
-│   ├── test_client.py            # Unit tests for HTTP client, retries, headers, and error handling
-│   ├── test_determine_bump.py    # Unit tests for determine_bump.py SemVer calculation
-│   ├── test_server.py            # Tests for tool execution, parameter validation, and confirmation gating
-│   ├── test_layered.py           # FastMCP 4 composition, profiles, middleware, and domain guard tests
-│   ├── test_errors.py            # Tests for error formatting and regex credential redaction
-│   ├── test_scripts.py           # Unit tests for contract and drift validation scripts
-│   └── test_protocol.py          # FastMCP 4 in-memory & stdio/streamable HTTP protocol verification
-├── .github/workflows/
-│   ├── ci.yml                    # Multi-job matrix: lint, py3.10-3.13 tests, contracts, CodeQL, docker build
-│   ├── release.yml               # Automated release on v* tags: wheels, sdist, CycloneDX SBOM, GHCR docker
-│   └── drift-monitor.yml         # Scheduled upstream schema drift check
-├── Dockerfile                    # Multi-stage container build running as non-root USER mcp
-├── fastmcp.json                  # FastMCP 4 deployment and execution manifest
-├── conformance-baseline.yml      # Conformance suite baseline expected failures
-├── server.json                   # MCP Registry catalog metadata (runtimeHint: uvx, stdio transport)
-├── pyproject.toml                # Packaging metadata, entrypoint CLI, dependency pinning
-├── AGENTS.md                     # Agent guidance map, gotchas, and conventions (this file)
-└── README.md                     # User-facing installation, quickstart, and tool index
-```
+- `src/smartsheet_rm_mcp/server.py` — FastMCP 4 root gateway: composition mounting, profiles, tool search.
+- `src/smartsheet_rm_mcp/tools/{time,projects,admin}.py` — domain sub-servers; re-exported from `tools/__init__.py`.
+- `src/smartsheet_rm_mcp/common.py` — client resolution, `@rm_tool` decorator, `_destructive_gate`, secret redaction, structured logging. `middleware.py` — gateway audit/readonly middleware and domain guardrails.
+- `src/smartsheet_rm_mcp/client.py` — async HTTP client (`SmartsheetRMClient`). `errors.py` — structured exceptions and redaction. `config.py` — `SMARTSHEET_RM_*` settings.
+- `scripts/check_tool_contract.py` — source of truth for expected tool counts and annotations. Do not hard-code tool counts elsewhere.
+- `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`, `scripts/determine_bump.py`.
+- `tests/` — offline unit, layered-composition, and protocol tests.
+- `.github/workflows/` — `ci.yml`, `release.yml`, `rm-drift-monitor.yml`, `dependabot-automerge.yml`.
+- `server.json` (MCP Registry metadata), `Dockerfile`, `fastmcp.json`, `pyproject.toml`.
 
 ---
 
@@ -147,7 +115,7 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
 
 ```bash
 # Install editable with dev dependencies
-uv sync --extra dev   # or uv pip install -e ".[dev]"
+uv sync --locked --extra dev   # or uv pip install -e ".[dev]"
 
 # Lint and formatting
 uv run ruff check . && uv run ruff format --check .
@@ -173,14 +141,8 @@ coderabbit review --agent --uncommitted
 
 ---
 
-## 🔄 CI/CD Matrix & Operational Release SOP
+## 🔄 CI & Releases
 
-The GitHub Actions CI matrix enforces:
-- Ruff lint & format checks.
-- Mypy `--strict` type checks.
-- Python 3.10, 3.11, 3.12, 3.13 test matrix with 100% coverage.
-- Tool contract & OpenAPI drift validation.
-- Multi-stage Docker image build.
-- CodeQL security scan.
+CI is defined in `.github/workflows/ci.yml` (jobs: lint and types, tests on Python 3.10–3.13 at 100% coverage, tool contract, OpenAPI drift, build + `twine check`, protocol and conformance, CodeQL). The Docker image is built only in `release.yml`. Run the commands above before opening a PR. Scheduled upstream drift runs in `rm-drift-monitor.yml`.
 
-For release automation and packaging, push matching `v*` tags aligned with `pyproject.toml`'s `project.version` to trigger `.github/workflows/release.yml`.
+Do not create tags or releases unless the maintainer asks.
