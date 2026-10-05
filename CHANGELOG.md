@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Docs**: README `uvx` install examples are intentionally unpinned (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`). SemVer stays in package manifests, the release tag, and this changelog. Pin a freeze from GitHub Releases or this changelog when a host needs one.
 
+## [1.2.3] - 2026-10-05
+
+### Security
+- **FastMCP floor**: Raise the `fastmcp` dependency floor from `>=4.0.10` to `>=4.0.11` in `pyproject.toml` and `fastmcp.json`, and refresh `uv.lock` so the locked resolution is the 4.0.11 security release. `mcp>=2.2.0` is unchanged. No server code changes.
+
 ## [1.2.2] - 2026-10-02
 
 ### Security
