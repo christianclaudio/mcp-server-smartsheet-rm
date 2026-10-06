@@ -53,7 +53,7 @@ Expose deep resource planning, allocation, time-tracking, project management, an
 - `src/smartsheet_rm_mcp/client.py` — async HTTP client (`SmartsheetRMClient`). `errors.py` — structured exceptions and redaction. `config.py` — `SMARTSHEET_RM_*` settings.
 - `scripts/check_tool_contract.py` — source of truth for expected tool counts and annotations. Do not hard-code tool counts elsewhere.
 - `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`, `scripts/determine_bump.py`.
-- `tests/` — offline unit, layered-composition, and protocol tests.
+- `tests/` — unit tests are offline; live network tests live in `tests/test_e2e_live.py` (run via `-m e2e`). Default pytest `addopts` deselect that marker with `-m 'not e2e'`; `test_all_discovered_tools_live` skips unless `SMARTSHEET_RM_API_TOKEN` is set. Offline modules: `tests/test_client.py`, `tests/test_errors.py`, `tests/test_server.py`, `tests/test_layered.py`, `tests/test_protocol.py`, `tests/test_scripts.py`, `tests/test_determine_bump.py`. Unmarked `test_dispatch_tool_call_offline` in `tests/test_e2e_live.py` stays in the default run.
 - `.github/workflows/` — `ci.yml`, `release.yml`, `rm-drift-monitor.yml`, `dependabot-automerge.yml`.
 - `server.json` (MCP Registry metadata), `Dockerfile`, `fastmcp.json`, `pyproject.toml`.
 
@@ -67,30 +67,30 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
 - Implement a dedicated `async def` method on `SmartsheetRMClient`.
 - Type all arguments strictly. Never use bare `dict` or `Any` when a concrete schema or literal is known.
 - URL path parameters **must** be safely formatted and escaped.
-- Call `await self._request("METHOD", path, params=..., json=...)`.
+- Call `await self._request("METHOD", path, params=..., json_data=...)`.
 
 ### 2. Tool Handler (`tools/time.py`, `tools/projects.py`, `tools/admin.py`)
 - Register the tool with `@server.tool(name=..., annotations=...)` in the appropriate domain sub-server module and wrap with `@rm_tool`.
 - Provide an explicit, agent-friendly docstring describing capabilities, parameters, and return shape.
-- Destructive operations (`POST`, `PUT`, `PATCH`, `DELETE` mutating state) **must** accept `confirm: bool = False`.
+- Destructive delete and bulk-delete tools **must** accept `confirm: bool = False` and call `_destructive_gate`. Creates, updates, and other non-destructive mutations do not take `confirm`.
 
 ### 3. Tool Annotations & Composition Mounting
 - Declare native MCP `ToolAnnotations` directly at tool registration in each domain sub-server:
   - `readOnlyHint`: `True` for inspection/GET; `False` for mutations.
-  - `destructiveHint`: `True` for delete/archive/deactivate actions; `False` otherwise.
-  - `idempotentHint`: `True` for GET, PUT, idempotent operations; `False` for creations.
+  - `destructiveHint`: `True` for delete and bulk-delete tools; `False` otherwise (archive-field updates stay non-destructive).
+  - `idempotentHint`: `True` for GET/list and for explicitly idempotent writes; `False` for creations, other updates, and deletes.
   - `openWorldHint`: `True` when interacting with external networks/APIs.
 - FastMCP 4 Server Composition:
   - Root gateway in `server.py` selectively mounts domain sub-servers with native domain namespaces (`namespace="time"`, `namespace="projects"`, `namespace="admin"`).
   - Profile filtering (`SMARTSHEET_RM_PROFILE`: `time`, `projects`, `admin`, `full`, `readonly`) is achieved via selective mounting at composition time.
-  - Read-only gating (`SMARTSHEET_RM_READONLY=1` or `--profile readonly`) enforces fail-closed write protection via `ReadOnlyGateMiddleware` and selective tool registration.
+  - Read-only gating removes non-read-only tools when `SMARTSHEET_RM_READONLY=1` or `--profile readonly`. `ReadOnlyGateMiddleware` blocks mutating `tools/call` requests when `SMARTSHEET_RM_READONLY=1`.
   - Bulk protection (`SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) controls inclusion of bulk deletion tools (`time_bulk_delete_time_entries`, `projects_bulk_delete_assignments`).
 
 ### 4. Pure Offline Testing & Contract Sync (`tests/`)
 - Add unit tests in `tests/` mocking responses via `respx` or `httpx.MockTransport`.
-- **Zero live network calls during tests.** Tests must run 100% offline in CI.
+- **Zero live network calls in the default suite.** Tests must run 100% offline in CI. The opt-in live module is `tests/test_e2e_live.py` (`-m e2e`, skips unless `SMARTSHEET_RM_API_TOKEN` is set).
 - Update expected tool count in `scripts/check_tool_contract.py` and `README.md`.
-- Ensure test statement and branch coverage remains at **100.0%**.
+- Ensure test statement coverage remains at **100.0%** (`--cov-fail-under=100`). Branch coverage is not enabled.
 
 ---
 
