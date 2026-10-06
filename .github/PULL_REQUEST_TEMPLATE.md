@@ -15,10 +15,11 @@ Briefly describe the changes introduced by this pull request.
 - [ ] Composite Recipes
 
 ## Quality & Safety Checklist
-- [ ] 100% statement and branch test coverage maintained (`pytest --cov --cov-fail-under=100`)
-- [ ] Tool contract assertion passed (`python scripts/check_tool_contract.py`)
-- [ ] OpenAPI drift check passed (`python scripts/check_openapi_drift.py`)
-- [ ] Stdio smoke test passed (`python scripts/smoke_test.py`)
-- [ ] Strict type checking passed (`mypy --strict src/`)
-- [ ] Ruff lint & format checks passed (`ruff check . && ruff format --check .`)
+- [ ] 100% statement test coverage maintained (`uv run pytest --cov=src/smartsheet_rm_mcp --cov-report=term-missing --cov-fail-under=100 -v`)
+- [ ] Tool contract assertion passed (`uv run python scripts/check_tool_contract.py`)
+- [ ] OpenAPI drift check passed (`uv run python scripts/check_openapi_drift.py`)
+- [ ] Protocol & stdio verification passed (`uv run pytest tests/test_protocol.py --no-cov`)
+- [ ] Protocol conformance suite passed (`./scripts/check_conformance.sh`)
+- [ ] Strict type checking passed (`uv run mypy --strict src/`)
+- [ ] Ruff lint & format checks passed (`uv run ruff check . && uv run ruff format --check .`)
 - [ ] Destructive tools require `confirm=True`
