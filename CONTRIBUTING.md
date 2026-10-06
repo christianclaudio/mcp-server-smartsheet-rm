@@ -27,22 +27,26 @@ All pull requests must satisfy our quality and coverage gates:
 
 ```bash
 # 1. Formatting and linting
-ruff check . && ruff format --check .
+uv run ruff check .
+uv run ruff format --check .
 
 # 2. Strict type checking
-mypy --strict src/
+uv run mypy --strict src/
 
-# 3. 100% statement and branch test coverage
-pytest --cov=src/smartsheet_rm_mcp --cov-fail-under=100 -v
+# 3. 100% statement test coverage
+uv run pytest --cov=src/smartsheet_rm_mcp --cov-report=term-missing --cov-fail-under=100 -v
 
 # 4. Tool Contract & safety gate assertions
-python scripts/check_tool_contract.py
+uv run python scripts/check_tool_contract.py
 
 # 5. OpenAPI Drift monitor
-python scripts/check_openapi_drift.py
+uv run python scripts/check_openapi_drift.py
 
-# 6. JSON-RPC stdio protocol smoke test
-python scripts/smoke_test.py
+# 6. Protocol & stdio verification
+uv run pytest tests/test_protocol.py --no-cov
+
+# 7. Protocol conformance suite
+./scripts/check_conformance.sh
 ```
 
 ---
