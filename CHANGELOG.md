@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Stale `rm_*` tool names removed**: destructive confirmation messages, the server module docstring, middleware prefixes, tests and `SECURITY.md` now use the wire names (`time_*`, `projects_*`, `admin_*`). Python function names are unchanged.
 - **Contract script**: `scripts/check_tool_contract.py` asserts every profile's total and read-only counts, the README profile table, `FULL_ONLY_TOOLS`, explicit `readOnlyHint` on every tool, and that read-only composes with every profile.
 - **Docs**: README, `AGENTS.md`, `SECURITY.md`, `TESTING.md` and the skill describe the profiles, read-only behavior, the call-time bulk gate and `full`-only discovery.
-- **Docs**: README `uvx` install examples are intentionally unpinned (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`). Pin a freeze from GitHub Releases or this changelog when a host needs one.
+- **Docs**: README `uvx` install examples are intentionally unpinned (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`). Pin a freeze from GitHub Releases when a host needs one.
 
 ## [1.2.3] - 2026-10-05
 

@@ -53,7 +53,7 @@ uv run pytest tests/test_protocol.py --no-cov
 
 ## 🔀 Pull Requests & Versions
 
-Merges are performed via **Squash Merge** with Conventional Commit titles (`feat:`, `fix:`, `docs:`, `chore:`). Do not edit version numbers or `CHANGELOG.md`: the git tag is the version, and GitHub Releases are the changelog. The squash commit message is the PR body, so a breaking (`feat!:` / `fix!:`) PR ends its body with a `BREAKING CHANGE:` footer that includes the migration steps.
+Merges are performed via **Squash Merge** with Conventional Commit titles (`feat:`, `fix:`, `docs:`, `chore:`). Do not edit version numbers or `CHANGELOG.md`: the git tag is the version, and GitHub Releases are the changelog. The squash commit message is the PR body, so every breaking PR (any `type!:` title, such as `feat!:` or `fix!:`) carries a `BREAKING CHANGE:` footer, with the migration steps, as the final paragraph of the PR body before CodeRabbit's generated summary. `scripts/release_notes.py` stops at the CodeRabbit marker line and ignores everything after it, so a footer inside that summary never reaches the release notes.
 
 ---
 
