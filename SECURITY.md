@@ -6,10 +6,7 @@
 
 ## 🔒 Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| `1.0.x` | ✅ Yes    |
-| `< 1.0` | ❌ No     |
+Only the latest release receives security fixes. Upgrade to the newest version on [Releases](https://github.com/christianclaudio/mcp-server-smartsheet-rm/releases) or [PyPI](https://pypi.org/project/mcp-server-smartsheet-rm/).
 
 ---
 
@@ -40,11 +37,11 @@ When connecting this server to autonomous agents or public assistant interfaces,
 ```bash
 SMARTSHEET_RM_READONLY=1 mcp-server-smartsheet-rm
 ```
-This restricts registration exclusively to **38 read-only tools**, completely removing all mutation and deletion endpoints from the model's tool context.
+This lists only the **39 tools annotated `readOnlyHint=true`** (on any `--profile`, it keeps that profile's read-only tools). `ReadOnlyGateMiddleware` refuses any call to a tool that is not annotated read-only, including writes the filter hid, with `isError: true`. A missing annotation counts as a write.
 
 ### 4. Safety Gates for Destructive Operations
-- **Single Deletion Tools:** Require explicit `confirm=True` on all atomic deletion endpoints (`rm_delete_project`, `rm_delete_time_entry`, etc.). Calls without `confirm=True` are automatically rejected.
-- **Bulk Destructive Operations:** `rm_bulk_delete_time_entries` and `rm_bulk_delete_assignments` are excluded from registration by default and require `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1` plus `confirm=True`.
+- **Single Deletion Tools:** Require explicit `confirm=True` on all atomic deletion endpoints (`projects_delete_project`, `time_delete_time_entry`, etc.). Calls without `confirm=True` are automatically rejected.
+- **Bulk Destructive Operations:** `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` are listed in the `full` catalog but refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`, and they still require `confirm=True`. They are in no job profile.
 
 ### 5. SSRF & Host Validation
 When running in multi-tenant environments where callers may provide per-request `x-smartsheet-rm-base-url` headers or `SMARTSHEET_RM_BASE_URL`:
@@ -61,6 +58,6 @@ When running in multi-tenant environments where callers may provide per-request 
 | Use Case | Recommended Configuration |
 |----------|---------------------------|
 | **Autonomous AI Assistants & Chatbots** | `SMARTSHEET_RM_READONLY=1` |
-| **Interactive Developer Workstation** | Default (97 tools, single-delete confirmation gates) |
+| **Interactive Developer Workstation** | Default `full` profile (100 tools, single-delete confirmation gates; the two bulk-destructive tools are listed but refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) |
 | **Enterprise Administrative Scripts** | `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1` (with `confirm=True`) |
-| **Focused Context (Timesheets only)** | `SMARTSHEET_RM_PROFILE=time` |
+| **Focused Context (weekly timesheets)** | `SMARTSHEET_RM_PROFILE=timesheets` (job profile) or `SMARTSHEET_RM_PROFILE=time` (time domain only) |

@@ -139,7 +139,7 @@ async def rm_update_user(
 @rm_tool
 async def rm_delete_user(user_id: int | str, confirm: bool = False) -> str:
     """Delete or archive a user (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_user({user_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_user({user_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -232,7 +232,7 @@ async def rm_update_role(role_id: int | str, name: str) -> str:
 @rm_tool
 async def rm_delete_role(role_id: int | str, confirm: bool = False) -> str:
     """Delete a role (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_role({role_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_role({role_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -267,7 +267,7 @@ async def rm_update_discipline(discipline_id: int | str, name: str) -> str:
 @rm_tool
 async def rm_delete_discipline(discipline_id: int | str, confirm: bool = False) -> str:
     """Delete a discipline (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_discipline({discipline_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_discipline({discipline_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -364,7 +364,7 @@ async def rm_update_client(
 @rm_tool
 async def rm_delete_client(client_id: int | str, confirm: bool = False) -> str:
     """Delete a client record (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_client({client_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_client({client_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -410,7 +410,7 @@ async def rm_delete_client_contact(
     confirm: bool = False,
 ) -> str:
     """Delete a client contact (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_client_contact({client_id}, {contact_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_client_contact({client_id}, {contact_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -453,7 +453,7 @@ async def rm_update_leave_type(leave_type_id: int | str, name: str) -> str:
 @rm_tool
 async def rm_delete_leave_type(leave_type_id: int | str, confirm: bool = False) -> str:
     """Delete a leave type (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_leave_type({leave_type_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_leave_type({leave_type_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -523,7 +523,7 @@ async def rm_update_holiday(
 @rm_tool
 async def rm_delete_holiday(holiday_id: int | str, confirm: bool = False) -> str:
     """Delete a holiday (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_holiday({holiday_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_holiday({holiday_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -621,7 +621,7 @@ async def rm_update_expense(
 @rm_tool
 async def rm_delete_expense(expense_id: int | str, confirm: bool = False) -> str:
     """Delete an expense item (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_expense({expense_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_expense({expense_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -648,7 +648,7 @@ async def rm_create_expense_category(name: str) -> str:
 @rm_tool
 async def rm_delete_expense_category(category_id: int | str, confirm: bool = False) -> str:
     """Delete an expense category (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_expense_category({category_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_expense_category({category_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -675,7 +675,7 @@ async def rm_create_tag(name: str) -> str:
 @rm_tool
 async def rm_delete_tag(tag_id: int | str, confirm: bool = False) -> str:
     """Delete a tag (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_tag({tag_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_tag({tag_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -743,7 +743,7 @@ async def rm_update_custom_field(
 @rm_tool
 async def rm_delete_custom_field(custom_field_id: int | str, confirm: bool = False) -> str:
     """Delete a custom field definition (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_custom_field({custom_field_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_custom_field({custom_field_id})")
     if gate:
         return gate
     client = await get_rm_client()
@@ -846,7 +846,7 @@ async def rm_create_webhook(event_type: str, callback_url: str) -> str:
 @rm_tool
 async def rm_delete_webhook(webhook_id: int | str, confirm: bool = False) -> str:
     """Delete a webhook subscription (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_webhook({webhook_id})")
+    gate = _destructive_gate(confirm, f"admin_delete_webhook({webhook_id})")
     if gate:
         return gate
     client = await get_rm_client()

@@ -38,7 +38,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 ## 🎯 Project Overview
 
-This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server covering the entire REST API surface for **Resource Management by Smartsheet** (formerly 10,000ft API). Bulk-destructive tools register only when enabled; the expected default and bulk tool counts live in `scripts/check_tool_contract.py`.
+This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server covering the entire REST API surface for **Resource Management by Smartsheet** (formerly 10,000ft API). The default `full` profile lists all 100 tools; the two bulk-destructive tools are listed but refused at call time unless enabled. Expected per-profile counts live in `scripts/check_tool_contract.py`.
 
 **Primary Purpose**:
 Expose deep resource planning, allocation, time-tracking, project management, and budget telemetry to AI agents with strict enterprise safety gates, offline testing, and multi-tenant token isolation.
@@ -47,13 +47,14 @@ Expose deep resource planning, allocation, time-tracking, project management, an
 
 ## 🏗️ Key Paths
 
-- `src/smartsheet_rm_mcp/server.py` — FastMCP 4 root gateway: composition mounting, profiles, tool search.
+- `src/smartsheet_rm_mcp/server.py` — FastMCP 4 root gateway (`create_server`): domain mounts, job allowlists, read-only filter, Tool Search / Code Mode (full only).
+- `src/smartsheet_rm_mcp/profiles.py` — `PROFILES` (each with a one-line `job`), `FULL_ONLY_TOOLS`, `ReadOnlyToolFilter`, `is_read_only_tool`.
 - `src/smartsheet_rm_mcp/tools/{time,projects,admin}.py` — domain sub-servers; re-exported from `tools/__init__.py`.
-- `src/smartsheet_rm_mcp/common.py` — client resolution, `@rm_tool` decorator, `_destructive_gate`, secret redaction, structured logging. `middleware.py` — gateway audit/readonly middleware and domain guardrails.
+- `src/smartsheet_rm_mcp/common.py` — client resolution, `@rm_tool` decorator, `_destructive_gate`, secret redaction, structured logging. `middleware.py` — gateway audit middleware, the annotation-driven `ReadOnlyGateMiddleware`, and domain guardrails (including the bulk gate).
 - `src/smartsheet_rm_mcp/client.py` — async HTTP client (`SmartsheetRMClient`). `errors.py` — structured exceptions and redaction. `config.py` — `SMARTSHEET_RM_*` settings.
 - `scripts/check_tool_contract.py` — source of truth for expected tool counts and annotations. Do not hard-code tool counts elsewhere.
 - `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`, `scripts/determine_bump.py`.
-- `tests/` — unit tests are offline; live network tests live in `tests/test_e2e_live.py` (run via `-m e2e`). Default pytest `addopts` deselect that marker with `-m 'not e2e'`; `test_all_discovered_tools_live` skips unless `SMARTSHEET_RM_API_TOKEN` is set. Offline modules: `tests/test_client.py`, `tests/test_errors.py`, `tests/test_server.py`, `tests/test_layered.py`, `tests/test_protocol.py`, `tests/test_scripts.py`, `tests/test_determine_bump.py`. Unmarked `test_dispatch_tool_call_offline` in `tests/test_e2e_live.py` stays in the default run.
+- `tests/` — unit tests are offline; live network tests live in `tests/test_e2e_live.py` (run via `-m e2e`). Default pytest `addopts` deselect that marker with `-m 'not e2e'`; `test_all_discovered_tools_live` skips unless `SMARTSHEET_RM_API_TOKEN` is set. Offline modules: `tests/test_client.py`, `tests/test_errors.py`, `tests/test_server.py`, `tests/test_layered.py`, `tests/test_profiles.py`, `tests/test_protocol.py`, `tests/test_scripts.py`, `tests/test_determine_bump.py`. Unmarked `test_dispatch_tool_call_offline` in `tests/test_e2e_live.py` stays in the default run.
 - `.github/workflows/` — `ci.yml`, `release.yml`, `rm-drift-monitor.yml`, `dependabot-automerge.yml`.
 - `server.json` (MCP Registry metadata), `Dockerfile`, `fastmcp.json`, `pyproject.toml`.
 
@@ -82,14 +83,16 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
   - `openWorldHint`: `True` when interacting with external networks/APIs.
 - FastMCP 4 Server Composition:
   - Root gateway in `server.py` selectively mounts domain sub-servers with native domain namespaces (`namespace="time"`, `namespace="projects"`, `namespace="admin"`).
-  - Profile filtering (`SMARTSHEET_RM_PROFILE`: `time`, `projects`, `admin`, `full`, `readonly`) is achieved via selective mounting at composition time.
-  - Read-only gating removes non-read-only tools when `SMARTSHEET_RM_READONLY=1` or `--profile readonly`. `ReadOnlyGateMiddleware` blocks mutating `tools/call` requests when `SMARTSHEET_RM_READONLY=1`.
-  - Bulk protection (`SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) controls inclusion of bulk deletion tools (`time_bulk_delete_time_entries`, `projects_bulk_delete_assignments`).
+  - Profiles (`--profile` / `SMARTSHEET_RM_PROFILE`, defined in `profiles.py`): domain-mount profiles `full`, `time`, `projects`, `admin`, `readonly` select mounts; job profiles `timesheets`, `staffing`, `org_setup`, `portfolio` mount every domain and expose an explicit tool-name allowlist via the public `root.disable(components={"tool"})` then `root.enable(names=..., components={"tool"})`. Never `enable(only=True)` (it hides prompts and resources) and never private FastMCP attributes. Unknown profile or allowlist names raise `ValueError` at build time.
+  - A new tool must go in at least one job profile or in `FULL_ONLY_TOOLS`; `tests/test_profiles.py` fails otherwise. Update the counts in `scripts/check_tool_contract.py` and the README profile table.
+  - Read-only: `readOnlyHint=True` is the only signal. `--profile readonly` or `SMARTSHEET_RM_READONLY=1` adds `ReadOnlyToolFilter`; `ReadOnlyGateMiddleware` refuses any real non-read-only tool (`SafetyViolationError`, a FastMCP `ToolError`, so `isError: true`). Unknown names pass through to FastMCP's `Unknown tool`. `call_tool` is unwrapped only when it is a real tool (Tool Search on); otherwise it is `Unknown tool: 'call_tool'`. No server context means refuse.
+  - Bulk protection: `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` are listed in `full`; the time/projects domain guards refuse them at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`.
+  - Tool Search (`regex` or `bm25`) and experimental Code Mode attach only on `full`, never both; on other profiles they log a warning and keep the flat list. `search_tools`, `search` and `get_schema` are annotated `readOnlyHint=True`; Code Mode `execute` is refused under read-only.
 
 ### 4. Pure Offline Testing & Contract Sync (`tests/`)
 - Add unit tests in `tests/` mocking responses via `respx` or `httpx.MockTransport`.
 - **Zero live network calls in the default suite.** Tests must run 100% offline in CI. The opt-in live module is `tests/test_e2e_live.py` (`-m e2e`, skips unless `SMARTSHEET_RM_API_TOKEN` is set).
-- Update expected tool count in `scripts/check_tool_contract.py` and `README.md`.
+- Update expected tool and profile counts in `scripts/check_tool_contract.py` and the `README.md` profile table, and place the tool in a job profile or `FULL_ONLY_TOOLS`.
 - Ensure test statement coverage remains at **100.0%** (`--cov-fail-under=100`). Branch coverage is not enabled.
 
 ---

@@ -49,22 +49,29 @@ This skill provides expert instructions, architectural workflows, and safety pro
    - `projects_delete_assignment_subtask`, `admin_delete_webhook`
 
 2. **Bulk-Destructive Safety Gating**:
-   `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` require **both**:
-   - Environment variable `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1` set at server startup
+   `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` are listed in `full` but run only with **both**:
+   - Environment variable `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1` on the server (otherwise the call is refused with `isError: true`)
    - Parameter `confirm=True` on invocation
 
 3. **Secret Protection & Redaction**:
    - Never log, echo, or store `SMARTSHEET_RM_API_TOKEN` or raw authorization headers. All errors and output automatically scrub credentials.
 
-4. **Profile & Dynamic Discovery Selection**:
-   Minimize token context in LLM prompts by setting `SMARTSHEET_RM_PROFILE` or `--profile`:
-   - `time`: Time tracking, PTO, suggestions, approvals, and timesheet recipes (14 tools, 15 with bulk).
-   - `projects`: Projects, phases, milestones, assignments, and schedule cloning (24 tools, 25 with bulk).
-   - `admin`: Users, roles, disciplines, clients, expenses, tags, custom fields (60 tools).
-   - `readonly`: Pure read-only inspection queries across all domains (39 tools).
-   - `full`: Complete catalog (98 default tools, 100 with bulk deletion opt-in).
+4. **Profile Selection**:
+   Load only the tools the job needs by setting `SMARTSHEET_RM_PROFILE` or `--profile`. Prompts and resources stay available on every job profile and on `readonly`; the domain-mount profiles `time`, `projects` and `admin` carry only their own domain's prompts and resources.
+   - Job profiles (tools across domains):
+     - `timesheets` (22 tools): log, correct, submit, lock and approve weekly time against assignments.
+     - `staffing` (25 tools): check availability and utilization; create or adjust assignments, placeholders and subtasks.
+     - `org_setup` (35 tools): onboard people; maintain bill rates, roles, disciplines, leave types, holidays, custom-field definitions, user statuses and webhooks.
+     - `portfolio` (33 tools): set up and maintain projects, phases, clients and expenses; read budget and report totals.
+   - Domain profiles: `time` (15 tools), `projects` (25 tools), `admin` (60 tools).
+   - `readonly` (39 tools): every tool annotated `readOnlyHint=true`, across all domains.
+   - `full` (100 tools): the complete catalog. Seven tools are only here (or in their domain profile): the two bulk deletes, `admin_delete_client`, `admin_delete_client_contact`, `admin_create_expense_category`, `admin_delete_expense_category` and `admin_delete_tag`.
 
-   For dynamic tool discovery on vast catalogs without polluting context, enable on-demand regex search via `--enable-tool-search` or `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1`.
+5. **Read-Only Mode**:
+   `SMARTSHEET_RM_READONLY=1` keeps only the read-only tools of the active profile. Any other call is refused with `isError: true`. An unknown name returns `Unknown tool`, so check the spelling rather than assuming the tool is blocked.
+
+6. **Tool Search and Code Mode (`full` only)**:
+   On `full`, `--enable-tool-search` / `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1` replaces the list with `search_tools` and `call_tool` (`regex` or `bm25` backend). `--enable-code-mode` / `SMARTSHEET_RM_ENABLE_CODE_MODE=1` attaches experimental Code Mode instead; the two cannot be combined. Under read-only, writes through `call_tool` and Code Mode `execute` are refused. On other profiles both flags are ignored with a warning.
 
 ---
 
@@ -88,19 +95,20 @@ The server is engineered as a modular, layered FastMCP 4 composition with domain
 FastMCP Gateway (create_server)
 ├── Global Middleware Pipeline
 │   ├── ParentAuditMiddleware (timing, structured JSON logging, secret scrubbing)
-│   └── ReadOnlyGateMiddleware (fail-closed write protection when READONLY=1)
+│   └── ReadOnlyGateMiddleware (readOnlyHint-only gate; refuses writes, fails closed)
 ├── Mounted Domain Sub-Servers (Selective Namespace Mounting)
-│   ├── Time Sub-Server (tools/time.py, namespace="time", 14 tools + time_timesheet_reconciliation prompt)
-│   │   └── TimeDomainGuardMiddleware (hours range & sanity validation)
-│   ├── Projects Sub-Server (tools/projects.py, namespace="projects", 24 tools + projects_project_staffing_plan prompt)
-│   │   └── ProjectsDomainGuardMiddleware (non-empty naming validation)
+│   ├── Time Sub-Server (tools/time.py, namespace="time", 15 tools + time_timesheet_reconciliation prompt)
+│   │   └── TimeDomainGuardMiddleware (hours range validation, bulk gate)
+│   ├── Projects Sub-Server (tools/projects.py, namespace="projects", 25 tools + projects_project_staffing_plan prompt)
+│   │   └── ProjectsDomainGuardMiddleware (non-empty naming validation, bulk gate)
 │   └── Admin Sub-Server (tools/admin.py, namespace="admin", 60 tools + rm://admin/* resources)
 │       └── AdminDomainGuardMiddleware (pagination batch cap validation)
 └── Configuration & Safety Filtering
     ├── SmartsheetRMSettings (Pydantic BaseSettings binding SMARTSHEET_RM_*)
-    ├── Profile Trimming (full, time, projects, admin, readonly)
-    ├── Bulk-Destructive Safety Gate (SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1)
-    └── Dynamic Tool Discovery (RegexSearchTransform opt-in via --enable-tool-search)
+    ├── Profiles (profiles.py): domain mounts full/time/projects/admin/readonly + job allowlists timesheets/staffing/org_setup/portfolio
+    ├── ReadOnlyToolFilter (readOnlyHint=True only, when readonly)
+    ├── Bulk-Destructive Safety Gate (call time, SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1)
+    └── Discovery on full only: Tool Search (regex/bm25) XOR experimental Code Mode
 ```
 
 ### Component Breakdown
@@ -111,5 +119,6 @@ FastMCP Gateway (create_server)
 | **Common** | `@rm_tool` & `get_client` (`common.py`) | Standardized execution wrapper, client caching, and fail-closed secret redaction. |
 | **Middleware** | `ParentAuditMiddleware`, `ReadOnlyGateMiddleware`, Guards (`middleware.py`) | Hierarchical invocation logging, read-only gating, and domain argument validation. |
 | **Domain Tools** | `time.py`, `projects.py`, `admin.py` (`tools/`) | Autonomous domain sub-servers with dedicated tools, prompts, and resources. |
-| **Root Gateway** | `create_server()` (`server.py`) | Factory composing sub-servers via `mount(..., namespace="...")`, applying annotations, profile filters, and search transforms. |
+| **Profiles** | `PROFILES`, `FULL_ONLY_TOOLS`, `ReadOnlyToolFilter` (`profiles.py`) | Domain-mount and job allowlist profiles; annotation-driven read-only filtering. |
+| **Root Gateway** | `create_server()` (`server.py`) | Factory composing sub-servers via `mount(..., namespace="...")`, applying job allowlists, the read-only filter, and full-only discovery transforms. |
 

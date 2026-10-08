@@ -138,12 +138,12 @@ def setup_mock_client():
 def test_logging_and_formatter() -> None:
     formatter = srv.StructuredJSONFormatter()
     record = logging.LogRecord("test", logging.INFO, "path.py", 10, "Hello Log", (), None)
-    record.tool_name = "rm_test_tool"
+    record.tool_name = "time_test_tool"
     record.duration_ms = 45.6
     res = formatter.format(record)
     data = json.loads(res)
     assert data["message"] == "Hello Log"
-    assert data["mcp_tool"] == "rm_test_tool"
+    assert data["mcp_tool"] == "time_test_tool"
     assert data["duration_ms"] == 45.6
 
     # With exception info and credential redaction
@@ -1051,30 +1051,66 @@ def test_main_cli_argparsing(monkeypatch: pytest.MonkeyPatch, caplog: pytest.Log
         srv.main()
 
 
+def test_main_cli_profile_flag_is_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify an explicit --profile value is lowercased like the env default before the choices check."""
+    seen: dict[str, object] = {}
+
+    def fake_create_server(**kwargs: object) -> object:
+        """Record the profile handed to create_server."""
+        seen.update(kwargs)
+        return srv.mcp
+
+    monkeypatch.setattr(srv, "create_server", fake_create_server)
+    monkeypatch.setattr(srv.mcp, "run", lambda **kwargs: None)
+    monkeypatch.delenv("SMARTSHEET_RM_PROFILE", raising=False)
+
+    monkeypatch.setattr("sys.argv", ["mcp-server-smartsheet-rm", "--profile", "Full"])
+    srv.main()
+    assert seen["profile"] == "full"
+
+    monkeypatch.setattr("sys.argv", ["mcp-server-smartsheet-rm", "--profile", "TIMESHEETS"])
+    srv.main()
+    assert seen["profile"] == "timesheets"
+
+    monkeypatch.setattr("sys.argv", ["mcp-server-smartsheet-rm", "--profile", "Nope"])
+    with pytest.raises(SystemExit):
+        srv.main()
+
+
 def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify tool profile filtering, readonly mode, and bulk destructive opt-in."""
+    """Verify module-level profile selection, readonly mode, and bulk listing via env vars."""
+    import asyncio
     import importlib
 
+    def listed() -> set[str]:
+        return {t.name for t in asyncio.run(srv.mcp.list_tools())}
+
     try:
+        monkeypatch.delenv("SMARTSHEET_RM_READONLY", raising=False)
+        monkeypatch.delenv("SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE", raising=False)
         monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "invalid_profile")
-        with pytest.raises(ValueError, match="Unknown SMARTSHEET_RM_PROFILE"):
+        with pytest.raises(ValueError, match="Unknown profile 'invalid_profile'"):
             importlib.reload(srv)
 
         monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "time")
         importlib.reload(srv)
-        assert "time_list_time_entries" in srv.mcp._tool_manager._tools
+        assert "time_list_time_entries" in listed()
+
+        monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "staffing")
+        importlib.reload(srv)
+        assert "projects_create_assignment" in listed()
+        assert "time_list_time_entries" not in listed()
 
         monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "full")
         monkeypatch.setenv("SMARTSHEET_RM_READONLY", "1")
         importlib.reload(srv)
-        assert "projects_delete_project" not in srv.mcp._tool_manager._tools
-        assert "projects_list_projects" in srv.mcp._tool_manager._tools
+        assert "projects_delete_project" not in listed()
+        assert "projects_list_projects" in listed()
 
+        # Bulk tools are listed in full whether or not the bulk env is set (gated at call time)
         monkeypatch.delenv("SMARTSHEET_RM_READONLY", raising=False)
-        monkeypatch.setenv("SMARTSHEET_RM_PROFILE", "full")
-        monkeypatch.setenv("SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE", "1")
         importlib.reload(srv)
-        assert "time_bulk_delete_time_entries" in srv.mcp._tool_manager._tools
+        assert "time_bulk_delete_time_entries" in listed()
     finally:
         monkeypatch.undo()
         importlib.reload(srv)

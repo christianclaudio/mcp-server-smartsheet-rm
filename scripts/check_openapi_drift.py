@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import asyncio
 import inspect
 import json
 import re
@@ -395,6 +396,11 @@ def run_drift_check(
     return 0, output_lines
 
 
+def registered_tool_names() -> list[str]:
+    """Return the client-visible tool names of the default gateway via public ``list_tools()``."""
+    return [tool.name for tool in asyncio.run(mcp.list_tools())]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smartsheet RM OpenAPI & Parameter Drift Checker")
     parser.add_argument("--spec-file", help="Path to local OpenAPI specification")
@@ -421,8 +427,8 @@ def main() -> int:
             print(f"  - {m}", file=sys.stderr)
         return 1
 
-    # Verify MCP tool registration
-    tool_names = list(mcp._tool_manager._tools.keys())  # type: ignore[attr-defined]
+    # Verify MCP tool registration (public list_tools API)
+    tool_names = registered_tool_names()
     print(f"SmartsheetRMClient defines all {len(ENDPOINT_TO_METHOD)} required API methods.")
     print(f"Server registers {len(tool_names)} total MCP tools.")
 

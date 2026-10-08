@@ -141,7 +141,7 @@ async def rm_update_project(
 @rm_tool
 async def rm_delete_project(project_id: int | str, confirm: bool = False) -> str:
     """Delete a project (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_project({project_id})")
+    gate = _destructive_gate(confirm, f"projects_delete_project({project_id})")
     if gate:
         return gate
     client = await get_client()
@@ -245,7 +245,7 @@ async def rm_delete_project_phase(
     confirm: bool = False,
 ) -> str:
     """Delete a project phase (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_project_phase({project_id}, {phase_id})")
+    gate = _destructive_gate(confirm, f"projects_delete_project_phase({project_id}, {phase_id})")
     if gate:
         return gate
     client = await get_client()
@@ -358,7 +358,7 @@ async def rm_update_assignment(
 @rm_tool
 async def rm_delete_assignment(assignment_id: int | str, confirm: bool = False) -> str:
     """Delete a resource assignment (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_assignment({assignment_id})")
+    gate = _destructive_gate(confirm, f"projects_delete_assignment({assignment_id})")
     if gate:
         return gate
     client = await get_client()
@@ -461,7 +461,7 @@ async def rm_bulk_delete_assignments(
     confirm: bool = False,
 ) -> str:
     """Bulk delete multiple resource assignments (Destructive: gated by SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1 and confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_bulk_delete_assignments(count={len(assignment_ids)})")
+    gate = _destructive_gate(confirm, f"projects_bulk_delete_assignments(count={len(assignment_ids)})")
     if gate:
         return gate
     client = await get_client()
@@ -525,7 +525,7 @@ async def rm_create_placeholder_resource(
 @rm_tool
 async def rm_delete_placeholder_resource(placeholder_id: int | str, confirm: bool = False) -> str:
     """Delete a placeholder resource (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_placeholder_resource({placeholder_id})")
+    gate = _destructive_gate(confirm, f"projects_delete_placeholder_resource({placeholder_id})")
     if gate:
         return gate
     client = await get_client()
@@ -563,7 +563,9 @@ async def rm_delete_assignment_subtask(
     confirm: bool = False,
 ) -> str:
     """Delete an assignment subtask (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_assignment_subtask({project_id}, {assignment_id}, {subtask_id})")
+    gate = _destructive_gate(
+        confirm, f"projects_delete_assignment_subtask({project_id}, {assignment_id}, {subtask_id})"
+    )
     if gate:
         return gate
     client = await get_client()

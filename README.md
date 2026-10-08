@@ -19,8 +19,8 @@ Enables AI coding agents, planners, and assistants (Claude, Cortex, Antigravity,
 graph TD
     Client["AI Agent (Claude / Cortex / Antigravity / Cursor)"] -->|"MCP Stdio / Streamable HTTP /mcp"| Server["Root Gateway create_server()"]
     Server --> Middle["Parent Middleware (ParentAudit / ReadOnly Gate)"]
-    Middle --> SubTime["time namespace (time_* — 14 tools, 15 with bulk)"]
-    Middle --> SubProj["projects namespace (projects_* — 24 tools, 25 with bulk)"]
+    Middle --> SubTime["time namespace (time_* — 15 tools, incl. 1 bulk-gated)"]
+    Middle --> SubProj["projects namespace (projects_* — 25 tools, incl. 1 bulk-gated)"]
     Middle --> SubAdmin["admin namespace (admin_* — 60 tools)"]
     SubTime --> Guards["Domain Guards"]
     SubProj --> Guards
@@ -36,28 +36,61 @@ graph TD
 ## 🚀 FastMCP 4 Server Composition
 
 * **Domain mounts** (`root.mount(..., namespace=...)`):
-  * `namespace="time"` → `time_*` (14 tools; 15 when bulk is enabled).
-  * `namespace="projects"` → `projects_*` (24 tools; 25 when bulk is enabled).
+  * `namespace="time"` → `time_*` (15 tools, including the bulk-gated `time_bulk_delete_time_entries`).
+  * `namespace="projects"` → `projects_*` (25 tools, including the bulk-gated `projects_bulk_delete_assignments`).
   * `namespace="admin"` → `admin_*` (60 tools).
 * **Hierarchical middleware**:
-  * **Parent**: `ParentAuditMiddleware` (timing, lifecycle logs, secret redaction) and `ReadOnlyGateMiddleware` (fail-closed mutation block when `SMARTSHEET_RM_READONLY=1`).
-  * **Child**: `TimeDomainGuardMiddleware` (logged hours must be 0–24), `ProjectsDomainGuardMiddleware` (project names must be non-empty), `AdminDomainGuardMiddleware` (`per_page` must be ≤ 1000).
-* **Profiles** via `--profile` / `SMARTSHEET_RM_PROFILE` (`full`, `time`, `projects`, `admin`, `readonly`). Mounts are selective; read-only filtering and bulk gating run after mount:
-  * `full` (default): time + projects + admin — **98** tools (**100** with bulk).
-  * `time`: time sub-server only — **14** tools (**15** with bulk).
-  * `projects`: projects sub-server only — **24** tools (**25** with bulk).
-  * `admin`: admin sub-server only — **60** tools.
-  * `readonly`: mounts all three domains, then drops every tool without `readOnlyHint` — **39** tools. `SMARTSHEET_RM_READONLY=1` applies that same filter on top of any profile.
-* **Bulk gate**: `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` are registered only when `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`. They stay absent in read-only mode.
-* **Tool search**: flat `tools/list` by default. `--enable-tool-search` or `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1` adds `RegexSearchTransform`.
+  * **Parent**: `ParentAuditMiddleware` (timing, lifecycle logs, secret redaction) and `ReadOnlyGateMiddleware` (annotation-driven read-only gate, see below).
+  * **Child**: `TimeDomainGuardMiddleware` (logged hours must be 0–24; bulk gate), `ProjectsDomainGuardMiddleware` (project names must be non-empty; bulk gate), `AdminDomainGuardMiddleware` (`per_page` must be ≤ 1000).
+
+### Profiles
+
+Pick a profile with `--profile` or `SMARTSHEET_RM_PROFILE` (default `full`). An unknown profile name fails at startup with `ValueError`. There are two kinds:
+
+* **Domain-mount profiles** mount whole domains: `full`, `time`, `projects`, `admin`, and `readonly`.
+* **Job profiles** mount every domain, then expose only an explicit list of tool names for one job. Prompts and resources stay available on every job profile and on `readonly`; the domain-mount profiles `time`, `projects` and `admin` carry only their own domain's prompts and resources. Each listed name is checked against the full catalog when the server builds, so a typo fails at startup.
+
+| Profile | Job it serves | Tools | With `SMARTSHEET_RM_READONLY=1` |
+| :--- | :--- | ---: | ---: |
+| `full` | Complete catalog, nothing omitted. Bulk tools are listed and refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`. Tool Search and Code Mode attach only here. | **100** | 39 |
+| `time` | Time tracking, approvals and timesheet recipes (time domain). | **15** | 4 |
+| `projects` | Projects, phases, assignments, placeholders and subtasks (projects domain). | **25** | 10 |
+| `admin` | Users, org reference data, clients, expenses, fields, reports and webhooks (admin domain). | **60** | 25 |
+| `readonly` | Inspect without side effects: every tool annotated `readOnlyHint=True`. | **39** | 39 |
+| `timesheets` | Team member or manager logs, corrects, submits, locks and approves weekly time against their assignments. | **22** | 12 |
+| `staffing` | Resource manager checks availability and utilization and creates or adjusts assignments, placeholders and subtasks. | **25** | 18 |
+| `org_setup` | Resource-management admin onboards people and maintains org reference data, custom-field definitions, user statuses and webhooks. | **35** | 13 |
+| `portfolio` | PMO sets up and maintains projects, phases, clients, expenses and project metadata, and reads budget and report totals. | **33** | 18 |
+
+Seven tools are in no job profile and are reachable only in `full` (or their domain-mount profile): `time_bulk_delete_time_entries`, `projects_bulk_delete_assignments`, `admin_delete_client`, `admin_delete_client_contact`, `admin_create_expense_category`, `admin_delete_expense_category`, and `admin_delete_tag`.
+
+### Read-only behavior
+
+* The MCP `readOnlyHint` annotation is the only thing that decides whether a tool is read-only. Every tool declares it explicitly: `true` on the 39 reads and `false` on the 61 writes. A tool with no annotation or no `readOnlyHint` counts as a write.
+* `--profile readonly` or `SMARTSHEET_RM_READONLY=1` (on any profile) lists only the read-only tools, and `ReadOnlyGateMiddleware` refuses any call to a real tool that is not read-only, including a write the filter hid. A refusal comes back as a tool result with `isError: true`.
+* A name that is not a tool on the server gets FastMCP's normal `Unknown tool` error, directly or through `call_tool`, so a typo is never reported as a blocked tool.
+* With Tool Search on, the gate checks the tool that `call_tool` wraps. Reads through `call_tool` work and writes are refused. Without Tool Search, `call_tool` is not a tool on the server, so a call to it gets `Unknown tool: 'call_tool'`.
+* If the gate cannot see the serving server, it refuses the call.
+
+### Bulk gate
+
+`time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` are listed in `full`, `time` and `projects`. The domain guards refuse them at call time (`isError: true`) unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`, and the handlers still require `confirm=True`. Read-only mode hides and refuses them.
+
+### Tool Search and Code Mode
+
+`tools/list` is flat by default. Discovery is opt-in and attaches **only on `full`**:
+
+* `--enable-tool-search` / `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1` replaces `tools/list` with `search_tools` and `call_tool`. The backend is `regex` (default) or `bm25` (`--tool-search-backend` / `SMARTSHEET_RM_TOOL_SEARCH_BACKEND`).
+* `--enable-code-mode` / `SMARTSHEET_RM_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). It is skipped with a warning if the FastMCP build does not ship it.
+* Turning on both raises `ValueError`. Asking for either on another profile logs a warning and keeps the flat list.
+* `search_tools`, `search` and `get_schema` only read the catalog and are annotated `readOnlyHint=True`. Under read-only, Code Mode `execute` is refused.
 
 ---
 
 ## ⚡ Tool Surface Overview
 
 The server exposes tools covering projects, resources, timesheets, and capacity. Call the namespaced names below:
-- **Default Registration**: 98 tools (with bulk-destructive operations gated by default).
-- **With Bulk Operations**: 100 total tools when `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`.
+- **Default Registration**: 100 tools on `full` (the 2 bulk-destructive tools are listed and refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`).
 - **Read-Only Mode**: 39 tools (`readOnlyHint=true`).
 - **Destructive Gates**: 21 tools requiring explicit `confirm=True` (19 standard + 2 bulk).
 - **Idempotent Operations**: 43 tools with `idempotentHint=true` (the 39 read-only tools, plus `time_update_time_approval_status`, `time_lock_timesheet`, `admin_set_custom_field_values`, and `admin_set_user_status`).
@@ -105,10 +138,12 @@ pip install mcp-server-smartsheet-rm
 | :--- | :--- | :--- |
 | `SMARTSHEET_RM_API_TOKEN` | Smartsheet RM (10,000ft) API Token (**Required**) | - |
 | `SMARTSHEET_RM_BASE_URL` | Base API URL | `https://api.rm.smartsheet.com/api/v1` |
-| `SMARTSHEET_RM_PROFILE` | Tool profile subset: `time`, `projects`, `admin`, `full`, `readonly` | `full` |
-| `SMARTSHEET_RM_READONLY` | Set to `1` to restrict server to read-only tools | `0` |
-| `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE` | Set to `1` to unlock bulk delete operations | `0` |
-| `SMARTSHEET_RM_ENABLE_TOOL_SEARCH` | Set to `1` (or `--enable-tool-search`) for dynamic regex search | `0` |
+| `SMARTSHEET_RM_PROFILE` | Profile: `full`, `time`, `projects`, `admin`, `readonly`, `timesheets`, `staffing`, `org_setup`, `portfolio` (see [Profiles](#profiles)) | `full` |
+| `SMARTSHEET_RM_READONLY` | Set to `1` to list only `readOnlyHint=true` tools and refuse every other call | `0` |
+| `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE` | Set to `1` to let the two listed bulk delete tools execute | `0` |
+| `SMARTSHEET_RM_ENABLE_TOOL_SEARCH` | Set to `1` (or `--enable-tool-search`) for Tool Search on `full` | `0` |
+| `SMARTSHEET_RM_TOOL_SEARCH_BACKEND` | Tool Search backend: `regex` or `bm25` (or `--tool-search-backend`) | `regex` |
+| `SMARTSHEET_RM_ENABLE_CODE_MODE` | Set to `1` (or `--enable-code-mode`) for experimental Code Mode on `full`; not with Tool Search | `0` |
 | `SMARTSHEET_RM_LOG_FORMAT` | Set to `json` for Datadog/CloudWatch structured logs | `text` |
 | `SMARTSHEET_RM_ALLOWED_HOSTS` | Comma-separated hostnames allowed for base URL overrides. A non-blank value replaces the default. Loopback and private targets stay blocked. | `api.rm.smartsheet.com` |
 
@@ -181,7 +216,8 @@ Connect clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTT
 
 - **Secret Redaction**: API tokens, bearer headers, and sensitive keys are automatically scrubbed from errors and logs.
 - **Destructive Gates**: Every deletion tool declares `confirm: bool = False` and rejects execution unless the caller explicitly passes `confirm=True`.
-- **Profile Filtering**: Minimize token footprint by loading only relevant tool sets (`time`, `projects`, `admin`).
+- **Profiles**: Minimize token footprint by loading only the tools one job needs (`timesheets`, `staffing`, `org_setup`, `portfolio`) or one domain (`time`, `projects`, `admin`).
+- **Read-Only Gate**: `readOnlyHint` decides; anything else is refused with `isError: true`.
 - **Resilience**: Exponential backoff with randomized jitter on HTTP 429 rate limits.
 
 ---

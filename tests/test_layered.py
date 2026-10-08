@@ -1,7 +1,11 @@
-"""Tests for FastMCP 4 Server Composition, profiles, middleware, and domain guards."""
+"""Tests for FastMCP 4 Server Composition, profiles, middleware, discovery, and domain guards."""
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterator
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,6 +13,7 @@ from fastmcp import FastMCP
 from fastmcp.server.middleware import MiddlewareContext
 
 from smartsheet_rm_mcp.config import Settings, SmartsheetRMSettings, settings
+from smartsheet_rm_mcp.errors import SafetyViolationError
 from smartsheet_rm_mcp.middleware import (
     AdminDomainGuardMiddleware,
     ParentAuditMiddleware,
@@ -16,55 +21,164 @@ from smartsheet_rm_mcp.middleware import (
     ReadOnlyGateMiddleware,
     TimeDomainGuardMiddleware,
 )
-from smartsheet_rm_mcp.server import _ToolManagerCompat, create_server, main, server_lifespan
+from smartsheet_rm_mcp.server import create_server, main, server_lifespan
+
+
+@pytest.fixture(autouse=True)
+def _clean_gate_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Start every test with read-only, bulk, and discovery switches off."""
+    for var in (
+        "SMARTSHEET_RM_PROFILE",
+        "SMARTSHEET_RM_READONLY",
+        "SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE",
+        "SMARTSHEET_RM_ENABLE_TOOL_SEARCH",
+        "SMARTSHEET_RM_ENABLE_CODE_MODE",
+        "SMARTSHEET_RM_TOOL_SEARCH_BACKEND",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(settings, "READONLY", False)
+    monkeypatch.setattr(settings, "ALLOW_BULK_DESTRUCTIVE", False)
+    yield
 
 
 @pytest.mark.asyncio
 async def test_create_server_profiles() -> None:
-    """Verify create_server mounts correct domain sub-servers and applies profile filters."""
-    # 1. Full profile
+    """Verify create_server mounts the right domain sub-servers per domain-mount profile."""
+    # 1. Full profile: exhaustive, bulk tools listed (refused at call time without the env)
     full_server = create_server(profile="full")
     tools_full = await full_server.list_tools()
-    assert len(tools_full) == 98
+    assert len(tools_full) == 100
     names = {t.name for t in tools_full}
     assert "time_list_time_entries" in names
     assert "projects_list_projects" in names
     assert "admin_list_users" in names
+    assert {"time_bulk_delete_time_entries", "projects_bulk_delete_assignments"} <= names
 
     # 2. Time profile
-    time_srv = create_server(profile="time")
-    tools_time = await time_srv.list_tools()
-    assert len(tools_time) == 14
-    assert "time_list_time_entries" in {t.name for t in tools_time}
+    tools_time = await create_server(profile="time").list_tools()
+    assert len(tools_time) == 15
+    assert {t.name.split("_", 1)[0] for t in tools_time} == {"time"}
 
     # 3. Projects profile
-    proj_srv = create_server(profile="projects")
-    tools_proj = await proj_srv.list_tools()
-    assert len(tools_proj) == 24
-    assert "projects_list_projects" in {t.name for t in tools_proj}
+    tools_proj = await create_server(profile="projects").list_tools()
+    assert len(tools_proj) == 25
+    assert {t.name.split("_", 1)[0] for t in tools_proj} == {"projects"}
 
     # 4. Admin profile
-    admin_srv = create_server(profile="admin")
-    tools_admin = await admin_srv.list_tools()
+    tools_admin = await create_server(profile="admin").list_tools()
     assert len(tools_admin) == 60
-    assert "admin_list_users" in {t.name for t in tools_admin}
+    assert {t.name.split("_", 1)[0] for t in tools_admin} == {"admin"}
 
     # 5. Readonly profile
-    ro_srv = create_server(profile="readonly")
-    tools_ro = await ro_srv.list_tools()
+    tools_ro = await create_server(profile="readonly").list_tools()
     assert len(tools_ro) == 39
-    assert all(t.annotations and t.annotations.read_only_hint for t in tools_ro)
+    assert all(t.annotations and t.annotations.read_only_hint is True for t in tools_ro)
 
     # 6. Invalid profile raises ValueError
-    with pytest.raises(ValueError, match="Unknown SMARTSHEET_RM_PROFILE"):
+    with pytest.raises(ValueError, match="Unknown profile 'invalid_profile_name'"):
         create_server(profile="invalid_profile_name")
 
 
 @pytest.mark.asyncio
 async def test_create_server_tool_search() -> None:
-    """Verify opt-in regex tool search adds transform."""
+    """full + Tool Search replaces tools/list with the discovery meta-tools."""
     srv = create_server(enable_tool_search=True)
-    assert srv is not None
+    assert [t.name for t in await srv.list_tools()] == ["search_tools", "call_tool"]
+    res = await srv.call_tool("search_tools", {"pattern": "time_list"})
+    assert not res.is_error
+    assert "time_list_time_entries" in str(res.content)
+
+
+@pytest.mark.asyncio
+async def test_bm25_tool_search_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """tool_search_backend='bm25' (argument or env) still collapses tools/list to meta-tools."""
+    app = create_server(profile="full", enable_tool_search=True, tool_search_backend="bm25")
+    assert [t.name for t in await app.list_tools()] == ["search_tools", "call_tool"]
+    res = await app.call_tool("search_tools", {"query": "timesheet"})
+    assert not res.is_error
+    assert "time_" in str(res.content)
+
+    monkeypatch.setenv("SMARTSHEET_RM_TOOL_SEARCH_BACKEND", "BM25")
+    env_app = create_server(profile="full", enable_tool_search=True)
+    assert [t.name for t in await env_app.list_tools()] == ["search_tools", "call_tool"]
+
+    monkeypatch.setenv("SMARTSHEET_RM_TOOL_SEARCH_BACKEND", "fuzzy")
+    with pytest.raises(ValueError, match="Unknown SMARTSHEET_RM_TOOL_SEARCH_BACKEND 'fuzzy'"):
+        create_server(profile="full", enable_tool_search=True)
+
+
+@pytest.mark.asyncio
+async def test_discovery_flags_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1 / SMARTSHEET_RM_ENABLE_CODE_MODE=1 drive discovery."""
+    monkeypatch.setenv("SMARTSHEET_RM_ENABLE_TOOL_SEARCH", "1")
+    assert [t.name for t in await create_server(profile="full").list_tools()] == ["search_tools", "call_tool"]
+    monkeypatch.setenv("SMARTSHEET_RM_ENABLE_CODE_MODE", "1")
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        create_server(profile="full")
+
+
+@pytest.mark.asyncio
+async def test_curated_profile_stays_flat_without_discovery_meta(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Curated profiles expose a flat list; never search/Code Mode meta-tools."""
+    with caplog.at_level(logging.WARNING):
+        time_app = create_server(profile="time", enable_tool_search=True, enable_code_mode=False)
+    time_names = {t.name for t in await time_app.list_tools()}
+    assert len(time_names) == 15
+    assert not time_names & {"search_tools", "call_tool", "search", "execute"}
+    assert any("Tool Search requested with profile='time'" in r.message for r in caplog.records)
+
+
+def test_tool_search_and_code_mode_are_mutually_exclusive() -> None:
+    """Enabling both discovery modes raises ValueError."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        create_server(profile="full", enable_tool_search=True, enable_code_mode=True)
+
+
+@pytest.mark.asyncio
+async def test_full_code_mode_attaches_when_available(caplog: pytest.LogCaptureFixture) -> None:
+    """full + enable_code_mode attaches experimental meta-tools; curated profiles refuse it."""
+    try:
+        from fastmcp.experimental.transforms.code_mode import CodeMode  # noqa: F401
+    except ImportError:  # pragma: no cover - depends on FastMCP build
+        pytest.skip("CodeMode not available in this FastMCP build")
+
+    app = create_server(profile="full", enable_code_mode=True, enable_tool_search=False)
+    names = {t.name for t in await app.list_tools()}
+    assert "execute" in names
+    assert "search_tools" not in names
+    assert "time_list_time_entries" not in names
+
+    with caplog.at_level(logging.WARNING):
+        curated = create_server(profile="projects", enable_code_mode=True)
+    curated_names = {t.name for t in await curated.list_tools()}
+    assert "execute" not in curated_names
+    assert "projects_list_projects" in curated_names
+    assert any("Code Mode requested with profile='projects'" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_code_mode_skips_attach_on_import_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """When CodeMode cannot be imported, create_server logs and keeps the flat catalog."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "fastmcp.experimental.transforms.code_mode":
+            raise ImportError("simulated missing CodeMode")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with caplog.at_level(logging.WARNING):
+        app = create_server(profile="full", enable_code_mode=True, enable_tool_search=False)
+    names = {t.name for t in await app.list_tools()}
+    assert "execute" not in names
+    assert "time_list_time_entries" in names
+    assert any("Code Mode requested but" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -73,7 +187,7 @@ async def test_parent_audit_middleware_success() -> None:
     mw = ParentAuditMiddleware()
     ctx = MagicMock(spec=MiddlewareContext)
     ctx.message = MagicMock()
-    ctx.message.name = "rm_test_tool"
+    ctx.message.name = "time_test_tool"
     ctx.method = "tools/call"
 
     expected_res = MagicMock()
@@ -91,7 +205,7 @@ async def test_parent_audit_middleware_error() -> None:
     mw = ParentAuditMiddleware()
     ctx = MagicMock(spec=MiddlewareContext)
     ctx.message = MagicMock()
-    ctx.message.name = "rm_test_tool"
+    ctx.message.name = "time_test_tool"
     ctx.method = "tools/call"
 
     async def fake_failing_next(_ctx: MiddlewareContext) -> None:
@@ -127,42 +241,110 @@ async def test_parent_audit_middleware_error() -> None:
 
 @pytest.mark.asyncio
 async def test_read_only_gate_middleware(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify ReadOnlyGateMiddleware blocks mutating operations in read-only mode."""
-    mw = ReadOnlyGateMiddleware()
-
-    # When READONLY is False, all operations are allowed
-    monkeypatch.setattr(settings, "READONLY", False)
-    monkeypatch.delenv("SMARTSHEET_RM_READONLY", raising=False)
-    ctx = MagicMock(spec=MiddlewareContext)
-    ctx.method = "tools/call"
-    ctx.message = MagicMock()
-    ctx.message.name = "rm_delete_project"
-    called = False
+    """ReadOnlyGateMiddleware passes everything when off; when on, judges by readOnlyHint."""
+    serving = SimpleNamespace(fastmcp=create_server(profile="full"))
+    gate = ReadOnlyGateMiddleware()
 
     async def fake_next(_ctx: MiddlewareContext) -> str:
-        nonlocal called
-        called = True
         return "success"
 
-    res = await mw.on_message(ctx, fake_next)
-    assert res == "success"
-    assert called is True
+    def ctx(name: str) -> MiddlewareContext:
+        return MiddlewareContext(
+            method="tools/call",
+            message=SimpleNamespace(name=name, arguments={}),
+            fastmcp_context=serving,  # type: ignore[arg-type]
+        )
 
-    # When READONLY is True, mutating operations are blocked
+    # Read-only off: writes pass
+    assert await gate.on_message(ctx("projects_delete_project"), fake_next) == "success"
+
+    # Read-only on via the live env flag: writes and recipe writes are refused
+    monkeypatch.setenv("SMARTSHEET_RM_READONLY", "1")
+    with pytest.raises(SafetyViolationError, match="'projects_delete_project' blocked"):
+        await gate.on_message(ctx("projects_delete_project"), fake_next)
+    with pytest.raises(SafetyViolationError, match="time_fill_weekly_timesheet"):
+        await gate.on_message(ctx("time_fill_weekly_timesheet"), fake_next)
+
+    # Reads and non-tools/call methods pass
+    assert await gate.on_message(ctx("projects_list_projects"), fake_next) == "success"
+    list_ctx = MiddlewareContext(method="tools/list", message=SimpleNamespace())
+    assert await gate.on_message(list_ctx, fake_next) == "success"
+
+
+@pytest.mark.asyncio
+async def test_readonly_gate_unwraps_call_tool_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit: ReadOnlyGateMiddleware resolves the nested name inside call_tool arguments."""
+    serving = SimpleNamespace(fastmcp=create_server(profile="full", enable_tool_search=True))
     monkeypatch.setattr(settings, "READONLY", True)
-    with pytest.raises(PermissionError) as exc_info:
-        await mw.on_message(ctx, fake_next)
-    assert "Server is in read-only mode" in str(exc_info.value)
+    gate = ReadOnlyGateMiddleware()
 
-    # When READONLY is True, mutating recipe operations are also blocked
-    ctx.message.name = "time_fill_weekly_timesheet"
-    with pytest.raises(PermissionError):
-        await mw.on_message(ctx, fake_next)
+    async def allowed_call_next(ctx: MiddlewareContext) -> str:
+        return "allowed"
 
-    # When READONLY is True, non-mutating operations are allowed
-    ctx.message.name = "rm_list_projects"
-    res2 = await mw.on_message(ctx, fake_next)
-    assert res2 == "success"
+    proxy_ctx = MiddlewareContext(
+        method="tools/call",
+        message=SimpleNamespace(
+            name="call_tool",
+            arguments={"name": "projects_delete_project", "arguments": {"project_id": 1}},
+        ),
+        fastmcp_context=serving,  # type: ignore[arg-type]
+    )
+    with pytest.raises(SafetyViolationError) as exc_info:
+        await gate.on_message(proxy_ctx, allowed_call_next)
+    assert "projects_delete_project" in str(exc_info.value)
+
+    read_ctx = MiddlewareContext(
+        method="tools/call",
+        message=SimpleNamespace(name="call_tool", arguments={"name": "projects_list_projects", "arguments": {}}),
+        fastmcp_context=serving,  # type: ignore[arg-type]
+    )
+    assert await gate.on_message(read_ctx, allowed_call_next) == "allowed"
+
+
+@pytest.mark.asyncio
+async def test_readonly_gate_call_tool_without_nested_name_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """call_tool without a usable nested name is classified as itself: unannotated → refused."""
+    monkeypatch.setattr(settings, "READONLY", True)
+    gate = ReadOnlyGateMiddleware()
+    serving = SimpleNamespace(fastmcp=create_server(profile="full", enable_tool_search=True))
+
+    async def allowed_call_next(ctx: MiddlewareContext) -> str:
+        return "allowed"
+
+    for message in (
+        SimpleNamespace(name="call_tool", arguments=None),
+        SimpleNamespace(name="call_tool", arguments={"name": 123}),
+        SimpleNamespace(name="call_tool", arguments={"name": ""}),
+    ):
+        ctx = MiddlewareContext(
+            method="tools/call",
+            message=message,
+            fastmcp_context=serving,  # type: ignore[arg-type]
+        )
+        with pytest.raises(SafetyViolationError, match="'call_tool' blocked"):
+            await gate.on_message(ctx, allowed_call_next)
+
+
+@pytest.mark.asyncio
+async def test_readonly_gate_without_server_context_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no serving FastMCP context the annotation cannot be read, so the call is refused."""
+    monkeypatch.setattr(settings, "READONLY", True)
+    gate = ReadOnlyGateMiddleware()
+
+    async def allowed_call_next(ctx: MiddlewareContext) -> str:
+        return "allowed"
+
+    for message in (
+        SimpleNamespace(name="projects_list_projects", arguments={}),
+        None,
+    ):
+        ctx = MiddlewareContext(method="tools/call", message=message)
+        with pytest.raises(SafetyViolationError, match="read-only mode"):
+            await gate.on_message(ctx, allowed_call_next)
 
 
 @pytest.mark.asyncio
@@ -271,20 +453,6 @@ async def test_server_lifespan_aclose_branch() -> None:
         srv._HEADER_CLIENT_CACHE.clear()
 
 
-def test_tool_manager_compat_root_local_provider() -> None:
-    """Verify _ToolManagerCompat finds tools registered directly on root local provider."""
-    root = FastMCP("test-root")
-
-    @root.tool(name="rm_direct_root_tool")
-    def direct_tool() -> str:
-        return "root"
-
-    mgr = _ToolManagerCompat(root)
-    assert "rm_direct_root_tool" in mgr._tools
-    mgr.remove_tool("rm_direct_root_tool")
-    assert "rm_direct_root_tool" not in mgr._tools
-
-
 def test_main_cli_profile_and_search(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify CLI accepts --profile and --enable-tool-search flags."""
     run_called = False
@@ -302,6 +470,23 @@ def test_main_cli_profile_and_search(monkeypatch: pytest.MonkeyPatch) -> None:
     assert run_called is True
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--profile", "full", "--enable-code-mode"],
+        ["--profile", "full", "--enable-tool-search", "--tool-search-backend", "bm25"],
+        ["--profile", "timesheets"],
+    ],
+)
+def test_main_cli_discovery_and_job_profiles(monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> None:
+    """CLI accepts --enable-code-mode, --tool-search-backend, and job allowlist profiles."""
+    fake_run = MagicMock()
+    monkeypatch.setattr(FastMCP, "run", fake_run)
+    monkeypatch.setattr("sys.argv", ["smartsheet-rm-mcp", *argv])
+    main()
+    fake_run.assert_called_once()
+
+
 def test_smartsheet_rm_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify SmartsheetRMSettings defaults, env prefix, and backward-compatible Settings alias."""
     assert Settings is SmartsheetRMSettings
@@ -312,6 +497,8 @@ def test_smartsheet_rm_settings(monkeypatch: pytest.MonkeyPatch) -> None:
         "SMARTSHEET_RM_READONLY",
         "SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE",
         "SMARTSHEET_RM_ENABLE_TOOL_SEARCH",
+        "SMARTSHEET_RM_TOOL_SEARCH_BACKEND",
+        "SMARTSHEET_RM_ENABLE_CODE_MODE",
         "SMARTSHEET_RM_CATALOG_CACHE_TTL_MS",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -323,4 +510,6 @@ def test_smartsheet_rm_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.READONLY is False
     assert s.ALLOW_BULK_DESTRUCTIVE is False
     assert s.ENABLE_TOOL_SEARCH is False
+    assert s.TOOL_SEARCH_BACKEND == "regex"
+    assert s.ENABLE_CODE_MODE is False
     assert s.CATALOG_CACHE_TTL_MS == 3600000

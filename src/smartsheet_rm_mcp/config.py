@@ -1,5 +1,8 @@
 """Configuration management for Smartsheet Resource Management MCP server."""
 
+import os
+from typing import Literal
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -25,7 +28,11 @@ class SmartsheetRMSettings(BaseSettings):
     )
     PROFILE: str = Field(
         default="full",
-        description="Tool subset profile: full, time, projects, admin, readonly",
+        description=(
+            "Server profile: domain-mount profiles 'full', 'time', 'projects', 'admin', 'readonly', "
+            "or a job-shaped allowlist profile 'timesheets', 'staffing', 'org_setup', 'portfolio' "
+            "(see profiles.PROFILES)"
+        ),
     )
     READONLY: bool = Field(
         default=False,
@@ -33,11 +40,22 @@ class SmartsheetRMSettings(BaseSettings):
     )
     ALLOW_BULK_DESTRUCTIVE: bool = Field(
         default=False,
-        description="Opt-in gate required to register bulk deletion operations",
+        description="Opt-in gate required to execute bulk deletion operations (listed in full, refused without it)",
     )
     ENABLE_TOOL_SEARCH: bool = Field(
         default=False,
-        description="Enable dynamic tool search transform instead of flat tools/list",
+        description=("Opt-in Tool Search transform (search_tools + call_tool). Attached only when profile is 'full'."),
+    )
+    TOOL_SEARCH_BACKEND: Literal["regex", "bm25"] = Field(
+        default="regex",
+        description="Tool Search backend: 'regex' (default) or 'bm25'",
+    )
+    ENABLE_CODE_MODE: bool = Field(
+        default=False,
+        description=(
+            "Opt-in experimental Code Mode transform (search + execute). "
+            "Attached only when profile is 'full'; mutually exclusive with Tool Search."
+        ),
     )
     STATELESS_HTTP: bool = Field(
         default=False,
@@ -61,4 +79,26 @@ class SmartsheetRMSettings(BaseSettings):
 Settings = SmartsheetRMSettings
 settings = SmartsheetRMSettings()
 
-__all__ = ["SmartsheetRMSettings", "Settings", "settings"]
+
+def _env_flag(name: str) -> bool:
+    """Return True when environment variable ``name`` is set to ``1`` at call time."""
+    return os.environ.get(name, "").strip() == "1"
+
+
+def readonly_enabled() -> bool:
+    """Return True when read-only mode is on (settings or live ``SMARTSHEET_RM_READONLY=1``)."""
+    return settings.READONLY or _env_flag("SMARTSHEET_RM_READONLY")
+
+
+def bulk_destructive_allowed() -> bool:
+    """Return True when bulk deletes may execute (``SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1``)."""
+    return settings.ALLOW_BULK_DESTRUCTIVE or _env_flag("SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE")
+
+
+__all__ = [
+    "SmartsheetRMSettings",
+    "Settings",
+    "bulk_destructive_allowed",
+    "readonly_enabled",
+    "settings",
+]
