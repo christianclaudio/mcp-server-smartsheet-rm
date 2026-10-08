@@ -6,10 +6,7 @@
 
 ## 🔒 Supported Versions
 
-| Version | Supported |
-|---------|-----------|
-| `1.0.x` | ✅ Yes    |
-| `< 1.0` | ❌ No     |
+Only the latest release receives security fixes. Upgrade to the newest version on [Releases](https://github.com/christianclaudio/mcp-server-smartsheet-rm/releases) or [PyPI](https://pypi.org/project/mcp-server-smartsheet-rm/).
 
 ---
 
