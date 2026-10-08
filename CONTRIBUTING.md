@@ -51,6 +51,12 @@ uv run pytest tests/test_protocol.py --no-cov
 
 ---
 
+## 🔀 Pull Requests & Versions
+
+Merges are performed via **Squash Merge** with Conventional Commit titles (`feat:`, `fix:`, `docs:`, `chore:`). Do not edit version numbers or `CHANGELOG.md`: the git tag is the version, and GitHub Releases are the changelog. The squash commit message is the PR body, so a breaking (`feat!:` / `fix!:`) PR ends its body with a `BREAKING CHANGE:` footer that includes the migration steps.
+
+---
+
 ## 📐 Architecture & Conventions
 
 - **Tool Annotations**: Every MCP tool must declare `read_only_hint`, `destructive_hint`, or `idempotent_hint` annotations.
