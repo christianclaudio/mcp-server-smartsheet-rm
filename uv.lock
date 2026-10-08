@@ -1328,7 +1328,6 @@ wheels = [
 
 [[package]]
 name = "mcp-server-smartsheet-rm"
-version = "1.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
