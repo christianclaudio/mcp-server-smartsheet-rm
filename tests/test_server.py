@@ -1051,6 +1051,32 @@ def test_main_cli_argparsing(monkeypatch: pytest.MonkeyPatch, caplog: pytest.Log
         srv.main()
 
 
+def test_main_cli_profile_flag_is_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify an explicit --profile value is lowercased like the env default before the choices check."""
+    seen: dict[str, object] = {}
+
+    def fake_create_server(**kwargs: object) -> object:
+        """Record the profile handed to create_server."""
+        seen.update(kwargs)
+        return srv.mcp
+
+    monkeypatch.setattr(srv, "create_server", fake_create_server)
+    monkeypatch.setattr(srv.mcp, "run", lambda **kwargs: None)
+    monkeypatch.delenv("SMARTSHEET_RM_PROFILE", raising=False)
+
+    monkeypatch.setattr("sys.argv", ["mcp-server-smartsheet-rm", "--profile", "Full"])
+    srv.main()
+    assert seen["profile"] == "full"
+
+    monkeypatch.setattr("sys.argv", ["mcp-server-smartsheet-rm", "--profile", "TIMESHEETS"])
+    srv.main()
+    assert seen["profile"] == "timesheets"
+
+    monkeypatch.setattr("sys.argv", ["mcp-server-smartsheet-rm", "--profile", "Nope"])
+    with pytest.raises(SystemExit):
+        srv.main()
+
+
 def test_server_profile_and_readonly_filtering(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify module-level profile selection, readonly mode, and bulk listing via env vars."""
     import asyncio

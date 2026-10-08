@@ -456,6 +456,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000, help="Port for HTTP transports (default: 8000).")
     parser.add_argument(
         "--profile",
+        type=str.lower,
         choices=sorted(PROFILES),
         default=(os.environ.get("SMARTSHEET_RM_PROFILE") or settings.PROFILE).lower(),
         help=(
