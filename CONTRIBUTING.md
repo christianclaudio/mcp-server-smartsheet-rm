@@ -59,7 +59,7 @@ Merges are performed via **Squash Merge** with Conventional Commit titles (`feat
 
 ## 📐 Architecture & Conventions
 
-- **Tool Annotations**: Every MCP tool must declare `read_only_hint`, `destructive_hint`, or `idempotent_hint` annotations.
+- **Tool Annotations**: Every MCP tool declares all four `ToolAnnotations` hints (`read_only_hint`, `destructive_hint`, `idempotent_hint`, `open_world_hint`); use the `ANNOTATION_*` constants in `common.py`. `read_only_hint` must be explicit: the read-only gate refuses any tool without `readOnlyHint=True`, and `scripts/check_tool_contract.py` fails on a tool that omits it.
 - **Destructive Gating**: All delete, deactivate, or removal tools **must** declare `confirm: bool = False` and reject execution when not explicitly `True`.
 - **Secret Redaction**: Credentials must be automatically scrubbed by `_sanitize()`.
 - **Error Formatting**: Use structured `SmartsheetRMAPIError` responses.

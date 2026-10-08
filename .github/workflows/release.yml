@@ -135,7 +135,9 @@ jobs:
 
   docker:
     name: Publish Docker image
-    needs: build
+    # Ship nothing (GHCR `:latest` included) unless the publish job, which builds
+    # the release notes and uploads to PyPI, succeeded.
+    needs: [build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: read
