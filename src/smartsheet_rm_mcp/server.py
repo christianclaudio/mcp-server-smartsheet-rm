@@ -11,28 +11,35 @@ Full REST API surface covering:
 8. Tags & Custom Fields
 9. Composite Workflow Recipes
 
-Environment variables controlling tool registration:
-  SMARTSHEET_RM_PROFILE                  - Tool subset: time, projects, admin, full (default: full).
-  SMARTSHEET_RM_READONLY=1               - When set, only tools annotated read_only_hint=True are registered.
-  SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1 - Required to register rm_bulk_delete_time_entries and rm_bulk_delete_assignments.
-  SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1     - Opt-in dynamic tool search transform.
+Environment variables controlling the gateway:
+  SMARTSHEET_RM_PROFILE                  - Profile (default: full). Domain mounts: full, time, projects, admin,
+                                           readonly. Job allowlists: timesheets, staffing, org_setup, portfolio.
+  SMARTSHEET_RM_READONLY=1               - Keep only tools annotated readOnlyHint=True and refuse every other call.
+  SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1 - Required to execute time_bulk_delete_time_entries and
+                                           projects_bulk_delete_assignments (listed in full, refused without it).
+  SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1     - Opt-in Tool Search (profile=full only).
+  SMARTSHEET_RM_TOOL_SEARCH_BACKEND      - Tool Search backend: regex (default) or bm25.
+  SMARTSHEET_RM_ENABLE_CODE_MODE=1       - Opt-in experimental Code Mode (profile=full only; not with Tool Search).
 
-Filter application order: annotations -> profile -> readonly -> bulk-destructive gating.
+Build order: domain mounts -> job allowlist -> read-only filter -> discovery (full only).
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import inspect
 import logging
 import os
 import signal
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal, cast
 
 from fastmcp import FastMCP
+from fastmcp.server.transforms.search import BM25SearchTransform, RegexSearchTransform
 from fastmcp.tools import FunctionTool
 
 from smartsheet_rm_mcp import __version__
@@ -48,9 +55,17 @@ from smartsheet_rm_mcp.common import (
     get_client,
     rm_tool,
 )
-from smartsheet_rm_mcp.config import settings
-from smartsheet_rm_mcp.errors import SmartsheetRMAPIError, redact_secrets
+from smartsheet_rm_mcp.config import readonly_enabled, settings
+from smartsheet_rm_mcp.errors import SafetyViolationError, SmartsheetRMAPIError, redact_secrets
 from smartsheet_rm_mcp.middleware import ParentAuditMiddleware, ReadOnlyGateMiddleware
+from smartsheet_rm_mcp.profiles import (
+    FULL_ONLY_TOOLS,
+    PROFILES,
+    ReadOnlyAnnotations,
+    ReadOnlyToolFilter,
+    get_profile,
+    validate_allowlist,
+)
 from smartsheet_rm_mcp.tools import (
     admin_server,
     create_admin_server,
@@ -166,6 +181,20 @@ from smartsheet_rm_mcp.tools import (
 
 logger = logging.getLogger("smartsheet_rm_mcp")
 
+ToolSearchBackend = Literal["regex", "bm25"]
+
+# Domain sub-server factories by mount namespace (hybrid A+B: the namespace is the domain).
+# A fresh sub-server is built per create_server call, so profile state never leaks between builds.
+DOMAIN_SERVER_FACTORIES: dict[str, Callable[[], FastMCP]] = {
+    "time": create_time_server,
+    "projects": create_projects_server,
+    "admin": create_admin_server,
+}
+
+# FastMCP synthetic discovery tools that only read the catalog (annotated readOnlyHint=True).
+TOOL_SEARCH_READ_ONLY_TOOLS = ("search_tools",)
+CODE_MODE_READ_ONLY_TOOLS = ("search", "get_schema")
+
 
 @asynccontextmanager
 async def server_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
@@ -221,114 +250,121 @@ if not hasattr(FunctionTool, "input_schema"):
     FunctionTool.input_schema = property(lambda self: self.parameters)  # type: ignore[attr-defined]
 
 
-class _ToolManagerCompat:
-    """Compatibility bridge for internal _tool_manager access."""
+def _catalog_tool_names(root: FastMCP) -> set[str]:
+    """Return the client-visible tool names of ``root`` via the public ``list_tools()``.
 
-    def __init__(self, server: FastMCP) -> None:
-        self._server = server
-        self._custom_tools: dict[str, Any] | None = None
+    Runs on a worker thread with its own event loop so ``create_server`` stays synchronous
+    and safe to call from inside a running loop (tests, hosts).
+    """
 
-    @property
-    def _tools(self) -> dict[str, Any]:
-        if self._custom_tools is not None:
-            return self._custom_tools
-        tools: dict[str, Any] = {}
-        for c in self._server._local_provider._components.values():
-            if hasattr(c, "name") and (getattr(c, "type", None) == "tool" or hasattr(c, "parameters")):
-                tools[c.name] = c
-        for p in getattr(self._server, "providers", []):
-            sub = getattr(p, "server", None) or getattr(getattr(p, "_inner", None), "server", None)
-            transforms = getattr(p, "_transforms", [])
-            ns = next((t for t in transforms if hasattr(t, "_transform_name")), None)
-            if sub and hasattr(sub, "_local_provider"):
-                for c in sub._local_provider._components.values():
-                    if hasattr(c, "name") and (getattr(c, "type", None) == "tool" or hasattr(c, "parameters")):
-                        tool_name = ns._transform_name(c.name) if ns else c.name
-                        tools[tool_name] = c
-        return tools
+    async def _collect() -> set[str]:
+        return {tool.name for tool in await root.list_tools()}
 
-    @_tools.setter
-    def _tools(self, val: dict[str, Any] | None) -> None:
-        self._custom_tools = val
-
-    @_tools.deleter
-    def _tools(self) -> None:
-        self._custom_tools = None
-
-    def remove_tool(self, name: str) -> None:
-        try:
-            self._server._local_provider.remove_tool(name)
-        except Exception:
-            pass
-        for p in getattr(self._server, "providers", []):
-            sub = getattr(p, "server", None) or getattr(getattr(p, "_inner", None), "server", None)
-            transforms = getattr(p, "_transforms", [])
-            ns = next((t for t in transforms if hasattr(t, "_reverse_name")), None)
-            sub_name = ns._reverse_name(name) if ns else name
-            if sub and hasattr(sub, "_local_provider"):
-                try:
-                    sub._local_provider.remove_tool(sub_name)
-                except Exception:
-                    pass
-                try:
-                    sub._local_provider.remove_tool(name)
-                except Exception:
-                    pass
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, _collect()).result()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SERVER COMPOSITION GATEWAY FACTORY
-# ═══════════════════════════════════════════════════════════════════════════════
+def _apply_tool_allowlist(root: FastMCP, allowlist: frozenset[str]) -> None:
+    """Expose only ``allowlist`` tools; prompts, resources, and templates are untouched.
 
-_VALID_PROFILES = {"full", "time", "projects", "admin", "readonly"}
-_BULK_DESTRUCTIVE_TOOLS = {"time_bulk_delete_time_entries", "projects_bulk_delete_assignments"}
+    Public visibility API: disable every tool, then re-enable the named tools. The later
+    ``enable`` wins. ``enable(only=True)`` is not used because it disables every component
+    type first, which would also hide prompts and resources.
+    """
+    root.disable(components={"tool"})
+    root.enable(names=set(allowlist), components={"tool"})
+
+
+def _attach_tool_search(root: FastMCP, backend: ToolSearchBackend) -> None:
+    """Attach Regex (default) or BM25 Tool Search transform to the root gateway."""
+    if backend == "bm25":
+        root.add_transform(BM25SearchTransform())
+    else:
+        root.add_transform(RegexSearchTransform())
+    root.add_transform(ReadOnlyAnnotations(TOOL_SEARCH_READ_ONLY_TOOLS))
+
+
+def _attach_code_mode(root: FastMCP) -> bool:
+    """Attach experimental Code Mode when the FastMCP build exports it.
+
+    Returns True when the transform was attached; False when ImportError skipped it.
+    """
+    try:
+        from fastmcp.experimental.transforms.code_mode import CodeMode
+    except ImportError:
+        logger.warning(
+            "Code Mode requested but fastmcp.experimental.transforms.code_mode is unavailable; "
+            "skipping attach. Upgrade FastMCP or omit --enable-code-mode."
+        )
+        return False
+    root.add_transform(CodeMode())
+    root.add_transform(ReadOnlyAnnotations(CODE_MODE_READ_ONLY_TOOLS))
+    return True
+
+
+def _env_bool(name: str, configured: bool) -> bool:
+    """Return ``configured`` or the live ``name=1`` environment flag."""
+    return configured or os.environ.get(name, "").strip() == "1"
+
+
+def _configured_search_backend() -> ToolSearchBackend:
+    """Return the Tool Search backend from the live env or settings; reject unknown values."""
+    raw = (os.environ.get("SMARTSHEET_RM_TOOL_SEARCH_BACKEND") or settings.TOOL_SEARCH_BACKEND).strip().lower()
+    if raw not in ("regex", "bm25"):
+        raise ValueError(f"Unknown SMARTSHEET_RM_TOOL_SEARCH_BACKEND {raw!r}; valid: bm25, regex.")
+    return cast(ToolSearchBackend, raw)
 
 
 def create_server(
     profile: str | None = None,
-    readonly: bool | None = None,
-    allow_bulk_destructive: bool | None = None,
     enable_tool_search: bool | None = None,
+    enable_code_mode: bool | None = None,
+    tool_search_backend: ToolSearchBackend | None = None,
 ) -> FastMCP:
-    """Factory creating the composed root FastMCP gateway.
+    """Build root gateway FastMCP instance using Server Composition and Hierarchical Middleware.
 
-    Mounts domain sub-servers (time, projects, admin) with namespaces and enforces:
-    - Hierarchical middleware (ParentAuditMiddleware, ReadOnlyGateMiddleware)
-    - Native tool annotations (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
-    - Profile filtering via selective mounting (full, time, projects, admin, readonly)
-    - Read-only filtering (SMARTSHEET_RM_READONLY=1)
-    - Bulk-destructive gating (SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1)
-    - Opt-in tool search (RegexSearchTransform)
+    Architecture:
+    Gateway (FastMCP)
+    ├── Parent Middleware (ParentAuditMiddleware, ReadOnlyGateMiddleware)
+    ├── mount(time_server, namespace="time")          # domain mount, not a product stamp
+    ├── mount(projects_server, namespace="projects")
+    ├── mount(admin_server, namespace="admin")
+    ├── (allowlist profiles) tools-only visibility allowlist over the full catalog
+    ├── (readonly) ReadOnlyToolFilter: keep tools annotated readOnlyHint=True
+    └── (Optional, profile==full only) Tool Search XOR experimental Code Mode
+
+    Profile rules:
+    * Domain-mount profiles mount the listed domains; allowlist profiles mount every
+      domain and expose only the allowlisted tool names (prompts/resources stay).
+    * An unknown profile, or an allowlisted name missing from the full catalog, raises
+      ``ValueError`` at build time.
+    * Bulk destructive tools stay listed; the time/projects domain guards refuse them at
+      call time unless ``SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1``.
+
+    Discovery rules:
+    * Default: flat ``tools/list`` of mounted domain tools (curated or full).
+    * Tool Search / Code Mode attach only when explicitly enabled **and** ``profile == "full"``.
+    * Requesting either discovery mode on a curated profile logs a warning and skips attach.
+    * Enabling both Tool Search and Code Mode raises ``ValueError`` (mutual exclusion).
     """
-    raw_profile = profile or os.environ.get("SMARTSHEET_RM_PROFILE") or settings.PROFILE
-    active_profile = raw_profile.lower()
-
-    if active_profile not in _VALID_PROFILES:
-        raise ValueError(
-            f"Unknown SMARTSHEET_RM_PROFILE {raw_profile!r}. Valid: time, projects, admin, full, readonly."
-        )
-
-    active_readonly = (
-        readonly
-        if readonly is not None
-        else (
-            settings.READONLY
-            or os.environ.get("SMARTSHEET_RM_READONLY", "").strip() == "1"
-            or active_profile == "readonly"
-        )
-    )
-    active_allow_bulk = (
-        allow_bulk_destructive
-        if allow_bulk_destructive is not None
-        else (
-            settings.ALLOW_BULK_DESTRUCTIVE or os.environ.get("SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE", "").strip() == "1"
-        )
-    )
-    active_tool_search = (
+    active = get_profile(profile or os.environ.get("SMARTSHEET_RM_PROFILE") or settings.PROFILE)
+    active_profile = active.name
+    use_tool_search = (
         enable_tool_search
         if enable_tool_search is not None
-        else (settings.ENABLE_TOOL_SEARCH or os.environ.get("SMARTSHEET_RM_ENABLE_TOOL_SEARCH", "").strip() == "1")
+        else _env_bool("SMARTSHEET_RM_ENABLE_TOOL_SEARCH", settings.ENABLE_TOOL_SEARCH)
     )
+    use_code_mode = (
+        enable_code_mode
+        if enable_code_mode is not None
+        else _env_bool("SMARTSHEET_RM_ENABLE_CODE_MODE", settings.ENABLE_CODE_MODE)
+    )
+    search_backend: ToolSearchBackend = (
+        tool_search_backend if tool_search_backend is not None else _configured_search_backend()
+    )
+
+    if use_tool_search and use_code_mode:
+        raise ValueError("Tool Search and Code Mode are mutually exclusive; enable only one discovery mode.")
 
     root = FastMCP(
         "mcp-server-smartsheet-rm",
@@ -338,44 +374,50 @@ def create_server(
         cache_scope="public",
     )
 
-    # 1. Global Parent Middleware
-    root.add_middleware(ParentAuditMiddleware())
-    root.add_middleware(ReadOnlyGateMiddleware())
-
-    # 2. Server Composition via selective mount(subserver, namespace=...)
-    if active_profile in ("full", "time", "readonly"):
-        root.mount(create_time_server(), namespace="time")
-    if active_profile in ("full", "projects", "readonly"):
-        root.mount(create_projects_server(), namespace="projects")
-    if active_profile in ("full", "admin", "readonly"):
-        root.mount(create_admin_server(), namespace="admin")
-
-    # Compatibility bridge
+    # Attach ASGI streamable HTTP compatibility bridge
     root.streamable_http_app = _streamable_http_app.__get__(root, FastMCP)  # type: ignore[attr-defined]
-    tool_mgr = _ToolManagerCompat(root)
-    root._tool_manager = tool_mgr  # type: ignore[attr-defined]
 
-    # 3. Read-Only Filtering
-    if active_readonly:
-        ro_remove = [
-            name
-            for name, tool_obj in list(tool_mgr._tools.items())
-            if not (tool_obj.annotations and tool_obj.annotations.read_only_hint)
-        ]
-        for name in ro_remove:
-            tool_mgr.remove_tool(name)
+    # 1. Global Parent Middleware (Audit logging, request timing, and read-only gate)
+    readonly_gate = ReadOnlyGateMiddleware(enforce=active.readonly)
+    root.add_middleware(ParentAuditMiddleware())
+    root.add_middleware(readonly_gate)
 
-    # 4. Bulk-Destructive Gating
-    if not active_allow_bulk:
-        for name in _BULK_DESTRUCTIVE_TOOLS:
-            if name in tool_mgr._tools:
-                tool_mgr.remove_tool(name)
+    # 2. Server Composition via mount(subserver, namespace=...) — Hybrid A+B domain mounts
+    for domain in active.domains:
+        root.mount(DOMAIN_SERVER_FACTORIES[domain](), namespace=domain)
 
-    # 5. Opt-In Dynamic Tool Search Transform
-    if active_tool_search:
-        from fastmcp.server.transforms.search import RegexSearchTransform
+    # 3. Allowlist profiles: validate against the full mounted catalog, then filter tools
+    if active.is_allowlist:
+        allowlist = validate_allowlist(active, _catalog_tool_names(root))
+        _apply_tool_allowlist(root, allowlist)
 
-        root.add_transform(RegexSearchTransform())
+    # 4. Read-only: keep only tools annotated readOnlyHint=True (annotation is the truth)
+    if active.readonly or readonly_enabled():
+        # Capture the profile catalog before the filter hides writes, so the gate refuses a
+        # hidden real tool but lets an unknown name reach FastMCP's "Unknown tool" error.
+        readonly_gate.catalog = frozenset(_catalog_tool_names(root))
+        root.add_transform(ReadOnlyToolFilter())
+
+    # 5. Opt-in discovery transforms — full profile only (never dump full catalog by default)
+    if use_tool_search:
+        if active_profile != "full":
+            logger.warning(
+                "Tool Search requested with profile=%r; attach is allowed only on profile='full'. "
+                "Keeping flat curated tools/list.",
+                active_profile,
+            )
+        else:
+            _attach_tool_search(root, search_backend)
+
+    if use_code_mode:
+        if active_profile != "full":
+            logger.warning(
+                "Code Mode requested with profile=%r; attach is allowed only on profile='full'. "
+                "Keeping flat curated tools/list.",
+                active_profile,
+            )
+        else:
+            _attach_code_mode(root)
 
     return root
 
@@ -414,15 +456,33 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8000, help="Port for HTTP transports (default: 8000).")
     parser.add_argument(
         "--profile",
-        choices=["full", "time", "projects", "admin", "readonly"],
-        default=os.environ.get("SMARTSHEET_RM_PROFILE") or settings.PROFILE,
-        help="Domain profile: 'full', 'time', 'projects', 'admin', or 'readonly'.",
+        choices=sorted(PROFILES),
+        default=(os.environ.get("SMARTSHEET_RM_PROFILE") or settings.PROFILE).lower(),
+        help=(
+            "Server profile (default 'full'): domain-mount profiles full/time/projects/admin/readonly "
+            "or job-shaped allowlist profiles timesheets/staffing/org_setup/portfolio."
+        ),
     )
     parser.add_argument(
         "--enable-tool-search",
         action="store_true",
-        default=settings.ENABLE_TOOL_SEARCH or os.environ.get("SMARTSHEET_RM_ENABLE_TOOL_SEARCH", "").strip() == "1",
-        help="Enable dynamic tool search transform instead of flat tools/list.",
+        default=_env_bool("SMARTSHEET_RM_ENABLE_TOOL_SEARCH", settings.ENABLE_TOOL_SEARCH),
+        help="Enable Tool Search on profile=full only (replaces tools/list with search_tools + call_tool).",
+    )
+    parser.add_argument(
+        "--tool-search-backend",
+        choices=["regex", "bm25"],
+        default=None,
+        help="Tool Search backend: 'regex' (default) or 'bm25'.",
+    )
+    parser.add_argument(
+        "--enable-code-mode",
+        action="store_true",
+        default=_env_bool("SMARTSHEET_RM_ENABLE_CODE_MODE", settings.ENABLE_CODE_MODE),
+        help=(
+            "Enable experimental Code Mode on profile=full only (search + execute). "
+            "Mutually exclusive with --enable-tool-search."
+        ),
     )
     parser.add_argument(
         "--stateless",
@@ -474,6 +534,8 @@ def main() -> None:
     server_instance = create_server(
         profile=args.profile,
         enable_tool_search=args.enable_tool_search,
+        enable_code_mode=args.enable_code_mode,
+        tool_search_backend=args.tool_search_backend,
     )
     target_server = server_instance if getattr(mcp.run, "__func__", None) is getattr(FastMCP, "run", None) else mcp
 
@@ -512,6 +574,10 @@ __all__ = [
     "__version__",
     "mcp",
     "create_server",
+    "DOMAIN_SERVER_FACTORIES",
+    "FULL_ONLY_TOOLS",
+    "PROFILES",
+    "SafetyViolationError",
     "main",
     "server_lifespan",
     "DEFAULT_BASE_URL",

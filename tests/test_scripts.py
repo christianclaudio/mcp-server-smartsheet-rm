@@ -34,7 +34,7 @@ def test_check_openapi_drift_main_missing_methods(capsys: pytest.CaptureFixture[
 
 
 def test_check_openapi_drift_main_insufficient_tools(capsys: pytest.CaptureFixture[str]) -> None:
-    with patch.object(check_openapi_drift.mcp._tool_manager, "_tools", {}):
+    with patch.object(check_openapi_drift, "registered_tool_names", return_value=[]):
         code = check_openapi_drift.main()
         assert code == 1
         captured = capsys.readouterr()

@@ -6,6 +6,8 @@ import os
 import re
 from typing import Any
 
+from fastmcp.exceptions import ToolError
+
 _REDACT_KEYS = {
     "auth",
     "token",
@@ -89,3 +91,11 @@ class SmartsheetRMAPIError(Exception):
             "detail": _sanitize(self.detail),
             "request_id": self.request_id,
         }
+
+
+class SafetyViolationError(ToolError):
+    """Raised when a call violates the read-only or bulk-destructive gates.
+
+    Also a FastMCP ``ToolError``, so a refusal raised from middleware reaches the client as
+    a ``tools/call`` result with ``isError: true`` instead of a JSON-RPC internal error.
+    """

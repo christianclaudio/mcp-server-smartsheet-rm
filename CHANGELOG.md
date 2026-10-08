@@ -9,7 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+- **Read-only fails closed on `readOnlyHint` alone**: `ReadOnlyGateMiddleware` no longer matches tool-name prefixes. Under `--profile readonly` or `SMARTSHEET_RM_READONLY=1` it refuses any real tool not annotated `readOnlyHint=True` (a missing annotation counts as a write), including writes the read-only filter hid. Refusals are `SafetyViolationError`, a FastMCP `ToolError`, so clients get a tool result with `isError: true` instead of a `PermissionError`. A gate with no serving server context refuses. Names that are not tools on the server still get FastMCP's `Unknown tool`, directly or through `call_tool`.
+- **`call_tool` without Tool Search**: under read-only, `call_tool` is unwrapped only when it is a real tool on the server (Tool Search on `full`); otherwise it returns `Unknown tool: 'call_tool'`.
+- **Bulk tools listed and gated at call time**: `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` are now listed in `full`, `time` and `projects` (`full` goes from 98 to 100 tools, `time` 14 → 15, `projects` 24 → 25). The time/projects domain guards refuse them with `isError: true` unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`; `confirm=True` is still required.
+- **Discovery is `full`-only**: Tool Search no longer attaches on `time`, `projects`, `admin`, `readonly` or the job profiles; requesting it there logs a warning and keeps the flat list. Tool Search and Code Mode together raise `ValueError`.
+- **`create_server` signature**: now `create_server(profile, enable_tool_search, enable_code_mode, tool_search_backend)`. The unused `readonly` and `allow_bulk_destructive` keyword arguments are removed; use `--profile readonly` / `SMARTSHEET_RM_READONLY=1` and `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`. An unknown profile now raises `ValueError("Unknown profile ...")`.
+
+### Added
+- **Job profiles** (`profiles.py`): `timesheets` (22 tools, 12 read-only), `staffing` (25, 18), `org_setup` (35, 13) and `portfolio` (33, 18). They mount every domain and expose an explicit tool-name allowlist; prompts and resources stay available. Every profile has a one-line `job`. Unknown profile or allowlisted names raise `ValueError` at build time. The existing domain-mount profiles `full`, `time`, `projects`, `admin` and `readonly` are kept.
+- **`FULL_ONLY_TOOLS`**: the 7 tools in no job profile (the two bulk deletes, `admin_delete_client`, `admin_delete_client_contact`, `admin_create_expense_category`, `admin_delete_expense_category`, `admin_delete_tag`). Tests require every tool to be in a job profile or this set.
+- **BM25 Tool Search and Code Mode**: `SMARTSHEET_RM_TOOL_SEARCH_BACKEND` / `--tool-search-backend` (`regex` or `bm25`) and `SMARTSHEET_RM_ENABLE_CODE_MODE` / `--enable-code-mode` (experimental, `full` only). `search_tools`, `search` and `get_schema` are annotated `readOnlyHint=True`; Code Mode `execute` is refused under read-only.
+- **Tests**: `tests/test_profiles.py` covers per-profile counts, read-only composition, prompts and resources on job profiles, unknown names, the `call_tool` unwrap (with a spy and an unwrap-removed regression test), `Unknown tool` paths, hidden writes, `isError` on refusals, `FULL_ONLY_TOOLS`, explicit `readOnlyHint` on every tool, and the bulk gate.
+
 ### Changed
+- **Public FastMCP API only**: profile and read-only filtering use `root.disable`/`root.enable` visibility and a `ReadOnlyToolFilter` transform instead of the private `_local_provider` / `_tool_manager` compatibility shim (`_ToolManagerCompat` removed). `scripts/check_openapi_drift.py` counts tools with the public `list_tools()`.
+- **Stale `rm_*` tool names removed**: destructive confirmation messages, the server module docstring, middleware prefixes, tests and `SECURITY.md` now use the wire names (`time_*`, `projects_*`, `admin_*`). Python function names are unchanged.
+- **Contract script**: `scripts/check_tool_contract.py` asserts every profile's total and read-only counts, the README profile table, `FULL_ONLY_TOOLS`, explicit `readOnlyHint` on every tool, and that read-only composes with every profile.
+- **Docs**: README, `AGENTS.md`, `SECURITY.md`, `TESTING.md` and the skill describe the profiles, read-only behavior, the call-time bulk gate and `full`-only discovery.
 - **Docs**: README `uvx` install examples are intentionally unpinned (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`). SemVer stays in package manifests, the release tag, and this changelog. Pin a freeze from GitHub Releases or this changelog when a host needs one.
 
 ## [1.2.3] - 2026-10-05

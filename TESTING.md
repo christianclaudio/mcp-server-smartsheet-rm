@@ -32,9 +32,9 @@ python scripts/check_tool_contract.py
 To test against live Smartsheet RM:
 ```bash
 # Using CLI with environment variables
-export SMARTSHEET_RM_BEARER_TOKEN="your-token"
+export SMARTSHEET_RM_API_TOKEN="your-token"
 smartsheet-rm-mcp
 
 # Safe read-only mode
-SMARTSHEET_RM_MCP_READONLY=1 smartsheet-rm-mcp
+SMARTSHEET_RM_READONLY=1 smartsheet-rm-mcp
 ```

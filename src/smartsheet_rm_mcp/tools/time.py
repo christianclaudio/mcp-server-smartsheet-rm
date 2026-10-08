@@ -118,7 +118,7 @@ async def rm_update_time_entry(
 @rm_tool
 async def rm_delete_time_entry(entry_id: int | str, confirm: bool = False) -> str:
     """Delete a time entry (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_time_entry({entry_id})")
+    gate = _destructive_gate(confirm, f"time_delete_time_entry({entry_id})")
     if gate:
         return gate
     client = await get_client()
@@ -353,7 +353,7 @@ async def rm_bulk_delete_time_entries(
     confirm: bool = False,
 ) -> str:
     """Bulk delete multiple time entries (Destructive: gated by SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1 and confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_bulk_delete_time_entries(count={len(entry_ids)})")
+    gate = _destructive_gate(confirm, f"time_bulk_delete_time_entries(count={len(entry_ids)})")
     if gate:
         return gate
     client = await get_client()
@@ -409,7 +409,7 @@ async def rm_create_approval(
 @rm_tool
 async def rm_delete_approval(approval_id: int | str, confirm: bool = False) -> str:
     """Delete a pending approval record (Destructive: requires confirm=True)."""
-    gate = _destructive_gate(confirm, f"rm_delete_approval({approval_id})")
+    gate = _destructive_gate(confirm, f"time_delete_approval({approval_id})")
     if gate:
         return gate
     client = await get_client()

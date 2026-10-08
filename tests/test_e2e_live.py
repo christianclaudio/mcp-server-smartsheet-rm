@@ -66,6 +66,8 @@ SAFE_TOOL_FIXTURES: dict[str, dict[str, Any]] = {
     "admin_get_report_totals": {"report_parameters": {"from": "2026-08-01", "to": "2026-08-07"}},
 }
 
+BULK_GATED_TOOLS: set[str] = {"time_bulk_delete_time_entries", "projects_bulk_delete_assignments"}
+
 SAFE_ARGUMENTLESS_LIST_TOOLS: set[str] = {
     "time_list_time_entries",
     "projects_list_projects",
@@ -192,6 +194,9 @@ async def dispatch_tool_call(
 
         return ("PASS", False, None)
     except Exception as exc:
+        if tool_name in BULK_GATED_TOOLS and "Bulk destructive operations disabled" in str(exc):
+            # Listed in full but refused at call time without SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1.
+            return ("PASS", False, None)
         return ("FAIL", True, _redact_secrets(str(exc)))
 
 
@@ -230,6 +235,17 @@ async def test_dispatch_tool_call_offline(monkeypatch: pytest.MonkeyPatch) -> No
     assert status == "PASS"
     assert not is_err
     assert request_count == requests_before_delete
+
+    # 2b. Bulk tool refused by the bulk gate (listed in full) counts as a safe PASS
+    monkeypatch.delenv("SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE", raising=False)
+    monkeypatch.setattr(server.settings, "ALLOW_BULK_DESTRUCTIVE", False)
+    requests_before_bulk = request_count
+    status, is_err, err = await dispatch_tool_call(
+        "time_bulk_delete_time_entries", is_destructive=True, required_args=["entry_ids"]
+    )
+    assert status == "PASS"
+    assert not is_err
+    assert request_count == requests_before_bulk
 
     # 3. List tool from positive allowlist with per_page pagination argument
     status, is_err, err = await dispatch_tool_call("projects_list_projects", is_destructive=False)
