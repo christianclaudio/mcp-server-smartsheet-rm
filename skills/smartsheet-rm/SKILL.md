@@ -57,7 +57,7 @@ This skill provides expert instructions, architectural workflows, and safety pro
    - Never log, echo, or store `SMARTSHEET_RM_API_TOKEN` or raw authorization headers. All errors and output automatically scrub credentials.
 
 4. **Profile Selection**:
-   Load only the tools the job needs by setting `SMARTSHEET_RM_PROFILE` or `--profile`. Prompts and resources stay available on every profile.
+   Load only the tools the job needs by setting `SMARTSHEET_RM_PROFILE` or `--profile`. Prompts and resources stay available on every job profile and on `readonly`; the domain-mount profiles `time`, `projects` and `admin` carry only their own domain's prompts and resources.
    - Job profiles (tools across domains):
      - `timesheets` (22 tools): log, correct, submit, lock and approve weekly time against assignments.
      - `staffing` (25 tools): check availability and utilization; create or adjust assignments, placeholders and subtasks.

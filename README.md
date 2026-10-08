@@ -48,7 +48,7 @@ graph TD
 Pick a profile with `--profile` or `SMARTSHEET_RM_PROFILE` (default `full`). An unknown profile name fails at startup with `ValueError`. There are two kinds:
 
 * **Domain-mount profiles** mount whole domains: `full`, `time`, `projects`, `admin`, and `readonly`.
-* **Job profiles** mount every domain, then expose only an explicit list of tool names for one job. Prompts and resources stay available on every profile. Each listed name is checked against the full catalog when the server builds, so a typo fails at startup.
+* **Job profiles** mount every domain, then expose only an explicit list of tool names for one job. Prompts and resources stay available on every job profile and on `readonly`; the domain-mount profiles `time`, `projects` and `admin` carry only their own domain's prompts and resources. Each listed name is checked against the full catalog when the server builds, so a typo fails at startup.
 
 | Profile | Job it serves | Tools | With `SMARTSHEET_RM_READONLY=1` |
 | :--- | :--- | ---: | ---: |
