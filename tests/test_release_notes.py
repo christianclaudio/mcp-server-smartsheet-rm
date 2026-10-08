@@ -146,6 +146,122 @@ def test_non_footers_are_ignored(msg: str) -> None:
     assert extract_breaking_footers(msg) == ()
 
 
+def test_nested_longer_outer_fence_keeps_breaking_quoted() -> None:
+    """Four-backtick outer wrapping a three-backtick block must not flip early."""
+    msg = "docs: x\n\n````outer\n```\nBREAKING CHANGE: quoted inside nested fences\n```\n````\n"
+    assert extract_breaking_footers(msg) == ()
+
+
+def test_mismatched_fence_character_does_not_close() -> None:
+    """A tilde close cannot end a backtick fence (and vice versa)."""
+    msg = (
+        "docs: x\n\n"
+        "```\n"
+        "BREAKING CHANGE: still inside backtick fence\n"
+        "~~~\n"
+        "still fenced\n"
+        "```\n"
+        "\n"
+        "BREAKING CHANGE: the real footer.\n"
+    )
+    assert extract_breaking_footers(msg) == ("BREAKING CHANGE: the real footer.",)
+
+
+def test_shorter_closing_fence_does_not_close() -> None:
+    """Closing run must be at least as long as the opening run."""
+    msg = "docs: x\n\n`````\nBREAKING CHANGE: still inside five-backtick fence\n```\nstill fenced\n`````\n"
+    assert extract_breaking_footers(msg) == ()
+
+
+# CommonMark 0.31.2, section 4.5 (Fenced code blocks). Each case is modeled on the
+# spec example in its id, written for this parser: a "BREAKING CHANGE: quoted" line
+# must stay inside the fence (not extracted) and "BREAKING CHANGE: real" must be
+# outside it (extracted). The message subject "docs: x" is never parsed.
+QUOTED = "BREAKING CHANGE: quoted"
+REAL = "BREAKING CHANGE: real"
+COMMONMARK_FENCES = [
+    pytest.param(f"```\n{QUOTED}\n```\n\n{REAL}", (REAL,), id="ex119-backtick-fence"),
+    pytest.param(f"~~~\n{QUOTED}\n~~~\n\n{REAL}", (REAL,), id="ex120-tilde-fence"),
+    pytest.param(f"``\n{REAL}\n``", (f"{REAL}\n``",), id="ex121-two-backticks-not-a-fence"),
+    pytest.param(f"```\naaa\n~~~\n{QUOTED}\n```\n\n{REAL}", (REAL,), id="ex122-tilde-does-not-close-backtick"),
+    pytest.param(f"~~~\naaa\n```\n{QUOTED}\n~~~\n\n{REAL}", (REAL,), id="ex123-backtick-does-not-close-tilde"),
+    pytest.param(
+        f"````\naaa\n```\n{QUOTED}\n``````\n\n{REAL}",
+        (REAL,),
+        id="ex124-shorter-no-close-longer-closes",
+    ),
+    pytest.param(
+        f"~~~~\naaa\n~~~\n{QUOTED}\n~~~~\n\n{REAL}",
+        (REAL,),
+        id="ex125-shorter-tilde-does-not-close",
+    ),
+    pytest.param(f"```\n{QUOTED}", (), id="ex126-unclosed-runs-to-end"),
+    pytest.param(f"`````\n\n```\n{QUOTED}\naaa\n", (), id="ex127-unclosed-with-shorter-inner"),
+    pytest.param(f"```\n\n  \n{QUOTED}\n```\n\n{REAL}", (REAL,), id="ex129-blank-content-lines"),
+    pytest.param(f"```\n```\n{REAL}", (REAL,), id="ex130-empty-fence"),
+    pytest.param(f" ```\n{QUOTED}\n```\n\n{REAL}", (REAL,), id="ex131-opener-indent-1"),
+    pytest.param(f"  ```\n{QUOTED}\n  ```\n\n{REAL}", (REAL,), id="ex132-opener-indent-2"),
+    pytest.param(f"   ```\n{QUOTED}\n   ```\n\n{REAL}", (REAL,), id="ex133-opener-indent-3"),
+    pytest.param(f"    ```\n{REAL}\n    ```", (f"{REAL}\n    ```",), id="ex134-opener-indent-4-not-a-fence"),
+    pytest.param(f"```\n{QUOTED}\n  ```\n\n{REAL}", (REAL,), id="ex135-closer-indent-2"),
+    pytest.param(f"   ```\n{QUOTED}\n  ```\n\n{REAL}", (REAL,), id="ex136-closer-indent-differs"),
+    pytest.param(f"```\naaa\n    ```\n{QUOTED}", (), id="ex137-closer-indent-4-does-not-close"),
+    pytest.param(f"``` ```\n{REAL}", (REAL,), id="ex138-backtick-info-with-backtick"),
+    pytest.param(f"~~~~~~\naaa\n~~~ ~~\n{QUOTED}", (), id="ex139-closer-with-text-does-not-close"),
+    pytest.param(f"foo\n```\n{QUOTED}\n```\nbaz\n\n{REAL}", (REAL,), id="ex140-fence-interrupts-paragraph"),
+    pytest.param(f"foo\n---\n~~~\n{QUOTED}\n~~~\n\n{REAL}", (REAL,), id="ex141-after-setext-heading"),
+    pytest.param(f"```ruby\n{QUOTED}\n```\n\n{REAL}", (REAL,), id="ex142-info-string"),
+    pytest.param(
+        f"~~~~    ruby startline=3 $%@#$\n{QUOTED}\n~~~~~~~\n\n{REAL}",
+        (REAL,),
+        id="ex143-tilde-info-string-longer-closer",
+    ),
+    pytest.param(f"````;\n````\n{REAL}", (REAL,), id="ex144-punctuation-info-string"),
+    pytest.param(f"``` aa ```\n{REAL}", (REAL,), id="ex145-backtick-info-with-backticks"),
+    pytest.param(f"```code```\n\n{REAL}", (REAL,), id="ex145-inline-code-line-before-footer"),
+    pytest.param(f"~~~ aa ``` ~~~\n{QUOTED}\n~~~\n\n{REAL}", (REAL,), id="ex146-tilde-info-with-backticks"),
+    pytest.param(
+        f"```\n``` aaa\n{QUOTED}\n```\n\n{REAL}",
+        (REAL,),
+        id="ex147-closer-with-info-does-not-close",
+    ),
+    pytest.param(f"```\n{QUOTED}\n``` \t \n\n{REAL}", (REAL,), id="closer-trailing-spaces-and-tabs"),
+    pytest.param(f"\t```\n{REAL}", (REAL,), id="tab-indent-not-a-fence"),
+]
+
+
+@pytest.mark.parametrize(("body", "expected"), COMMONMARK_FENCES)
+def test_commonmark_fenced_code_blocks(body: str, expected: tuple[str, ...]) -> None:
+    assert extract_breaking_footers("docs: x\n\n" + body) == expected
+
+
+def test_block_quote_fence_is_not_modeled() -> None:
+    """Pinned limitation (CommonMark example 128): a fence in a block quote is not modeled.
+
+    The quoted lines start with ``>``, so they are never tokens either way, and the real
+    footer after the block quote is still found.
+    """
+    msg = f"docs: x\n\n> ```\n> {QUOTED}\n\n{REAL}"
+    assert extract_breaking_footers(msg) == (REAL,)
+
+
+def test_list_item_fence_counts_as_top_level() -> None:
+    """Pinned limitation: list items are not modeled.
+
+    A fence after a ``- `` list marker is not an opening fence here, and the list
+    item's indented closing fence opens a top-level fence instead, so a footer after
+    it is hidden. CommonMark would close the fence inside the list item and find the
+    footer.
+    """
+    msg = f"docs: x\n\n- ```\n  ```\n{REAL}"
+    assert extract_breaking_footers(msg) == ()
+
+
+def test_indented_token_is_not_a_footer() -> None:
+    assert extract_breaking_footers(f"docs: x\n\n {REAL}") == ()
+    assert extract_breaking_footers(f"docs: x\n\n    {REAL}") == ()
+
+
 def test_trailer_keys_are_case_insensitive() -> None:
     msg = "feat!: x\n\nBREAKING CHANGE: a\nco-authored-by: B <b@example.com>\ntail"
     assert extract_breaking_footers(msg) == ("BREAKING CHANGE: a",)
@@ -231,6 +347,50 @@ def test_explicit_from_and_non_version_tags(repo: Repo) -> None:
     notes = build_notes(from_ref="release-candidate")
     assert "feat: b" in notes
     assert "feat: a" not in notes
+
+
+def test_previous_tag_skips_non_exact_semver_tags(repo: Repo) -> None:
+    repo.commit("chore: init")
+    repo.tag("v1.2.2")
+    fix_a = repo.commit("fix: a")
+    repo.tag("v1.2.3.post1")
+    fix_b = repo.commit("fix: b")
+    repo.tag("v1.2.4-rc1")
+    repo.commit("fix: c")
+    assert previous_tag("HEAD") == "v1.2.2"
+    notes = build_notes()
+    assert f"- fix: a (`{fix_a[:7]}`)" in notes
+    assert f"- fix: b (`{fix_b[:7]}`)" in notes
+    assert "chore: init" not in notes
+    assert notes.endswith("Range: `v1.2.2..HEAD`\n")
+
+
+def test_exact_tag_wins_over_a_suffixed_tag_on_the_same_commit(repo: Repo) -> None:
+    repo.commit("chore: init")
+    repo.tag("v1.2.3")
+    repo.tag("v1.2.3.post1")
+    repo.commit("fix: a")
+    assert previous_tag("HEAD") == "v1.2.3"
+
+
+def test_only_non_exact_tags_means_no_previous_tag(repo: Repo) -> None:
+    repo.commit("chore: init")
+    repo.tag("v1.2.3.post1")
+    repo.commit("fix: a")
+    assert previous_tag("HEAD") is None
+
+
+def test_explicit_from_non_exact_tag_is_honored(repo: Repo) -> None:
+    """``--from`` is the maintainer's choice, so a non-exact tag is used as given."""
+    repo.commit("chore: init")
+    repo.tag("v1.2.2")
+    repo.commit("fix: a")
+    repo.tag("v1.2.3.post1")
+    fix_b = repo.commit("fix: b")
+    notes = build_notes(from_ref="v1.2.3.post1")
+    assert f"- fix: b (`{fix_b[:7]}`)" in notes
+    assert "fix: a" not in notes
+    assert notes.endswith("Range: `v1.2.3.post1..HEAD`\n")
 
 
 def test_root_commit_as_to(repo: Repo) -> None:
