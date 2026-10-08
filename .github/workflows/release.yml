@@ -77,6 +77,11 @@ jobs:
         with:
           name: dist
 
+      # Build the notes before anything publishes: a failure here must stop the
+      # release before PyPI burns the version.
+      - name: Build release notes
+        run: python3 scripts/release_notes.py --to "$GITHUB_REF_NAME" > release-notes.md
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
@@ -86,9 +91,6 @@ jobs:
       # commit SHAs to protect against supply-chain tag mutations.
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
-
-      - name: Build release notes
-        run: python3 scripts/release_notes.py --to "$GITHUB_REF_NAME" > release-notes.md
 
       - name: Attach SBOM to release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
