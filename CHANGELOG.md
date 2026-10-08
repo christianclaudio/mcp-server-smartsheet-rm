@@ -1,6 +1,9 @@
 # 📜 Changelog
 
-All notable changes to this project will be documented in this file.
+> **This file is frozen as of 1.2.2. Release notes now live on [GitHub Releases](https://github.com/christianclaudio/mcp-server-smartsheet-rm/releases).**
+> Each release body is generated from the squash commits since the previous tag by `scripts/release_notes.py`, including every `BREAKING CHANGE:` footer and its migration steps. Do not add entries here; the history below is kept for reference.
+
+All notable changes through 1.2.2 are documented in this file. The `[Unreleased]` and `[1.2.3]` entries were pending at the freeze: 1.2.3 was never tagged or published, so both ship in the first release after 1.2.2.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -8,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [Unreleased]
+
+*Frozen: these entries were pending at the freeze. They are carried into the first GitHub Release after 1.2.2; later changes are listed on [GitHub Releases](https://github.com/christianclaudio/mcp-server-smartsheet-rm/releases).*
 
 ### Breaking Changes
 - **Read-only fails closed on `readOnlyHint` alone**: `ReadOnlyGateMiddleware` no longer matches tool-name prefixes. Under `--profile readonly` or `SMARTSHEET_RM_READONLY=1` it refuses any real tool not annotated `readOnlyHint=True` (a missing annotation counts as a write), including writes the read-only filter hid. Refusals are `SafetyViolationError`, a FastMCP `ToolError`, so clients get a tool result with `isError: true` instead of a `PermissionError`. A gate with no serving server context refuses. Names that are not tools on the server still get FastMCP's `Unknown tool`, directly or through `call_tool`.
@@ -26,9 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Stale `rm_*` tool names removed**: destructive confirmation messages, the server module docstring, middleware prefixes, tests and `SECURITY.md` now use the wire names (`time_*`, `projects_*`, `admin_*`). Python function names are unchanged.
 - **Contract script**: `scripts/check_tool_contract.py` asserts every profile's total and read-only counts, the README profile table, `FULL_ONLY_TOOLS`, explicit `readOnlyHint` on every tool, and that read-only composes with every profile.
 - **Docs**: README, `AGENTS.md`, `SECURITY.md`, `TESTING.md` and the skill describe the profiles, read-only behavior, the call-time bulk gate and `full`-only discovery.
-- **Docs**: README `uvx` install examples are intentionally unpinned (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`). SemVer stays in package manifests, the release tag, and this changelog. Pin a freeze from GitHub Releases or this changelog when a host needs one.
+- **Docs**: README `uvx` install examples are intentionally unpinned (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`). Pin a freeze from GitHub Releases when a host needs one.
 
 ## [1.2.3] - 2026-10-05
+
+*Never tagged or published. These changes ship in the first release after 1.2.2.*
 
 ### Security
 - **FastMCP floor**: Raise the `fastmcp` dependency floor from `>=4.0.10` to `>=4.0.11` in `pyproject.toml` and `fastmcp.json`, and refresh `uv.lock` so the locked resolution is the 4.0.11 security release. `mcp>=2.2.0` is unchanged. No server code changes.

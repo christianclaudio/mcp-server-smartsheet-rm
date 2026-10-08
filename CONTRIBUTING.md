@@ -51,9 +51,15 @@ uv run pytest tests/test_protocol.py --no-cov
 
 ---
 
+## 🔀 Pull Requests & Versions
+
+Merges are performed via **Squash Merge** with Conventional Commit titles (`feat:`, `fix:`, `docs:`, `chore:`). Do not edit version numbers or `CHANGELOG.md`: the git tag is the version, and GitHub Releases are the changelog. The squash commit message is the PR body, so every breaking PR (any `type!:` title, such as `feat!:` or `fix!:`) carries a `BREAKING CHANGE:` footer, with the migration steps, as the final paragraph of the PR body before CodeRabbit's generated summary. `scripts/release_notes.py` stops at the CodeRabbit marker line and ignores everything after it, so a footer inside that summary never reaches the release notes.
+
+---
+
 ## 📐 Architecture & Conventions
 
-- **Tool Annotations**: Every MCP tool must declare `read_only_hint`, `destructive_hint`, or `idempotent_hint` annotations.
+- **Tool Annotations**: Every MCP tool declares all four `ToolAnnotations` hints (`read_only_hint`, `destructive_hint`, `idempotent_hint`, `open_world_hint`); use the `ANNOTATION_*` constants in `common.py`. `read_only_hint` must be explicit: the read-only gate refuses any tool without `readOnlyHint=True`, and `scripts/check_tool_contract.py` fails on a tool that omits it.
 - **Destructive Gating**: All delete, deactivate, or removal tools **must** declare `confirm: bool = False` and reject execution when not explicitly `True`.
 - **Secret Redaction**: Credentials must be automatically scrubbed by `_sanitize()`.
 - **Error Formatting**: Use structured `SmartsheetRMAPIError` responses.

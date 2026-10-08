@@ -114,7 +114,7 @@ Agents call these `tools/list` names. Counts for time and projects include the b
 
 ### 1. Run via `uvx`
 
-Console scripts in `[project.scripts]` both call `smartsheet_rm_mcp.server:main`: `smartsheet-rm-mcp` (used below) and `mcp-server-smartsheet-rm`. Install examples stay unpinned. To freeze a release, pin the version from [Releases](https://github.com/christianclaudio/mcp-server-smartsheet-rm/releases) or [CHANGELOG](CHANGELOG.md).
+Console scripts in `[project.scripts]` both call `smartsheet_rm_mcp.server:main`: `smartsheet-rm-mcp` (used below) and `mcp-server-smartsheet-rm`. Install examples stay unpinned. To freeze a release, pin the version from [Releases](https://github.com/christianclaudio/mcp-server-smartsheet-rm/releases).
 
 ```bash
 uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp
