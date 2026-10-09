@@ -109,9 +109,14 @@ def _sanitize(value: Any) -> Any:
 
 
 def _redact_value(value: Any) -> Any:
-    """Recursively apply ``redact_secrets`` to every string in a nested value."""
+    """Recursively apply ``redact_secrets`` to every string key and value in a nested value.
+
+    String dict keys are redacted too, so a secret in a key does not reach a partial result.
+    If two keys redact to the same string, the later one overwrites the earlier one; that
+    is acceptable in an error detail. Non-string keys are kept as they are.
+    """
     if isinstance(value, dict):
-        return {k: _redact_value(v) for k, v in value.items()}
+        return {(redact_secrets(k) if isinstance(k, str) else k): _redact_value(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_redact_value(v) for v in value]
     if isinstance(value, str):

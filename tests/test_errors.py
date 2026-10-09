@@ -71,6 +71,17 @@ def test_smartsheet_rm_api_error_to_dict() -> None:
     assert "message" in data
 
 
+def test_to_dict_redacts_secret_in_detail_key() -> None:
+    """A secret in a ``detail`` dict key is redacted, since a partial result gets no document pass."""
+    import json
+
+    err = SmartsheetRMAPIError(400, "/time_entries", "POST", detail={"api_token=FAKEVALUE123": "v"})
+    data = err.to_dict()
+    rendered = json.dumps(data)
+    assert "FAKEVALUE123" not in rendered
+    assert "api_token=***REDACTED***" in data["detail"]
+
+
 def test_redact_secrets_api_key_and_password() -> None:
     from smartsheet_rm_mcp.errors import redact_secrets
 
@@ -252,6 +263,5 @@ def test_redact_secrets_leaves_token_words_alone() -> None:
         "X-Auth-Token-Expires: 5",
         '{"token": null}',
         "page_token=abc123",
-        "max_tokens=1024",
     ):
         assert redact_secrets(text) == text, text

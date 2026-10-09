@@ -91,7 +91,8 @@ def _invalid_request(message: str) -> NoReturn:
     The MCP spec lists input validation errors among tool execution errors, reported in the
     tool result with ``isError: true`` so the model can correct the call. This raises FastMCP
     ``ToolError`` with the redacted ``{"error": {"type": "invalid_request", ...}}`` JSON, the same
-    path ``rm_tool`` uses for API and internal failures, which re-raises it unchanged.
+    path ``rm_tool`` uses for API and internal failures. ``rm_tool`` copies the payload onto a
+    fresh ``ToolError`` (same JSON, no chain).
     """
     raise ToolError(
         json.dumps({"error": {"type": "invalid_request", "message": _redact_secrets(message)}}, indent=2)
@@ -104,7 +105,7 @@ def _tool_failure(error_type: str, message: str, **details: Any) -> NoReturn:
     For failures the tool detects itself after its API calls returned, such as a batch in which
     every item failed. Raises FastMCP ``ToolError`` with the ``{"error": {"type": ..., "message":
     ...}}`` JSON, redacted as a whole document like ``rm_tool``'s API errors, ``from None``.
-    ``rm_tool`` re-raises it unchanged.
+    ``rm_tool`` copies the payload onto a fresh ``ToolError`` (same JSON, no chain).
     """
     payload: dict[str, Any] = {"type": error_type, "message": message, **details}
     raise ToolError(_redact_secrets(json.dumps({"error": payload}, indent=2))) from None
