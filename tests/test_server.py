@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 import smartsheet_rm_mcp.server as srv
 from smartsheet_rm_mcp.client import SmartsheetRMClient
@@ -38,6 +40,7 @@ def setup_mock_client():
     mock_client.update_project.return_value = {"id": 100, "name": "Updated Apollo"}
     mock_client.delete_project.return_value = {"status": "deleted"}
     mock_client.list_project_phases.return_value = {"data": []}
+    mock_client.list_project_users.return_value = {"data": []}
     mock_client.get_project_phase.return_value = {"id": 10, "name": "Phase 1"}
     mock_client.create_project_phase.return_value = {"id": 11, "name": "Phase 2"}
     mock_client.update_project_phase.return_value = {"id": 10, "name": "Phase 1b"}
@@ -337,14 +340,19 @@ async def test_decorator_error_handling() -> None:
     async def failing_generic_tool():
         raise RuntimeError("Unexpected failure with token=secret")
 
-    res1 = await failing_api_tool()
-    data1 = json.loads(res1)
+    with pytest.raises(ToolError) as exc1:
+        await failing_api_tool()
+    data1 = json.loads(str(exc1.value))
     assert data1["error"]["status_code"] == 404
     assert "Resource not found" in data1["error"]["detail"]
+    assert exc1.value.__cause__ is None
+    assert exc1.value.__suppress_context__
 
-    res2 = await failing_generic_tool()
-    data2 = json.loads(res2)
+    with pytest.raises(ToolError) as exc2:
+        await failing_generic_tool()
+    data2 = json.loads(str(exc2.value))
     assert data2["error"]["type"] == "internal"
+    assert exc2.value.__cause__ is None
 
 
 @pytest.mark.asyncio
@@ -1211,3 +1219,40 @@ def test_streamable_http_app_allowed_hosts_dynamic_port(monkeypatch: pytest.Monk
     captured_kwargs.clear()
     srv.mcp.streamable_http_app(allowed_hosts=["explicit.domain"])
     assert captured_kwargs["allowed_hosts"] == ["explicit.domain"]
+
+
+@pytest.mark.asyncio
+async def test_tool_failure_reaches_client_as_is_error(
+    setup_mock_client: AsyncMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An upstream failure reaches the client as isError: true, redacted on the wire and in logs."""
+    setup_mock_client.get_project.side_effect = RuntimeError("upstream rejected Bearer secret-token-abc")
+
+    caplog.set_level(logging.DEBUG)
+    async with Client(srv.create_server()) as mcp_client:
+        result = await mcp_client.call_tool("projects_get_project", {"project_id": 100}, raise_on_error=False)
+
+    assert result.is_error
+    text = result.content[0].text
+    assert json.loads(text)["error"]["type"] == "internal"
+    assert "secret-token-abc" not in text
+    logged = "\n".join(
+        record.getMessage() + (logging.Formatter().formatException(record.exc_info) if record.exc_info else "")
+        for record in caplog.records
+    )
+    assert "secret-token-abc" not in logged
+
+
+@pytest.mark.asyncio
+async def test_code_mode_execute_runs_real_tool() -> None:
+    """execute runs Python in the Code Mode sandbox and reaches a real catalog tool."""
+    app = srv.create_server(profile="full", enable_code_mode=True, enable_tool_search=False)
+    code = "res = await call_tool('projects_get_project', {'project_id': 100})\nreturn res"
+    async with Client(app) as mcp_client:
+        arith = await mcp_client.call_tool("execute", {"code": "return 1 + 1"}, raise_on_error=False)
+        res = await mcp_client.call_tool("execute", {"code": code}, raise_on_error=False)
+
+    assert not arith.is_error, arith.content
+    assert [getattr(block, "text", None) for block in arith.content] == ["2"]
+    assert not res.is_error, res.content
+    assert "Apollo" in str(res.content)

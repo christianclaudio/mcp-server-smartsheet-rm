@@ -50,7 +50,7 @@ Expose deep resource planning, allocation, time-tracking, project management, an
 - `src/smartsheet_rm_mcp/server.py` — FastMCP 4 root gateway (`create_server`): domain mounts, job allowlists, read-only filter, Tool Search / Code Mode (full only).
 - `src/smartsheet_rm_mcp/profiles.py` — `PROFILES` (each with a one-line `job`), `FULL_ONLY_TOOLS`, `ReadOnlyToolFilter`, `is_read_only_tool`.
 - `src/smartsheet_rm_mcp/tools/{time,projects,admin}.py` — domain sub-servers; re-exported from `tools/__init__.py`.
-- `src/smartsheet_rm_mcp/common.py` — client resolution, `@rm_tool` decorator, `_destructive_gate`, secret redaction, structured logging. `middleware.py` — gateway audit middleware, the annotation-driven `ReadOnlyGateMiddleware`, and domain guardrails (including the bulk gate).
+- `src/smartsheet_rm_mcp/common.py` — client resolution, `@rm_tool` decorator (a failed call raises FastMCP `ToolError` with the redacted `{"error": ...}` JSON, so `isError: true`), `_destructive_gate`, secret redaction, structured logging. `middleware.py` — gateway audit middleware, the annotation-driven `ReadOnlyGateMiddleware`, and domain guardrails (including the bulk gate).
 - `src/smartsheet_rm_mcp/client.py` — async HTTP client (`SmartsheetRMClient`). `errors.py` — structured exceptions and redaction. `config.py` — `SMARTSHEET_RM_*` settings.
 - `scripts/check_tool_contract.py` — source of truth for expected tool counts and annotations. Do not hard-code tool counts elsewhere.
 - `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`.

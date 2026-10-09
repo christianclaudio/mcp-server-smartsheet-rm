@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from smartsheet_rm_mcp.client import (
@@ -169,7 +170,12 @@ get_rm_client = get_client
 
 
 def rm_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator that wraps MCP tools with structured error handling, secret redaction, and timing."""
+    """Decorator that wraps MCP tools with structured error handling, secret redaction, and timing.
+
+    A failed call raises FastMCP ``ToolError`` carrying the redacted ``{"error": ...}`` JSON,
+    so the client receives a ``tools/call`` result with ``isError: true``. It is raised
+    ``from None`` so the unredacted original exception does not ride along as the cause.
+    """
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> str:
@@ -183,13 +189,13 @@ def rm_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error("Tool failed with API error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms})
             err_doc = json.dumps({"error": e.to_dict()})
-            return _redact_secrets(err_doc)
+            raise ToolError(_redact_secrets(err_doc)) from None
         except Exception as e:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error(
                 "Tool failed with internal error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms}
             )
             msg = _redact_secrets(str(e))
-            return json.dumps({"error": {"type": "internal", "message": msg}})
+            raise ToolError(json.dumps({"error": {"type": "internal", "message": msg}})) from None
 
     return wrapper

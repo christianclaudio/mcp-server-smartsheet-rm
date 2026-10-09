@@ -81,7 +81,7 @@ Seven tools are in no job profile and are reachable only in `full` (or their dom
 `tools/list` is flat by default. Discovery is opt-in and attaches **only on `full`**:
 
 * `--enable-tool-search` / `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1` replaces `tools/list` with `search_tools` and `call_tool`. The backend is `regex` (default) or `bm25` (`--tool-search-backend` / `SMARTSHEET_RM_TOOL_SEARCH_BACKEND`).
-* `--enable-code-mode` / `SMARTSHEET_RM_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). It is skipped with a warning if the FastMCP build does not ship it.
+* `--enable-code-mode` / `SMARTSHEET_RM_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). Code Mode needs the `fastmcp[code-mode]` extra, which ships its `pydantic-monty` sandbox, for example `uvx --with "fastmcp[code-mode]" mcp-server-smartsheet-rm --enable-code-mode`. Without it, Code Mode is skipped with a warning and the flat catalog is served.
 * Turning on both raises `ValueError`. Asking for either on another profile logs a warning and keeps the flat list.
 * `search_tools`, `search` and `get_schema` only read the catalog and are annotated `readOnlyHint=True`. Under read-only, Code Mode `execute` is refused.
 
