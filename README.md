@@ -9,7 +9,7 @@
 
 Enterprise Model Context Protocol (MCP) server for **Resource Management by Smartsheet** (10,000ft API).
 
-Enables AI coding agents, planners, and assistants (Claude, Cortex, Antigravity, VS Code) to orchestrate the complete Smartsheet RM REST API surface: time tracking & timesheet reconciliation, resource scheduling & allocations, capacity planning, project & phase management, leaves/holidays, expense tracking, and custom fields.
+Enables AI coding agents, planners, and assistants (Claude, Cortex, Antigravity, VS Code) to work with the Smartsheet RM public REST API: time tracking & timesheet reconciliation, resource scheduling & allocations, capacity planning, project & phase management, leaves/holidays, expense tracking, and custom fields.
 
 ---
 
@@ -81,7 +81,7 @@ Seven tools are in no job profile and are reachable only in `full` (or their dom
 `tools/list` is flat by default. Discovery is opt-in and attaches **only on `full`**:
 
 * `--enable-tool-search` / `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1` replaces `tools/list` with `search_tools` and `call_tool`. The backend is `regex` (default) or `bm25` (`--tool-search-backend` / `SMARTSHEET_RM_TOOL_SEARCH_BACKEND`).
-* `--enable-code-mode` / `SMARTSHEET_RM_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). It is skipped with a warning if the FastMCP build does not ship it.
+* `--enable-code-mode` / `SMARTSHEET_RM_ENABLE_CODE_MODE=1` attaches FastMCP's experimental Code Mode (`search`, `get_schema`, `execute`). Code Mode needs the `fastmcp[code-mode]` extra, which ships its `pydantic-monty` sandbox, for example `uvx --with "fastmcp[code-mode]" mcp-server-smartsheet-rm --enable-code-mode`. Without it, Code Mode is skipped with a warning and the flat catalog is served.
 * Turning on both raises `ValueError`. Asking for either on another profile logs a warning and keeps the flat list.
 * `search_tools`, `search` and `get_schema` only read the catalog and are annotated `readOnlyHint=True`. Under read-only, Code Mode `execute` is refused.
 
@@ -215,7 +215,9 @@ Connect clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTT
 ## 🛡️ Safety & Reliability
 
 - **Secret Redaction**: API tokens, bearer headers, and sensitive keys are automatically scrubbed from errors and logs.
-- **Destructive Gates**: Every deletion tool declares `confirm: bool = False` and rejects execution unless the caller explicitly passes `confirm=True`.
+- **Destructive Gates**: Every deletion tool declares `confirm: bool = False` and makes no change unless the caller explicitly passes `confirm=True`. Without it the tool returns a normal result (`isError: false`) with `"status": "confirmation_required"` and a message to re-call with `confirm=true`; that is the designed two-step, not an error.
+- **Input Validation**: Missing or invalid arguments (for example an update with no fields, or a malformed date) return a tool error (`isError: true`, `"type": "invalid_request"`) the model can correct, as the MCP spec describes for input validation errors.
+- **Batch Results**: `time_fill_weekly_timesheet`, `time_confirm_suggested_hours`, `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` share one shape: `"status": "success"` or `"partial_success"`, a success count (`filled_count` / `confirmed_count` / `deleted_count`), `failed_count`, `results` and `errors`. Each success is `{id|date, status, result}`; each failure is `{id|date, status: "failed", error}` where `error` always has a `message` (API errors via `to_dict()`; other exceptions as `"type": "internal"` with a redacted message). The field names from earlier releases stay alongside: `time_fill_weekly_timesheet` also returns `days_filled`, `created_count` and `entries` (the created entries), and `time_confirm_suggested_hours` returns `confirmed_entries`. When every item fails, the call is a tool error (`isError: true`, `"type": "batch_failed"`).
 - **Profiles**: Minimize token footprint by loading only the tools one job needs (`timesheets`, `staffing`, `org_setup`, `portfolio`) or one domain (`time`, `projects`, `admin`).
 - **Read-Only Gate**: `readOnlyHint` decides; anything else is refused with `isError: true`.
 - **Resilience**: Exponential backoff with randomized jitter on HTTP 429 rate limits.

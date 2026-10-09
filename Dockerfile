@@ -36,5 +36,5 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # MCP servers communicate over stdio — no port to expose
-ENTRYPOINT ["mcp-server-smartsheet-rm"]
+ENTRYPOINT ["smartsheet-rm-mcp"]
 

@@ -2,22 +2,33 @@ name: Smartsheet RM API Drift Monitor
 
 on:
   schedule:
-    # Run every Sunday at 04:00 UTC (12:00 AM EDT)
+    # Run every Sunday at 04:00 UTC
     - cron: '0 4 * * 0'
   workflow_dispatch:
 
 permissions:
   contents: read
-  issues: write
+
+# One drift check at a time; a manual run waits for a scheduled one instead of racing it.
+# queue: max lets up to 100 runs wait instead of cancelling them (GitHub does not
+# guarantee their order).
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   drift-check:
     name: Check Smartsheet RM OpenAPI Drift
     runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout
+      issues: write   # open the drift issue when the check fails
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: "3.12"
@@ -36,19 +47,21 @@ jobs:
         with:
           script: |
             const title = "⚠️ Smartsheet RM OpenAPI Drift Detected";
-            const existingIssues = await github.rest.issues.listForRepo({
+            // Duplicate check uses the same forge-todo label the issue is created with.
+            const open = await github.paginate(github.rest.issues.listForRepo, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: "open",
-              labels: "drift"
+              labels: "forge-todo",
+              per_page: 100
             });
-            const duplicate = existingIssues.data.find(i => i.title === title);
+            const duplicate = open.find(i => !i.pull_request && i.title === title);
             if (!duplicate) {
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: title,
-                body: "The daily OpenAPI drift monitor detected differences against the published Smartsheet Resource Management specification. Please review recent API changes.",
-                labels: ["drift", "maintenance"]
+                body: "The weekly OpenAPI drift monitor detected differences against the published Smartsheet Resource Management specification. Please review recent API changes.",
+                labels: ["forge-todo"]
               });
             }

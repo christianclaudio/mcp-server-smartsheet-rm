@@ -129,7 +129,7 @@ async def rm_update_user(
         payload["archived"] = archived
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_rm_client()
     data = await client.update_user(user_id, payload)
@@ -354,7 +354,7 @@ async def rm_update_client(
         payload["archived"] = archived
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_rm_client()
     data = await client.update_client(client_id, payload)
@@ -513,7 +513,7 @@ async def rm_update_holiday(
         payload["ends_at"] = end_date
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_rm_client()
     data = await client.update_holiday(holiday_id, payload)
@@ -611,7 +611,7 @@ async def rm_update_expense(
         payload["date"] = date
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_rm_client()
     data = await client.update_expense(expense_id, payload)
@@ -733,7 +733,7 @@ async def rm_update_custom_field(
         payload["options"] = options
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_rm_client()
     data = await client.update_custom_field(custom_field_id, payload)
@@ -801,7 +801,7 @@ async def rm_set_user_status(
     """Set current working status for a user (status: 'ITO', 'WFH', 'SIC', 'OOO', 'VAC', 'OOF')."""
     valid_statuses = ("ITO", "WFH", "SIC", "OOO", "VAC", "OOF")
     if status.upper() not in valid_statuses:
-        return _invalid_request(f"Status must be one of: {', '.join(valid_statuses)}")
+        _invalid_request(f"Status must be one of: {', '.join(valid_statuses)}")
     payload: dict[str, Any] = {"status": status.upper()}
     if notes:
         payload["notes"] = notes
