@@ -217,6 +217,7 @@ Connect clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTT
 - **Secret Redaction**: API tokens, bearer headers, and sensitive keys are automatically scrubbed from errors and logs.
 - **Destructive Gates**: Every deletion tool declares `confirm: bool = False` and makes no change unless the caller explicitly passes `confirm=True`. Without it the tool returns a normal result (`isError: false`) with `"status": "confirmation_required"` and a message to re-call with `confirm=true`; that is the designed two-step, not an error.
 - **Input Validation**: Missing or invalid arguments (for example an update with no fields, or a malformed date) return a tool error (`isError: true`, `"type": "invalid_request"`) the model can correct, as the MCP spec describes for input validation errors.
+- **Batch Results**: `time_fill_weekly_timesheet`, `time_confirm_suggested_hours`, `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` return `"status": "success"` or `"partial_success"` with per-item `errors` as a normal result. When every item fails, nothing was done, so the call is a tool error (`isError: true`, `"type": "batch_failed"`) with `failed_count` and the per-item `errors`.
 - **Profiles**: Minimize token footprint by loading only the tools one job needs (`timesheets`, `staffing`, `org_setup`, `portfolio`) or one domain (`time`, `projects`, `admin`).
 - **Read-Only Gate**: `readOnlyHint` decides; anything else is refused with `isError: true`.
 - **Resilience**: Exponential backoff with randomized jitter on HTTP 429 rate limits.

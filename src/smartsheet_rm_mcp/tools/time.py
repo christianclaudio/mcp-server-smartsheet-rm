@@ -15,6 +15,7 @@ from smartsheet_rm_mcp.common import (
     ANNOTATION_WRITE_SAFE,
     _destructive_gate,
     _invalid_request,
+    _tool_failure,
     get_client,
     rm_tool,
 )
@@ -236,9 +237,19 @@ async def rm_fill_weekly_timesheet(
         except SmartsheetRMAPIError as err:
             errors.append({"date": entry_date, "error": err.to_dict()})
 
+    if errors and not created_entries:
+        _tool_failure(
+            "batch_failed",
+            f"All {len(errors)} time entries failed to create; nothing was logged.",
+            user_id=user_id,
+            project_id=target_project_id,
+            week_start=start_date,
+            failed_count=len(errors),
+            errors=errors,
+        )
     return json.dumps(
         {
-            "status": "success" if not errors else ("partial_success" if created_entries else "failed"),
+            "status": "success" if not errors else "partial_success",
             "user_id": user_id,
             "project_id": target_project_id,
             "week_start": start_date,
@@ -287,9 +298,18 @@ async def rm_confirm_suggested_hours(
                 except SmartsheetRMAPIError as err:
                     errors.append({"id": entry_id, "error": err.to_dict()})
 
+    if errors and not confirmed:
+        _tool_failure(
+            "batch_failed",
+            f"All {len(errors)} suggested entries failed to confirm; nothing was confirmed.",
+            user_id=user_id,
+            date_range=f"{from_date} to {to_date}",
+            failed_count=len(errors),
+            errors=errors,
+        )
     return json.dumps(
         {
-            "status": "success" if not errors else ("partial_success" if confirmed else "failed"),
+            "status": "success" if not errors else "partial_success",
             "user_id": user_id,
             "date_range": f"{from_date} to {to_date}",
             "confirmed_count": len(confirmed),
@@ -366,9 +386,16 @@ async def rm_bulk_delete_time_entries(
         except SmartsheetRMAPIError as err:
             errors.append({"id": entry_id, "status": "failed", "error": err.to_dict()})
 
+    if errors and not deleted:
+        _tool_failure(
+            "batch_failed",
+            f"All {len(errors)} time entry deletions failed; nothing was deleted.",
+            failed_count=len(errors),
+            errors=errors,
+        )
     return json.dumps(
         {
-            "status": "success" if not errors else ("partial_success" if deleted else "failed"),
+            "status": "success" if not errors else "partial_success",
             "deleted_count": len(deleted),
             "failed_count": len(errors),
             "results": deleted,

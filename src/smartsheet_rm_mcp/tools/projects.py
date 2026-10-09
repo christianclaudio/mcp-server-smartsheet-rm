@@ -14,6 +14,7 @@ from smartsheet_rm_mcp.common import (
     ANNOTATION_WRITE_SAFE,
     _destructive_gate,
     _invalid_request,
+    _tool_failure,
     get_client,
     rm_tool,
 )
@@ -474,9 +475,16 @@ async def rm_bulk_delete_assignments(
         except SmartsheetRMAPIError as err:
             errors.append({"id": aid, "status": "failed", "error": err.to_dict()})
 
+    if errors and not deleted:
+        _tool_failure(
+            "batch_failed",
+            f"All {len(errors)} assignment deletions failed; nothing was deleted.",
+            failed_count=len(errors),
+            errors=errors,
+        )
     return json.dumps(
         {
-            "status": "success" if not errors else ("partial_success" if deleted else "failed"),
+            "status": "success" if not errors else "partial_success",
             "deleted_count": len(deleted),
             "failed_count": len(errors),
             "results": deleted,

@@ -98,6 +98,18 @@ def _invalid_request(message: str) -> NoReturn:
     ) from None
 
 
+def _tool_failure(error_type: str, message: str, **details: Any) -> NoReturn:
+    """Raise a failed tool call as a tool execution error (``isError: true``).
+
+    For failures the tool detects itself after its API calls returned, such as a batch in which
+    every item failed. Raises FastMCP ``ToolError`` with the ``{"error": {"type": ..., "message":
+    ...}}`` JSON, redacted as a whole document like ``rm_tool``'s API errors, ``from None``.
+    ``rm_tool`` re-raises it unchanged.
+    """
+    payload: dict[str, Any] = {"type": error_type, "message": message, **details}
+    raise ToolError(_redact_secrets(json.dumps({"error": payload}, indent=2))) from None
+
+
 def _destructive_gate(confirm: bool, action_name: str) -> str | None:
     """Enforce explicit user confirmation for destructive tools.
 
