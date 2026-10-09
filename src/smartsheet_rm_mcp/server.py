@@ -1,6 +1,6 @@
 """FastMCP Server for Smartsheet Resource Management (10,000ft API).
 
-Full REST API surface covering:
+Built on the public REST API, covering:
 1. Time Tracking & Timesheets
 2. Projects & Phases
 3. Assignments & Allocations

@@ -9,7 +9,7 @@
 
 Enterprise Model Context Protocol (MCP) server for **Resource Management by Smartsheet** (10,000ft API).
 
-Enables AI coding agents, planners, and assistants (Claude, Cortex, Antigravity, VS Code) to orchestrate the complete Smartsheet RM REST API surface: time tracking & timesheet reconciliation, resource scheduling & allocations, capacity planning, project & phase management, leaves/holidays, expense tracking, and custom fields.
+Enables AI coding agents, planners, and assistants (Claude, Cortex, Antigravity, VS Code) to work with the Smartsheet RM public REST API: time tracking & timesheet reconciliation, resource scheduling & allocations, capacity planning, project & phase management, leaves/holidays, expense tracking, and custom fields.
 
 ---
 
