@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, timedelta
 from typing import Any
 
@@ -14,11 +15,14 @@ from smartsheet_rm_mcp.common import (
     ANNOTATION_WRITE_SAFE,
     _destructive_gate,
     _invalid_request,
+    _tool_failure,
     get_client,
     rm_tool,
 )
-from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
+from smartsheet_rm_mcp.errors import SmartsheetRMAPIError, redact_secrets
 from smartsheet_rm_mcp.middleware import ProjectsDomainGuardMiddleware
+
+logger = logging.getLogger("smartsheet_rm_mcp")
 
 
 @rm_tool
@@ -131,7 +135,7 @@ async def rm_update_project(
         payload["archived"] = archived
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_client()
     data = await client.update_project(project_id, payload)
@@ -231,7 +235,7 @@ async def rm_update_project_phase(
         payload["description"] = description
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_client()
     data = await client.update_project_phase(project_id, phase_id, payload)
@@ -348,7 +352,7 @@ async def rm_update_assignment(
         payload["note"] = note
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_client()
     data = await client.update_assignment(assignment_id, payload)
@@ -399,11 +403,15 @@ async def rm_clone_project_schedule(
     if new_start_date:
         source_start_date = source_project.get("starts_at")
         if not source_start_date:
-            return _invalid_request("Source project has no starts_at date to calculate schedule offset")
+            _invalid_request("Source project has no starts_at date to calculate schedule offset")
+        date_error: str | None = None
         try:
             date_offset = date.fromisoformat(new_start_date) - date.fromisoformat(source_start_date)
         except ValueError as exc:
-            return _invalid_request(f"Invalid date format: {exc}")
+            date_error = f"Invalid date format: {exc}"
+        if date_error is not None:
+            _invalid_request(date_error)
+        assert date_offset is not None
 
         new_proj_payload["starts_at"] = new_start_date
         if source_project.get("ends_at"):
@@ -440,7 +448,25 @@ async def rm_clone_project_schedule(
                     "budget": phase.get("budget"),
                     "description": phase.get("description"),
                 }
-                created_p = await client.create_project_phase(new_proj_id, phase_payload)
+                phase_error: dict[str, Any] | None = None
+                try:
+                    created_p = await client.create_project_phase(new_proj_id, phase_payload)
+                except SmartsheetRMAPIError as err:
+                    phase_error = err.to_dict()
+                except Exception as exc:
+                    msg = redact_secrets(str(exc))
+                    logger.error(msg)
+                    phase_error = {"type": "internal", "message": msg}
+                # Raise after the ``except`` blocks so the ToolError has no ``__context__``.
+                if phase_error is not None:
+                    # Leave the new project (and any phases already created) in place.
+                    _tool_failure(
+                        "clone_phase_failed",
+                        f"Failed to clone a phase into project {new_proj_id}; the new project was left in place.",
+                        project_id=new_proj_id,
+                        phase_name=phase.get("name", "Phase"),
+                        error=phase_error,
+                    )
                 created_phases.append(created_p)
 
     return json.dumps(
@@ -473,10 +499,21 @@ async def rm_bulk_delete_assignments(
             deleted.append({"id": aid, "status": "deleted", "result": res})
         except SmartsheetRMAPIError as err:
             errors.append({"id": aid, "status": "failed", "error": err.to_dict()})
+        except Exception as exc:
+            msg = redact_secrets(str(exc))
+            logger.error(msg)
+            errors.append({"id": aid, "status": "failed", "error": {"type": "internal", "message": msg}})
 
+    if errors and not deleted:
+        _tool_failure(
+            "batch_failed",
+            f"All {len(errors)} assignment deletions failed; nothing was deleted.",
+            failed_count=len(errors),
+            errors=errors,
+        )
     return json.dumps(
         {
-            "status": "success" if not errors else ("partial_success" if deleted else "failed"),
+            "status": "success" if not errors else "partial_success",
             "deleted_count": len(deleted),
             "failed_count": len(errors),
             "results": deleted,
