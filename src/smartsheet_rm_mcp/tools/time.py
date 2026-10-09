@@ -108,7 +108,7 @@ async def rm_update_time_entry(
         payload["billable"] = is_billable
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_client()
     data = await client.update_time_entry(entry_id, payload)
@@ -153,7 +153,7 @@ async def rm_update_time_approval_status(
 ) -> str:
     """Approve or reject time entries for a user (status: 'approved', 'rejected', 'pending')."""
     if status not in ("approved", "rejected", "pending"):
-        return _invalid_request("Status must be one of: 'approved', 'rejected', 'pending'")
+        _invalid_request("Status must be one of: 'approved', 'rejected', 'pending'")
     payload: dict[str, Any] = {"time_entry_ids": entry_ids, "status": status}
     if approver_notes:
         payload["notes"] = approver_notes
@@ -195,7 +195,7 @@ async def rm_fill_weekly_timesheet(
     try:
         start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
     except ValueError:
-        return _invalid_request(f"Invalid start_date '{start_date}'. Must be in YYYY-MM-DD format.")
+        _invalid_request(f"Invalid start_date '{start_date}'. Must be in YYYY-MM-DD format.")
 
     client = await get_client()
 
@@ -206,12 +206,12 @@ async def rm_fill_weekly_timesheet(
         assignments = await client.list_user_assignments(user_id, params={"from": start_date, "to": end_date_str})
         entries = assignments.get("data", []) if isinstance(assignments, dict) else assignments
         if not entries:
-            return _invalid_request(
+            _invalid_request(
                 f"No active assignments found for user {user_id} in week {start_date}. Specify project_id explicitly."
             )
         target_project_id = entries[0].get("project_id") or entries[0].get("assignable_id")
         if not target_project_id:
-            return _invalid_request("Unable to resolve project_id from assignment.")
+            _invalid_request("Unable to resolve project_id from assignment.")
 
     days_to_fill = 7 if include_weekends else 5
     created_entries = []
@@ -312,7 +312,7 @@ async def rm_reconcile_and_submit_week(
     try:
         start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
     except ValueError:
-        return _invalid_request(f"Invalid start_date '{start_date}'. Must be in YYYY-MM-DD format.")
+        _invalid_request(f"Invalid start_date '{start_date}'. Must be in YYYY-MM-DD format.")
 
     end_date_str = (start_dt + datetime.timedelta(days=6)).strftime("%Y-%m-%d")
 

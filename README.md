@@ -215,7 +215,8 @@ Connect clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTT
 ## 🛡️ Safety & Reliability
 
 - **Secret Redaction**: API tokens, bearer headers, and sensitive keys are automatically scrubbed from errors and logs.
-- **Destructive Gates**: Every deletion tool declares `confirm: bool = False` and rejects execution unless the caller explicitly passes `confirm=True`.
+- **Destructive Gates**: Every deletion tool declares `confirm: bool = False` and makes no change unless the caller explicitly passes `confirm=True`. Without it the tool returns a normal result (`isError: false`) with `"status": "confirmation_required"` and a message to re-call with `confirm=true`; that is the designed two-step, not an error.
+- **Input Validation**: Missing or invalid arguments (for example an update with no fields, or a malformed date) return a tool error (`isError: true`, `"type": "invalid_request"`) the model can correct, as the MCP spec describes for input validation errors.
 - **Profiles**: Minimize token footprint by loading only the tools one job needs (`timesheets`, `staffing`, `org_setup`, `portfolio`) or one domain (`time`, `projects`, `admin`).
 - **Read-Only Gate**: `readOnlyHint` decides; anything else is refused with `isError: true`.
 - **Resilience**: Exponential backoff with randomized jitter on HTTP 429 rate limits.

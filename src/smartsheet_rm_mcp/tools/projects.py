@@ -131,7 +131,7 @@ async def rm_update_project(
         payload["archived"] = archived
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_client()
     data = await client.update_project(project_id, payload)
@@ -231,7 +231,7 @@ async def rm_update_project_phase(
         payload["description"] = description
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_client()
     data = await client.update_project_phase(project_id, phase_id, payload)
@@ -348,7 +348,7 @@ async def rm_update_assignment(
         payload["note"] = note
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_client()
     data = await client.update_assignment(assignment_id, payload)
@@ -399,11 +399,11 @@ async def rm_clone_project_schedule(
     if new_start_date:
         source_start_date = source_project.get("starts_at")
         if not source_start_date:
-            return _invalid_request("Source project has no starts_at date to calculate schedule offset")
+            _invalid_request("Source project has no starts_at date to calculate schedule offset")
         try:
             date_offset = date.fromisoformat(new_start_date) - date.fromisoformat(source_start_date)
         except ValueError as exc:
-            return _invalid_request(f"Invalid date format: {exc}")
+            _invalid_request(f"Invalid date format: {exc}")
 
         new_proj_payload["starts_at"] = new_start_date
         if source_project.get("ends_at"):

@@ -10,7 +10,7 @@ import os
 import sys
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NoReturn
 
 from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
@@ -85,19 +85,37 @@ def configure_logging() -> None:
 _redact_secrets = redact_secrets
 
 
-def _invalid_request(message: str) -> str:
-    """Format structured invalid_request error document."""
-    return json.dumps({"error": {"type": "invalid_request", "message": message}}, indent=2)
+def _invalid_request(message: str) -> NoReturn:
+    """Raise an input validation failure as a tool execution error.
+
+    The MCP spec lists input validation errors among tool execution errors, reported in the
+    tool result with ``isError: true`` so the model can correct the call. This raises FastMCP
+    ``ToolError`` with the redacted ``{"error": {"type": "invalid_request", ...}}`` JSON, the same
+    path ``rm_tool`` uses for API and internal failures, which re-raises it unchanged.
+    """
+    raise ToolError(
+        json.dumps({"error": {"type": "invalid_request", "message": _redact_secrets(message)}}, indent=2)
+    ) from None
 
 
 def _destructive_gate(confirm: bool, action_name: str) -> str | None:
     """Enforce explicit user confirmation for destructive tools.
 
-    Returns an error document string if confirmation is missing, or None if confirmed.
+    Without confirmation, returns the confirm two-step prompt as a normal tool result
+    (``isError: false``): the tool made no change and tells the caller to re-call with
+    ``confirm=true``. That is the designed behavior, not a failed call. Returns None if confirmed.
     """
     if not confirm:
-        return _invalid_request(
-            f"Action '{action_name}' is destructive and requires explicit confirmation. Pass confirm=True to execute."
+        return json.dumps(
+            {
+                "status": "confirmation_required",
+                "executed": False,
+                "message": (
+                    f"Action '{action_name}' is destructive and was not executed. "
+                    "Re-call this tool with confirm=true to proceed."
+                ),
+            },
+            indent=2,
         )
     return None
 
@@ -185,6 +203,9 @@ def rm_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.info("Tool executed successfully", extra={"tool_name": fn.__name__, "duration_ms": duration_ms})
             return result
+        except ToolError:
+            # Already a redacted tool execution error (``_invalid_request``); keep its payload.
+            raise
         except SmartsheetRMAPIError as e:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error("Tool failed with API error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms})

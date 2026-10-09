@@ -36,7 +36,7 @@ This skill provides expert instructions, architectural workflows, and safety pro
 ## 🛡️ Safety & Execution Rules for AI Agents
 
 1. **Confirmation Gating on Destructive Tools**:
-   All destructive deletion tools **MUST** explicitly receive `confirm=True` to execute. Calls with `confirm=False` (default) are automatically rejected:
+   All destructive deletion tools **MUST** explicitly receive `confirm=True` to execute. Calls with `confirm=False` (default) change nothing and return a normal result (`isError: false`) with `"status": "confirmation_required"` and a message to re-call with `confirm=true`. Missing or invalid arguments are errors instead (`isError: true`, `"type": "invalid_request"`); fix the argument and call again. The gated tools:
    - `time_delete_time_entry`
    - `projects_delete_project`, `projects_delete_project_phase`
    - `projects_delete_assignment`
