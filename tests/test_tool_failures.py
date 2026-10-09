@@ -379,6 +379,11 @@ async def test_fill_weekly_network_error_continues(api: AsyncMock) -> None:
     assert data["filled_count"] == 4
     assert data["failed_count"] == 1
     assert len(calls) == 5
+    # Field names from main stay alongside the fleet keys.
+    assert data["days_filled"] == 5
+    assert data["created_count"] == 4
+    assert data["entries"] == [r["result"] for r in data["results"]]
+    assert len(data["entries"]) == 4
     assert data["errors"][0]["status"] == "failed"
     assert data["errors"][0]["error"]["type"] == "internal"
     assert "timed out" in data["errors"][0]["error"]["message"]
@@ -416,6 +421,8 @@ async def test_confirm_suggested_network_error_continues(api: AsyncMock) -> None
     assert [r["id"] for r in data["results"]] == [10, 12]
     assert data["errors"][0]["id"] == 11
     assert data["errors"][0]["error"]["type"] == "internal"
+    # Field name from main stays alongside the fleet keys.
+    assert data["confirmed_entries"] == [{"id": 10}, {"id": 12}]
 
 
 # --- Redaction, cancellation and logging on every batch tool and the clone recipe ---
