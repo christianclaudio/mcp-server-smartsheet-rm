@@ -10,8 +10,9 @@ import os
 import sys
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, NoReturn
 
+from fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from smartsheet_rm_mcp.client import (
@@ -84,19 +85,50 @@ def configure_logging() -> None:
 _redact_secrets = redact_secrets
 
 
-def _invalid_request(message: str) -> str:
-    """Format structured invalid_request error document."""
-    return json.dumps({"error": {"type": "invalid_request", "message": message}}, indent=2)
+def _invalid_request(message: str) -> NoReturn:
+    """Raise an input validation failure as a tool execution error.
+
+    The MCP spec lists input validation errors among tool execution errors, reported in the
+    tool result with ``isError: true`` so the model can correct the call. This raises FastMCP
+    ``ToolError`` with the redacted ``{"error": {"type": "invalid_request", ...}}`` JSON, the same
+    path ``rm_tool`` uses for API and internal failures. ``rm_tool`` copies the payload onto a
+    fresh ``ToolError`` (same JSON, no chain).
+    """
+    raise ToolError(
+        json.dumps({"error": {"type": "invalid_request", "message": _redact_secrets(message)}}, indent=2)
+    ) from None
+
+
+def _tool_failure(error_type: str, message: str, **details: Any) -> NoReturn:
+    """Raise a failed tool call as a tool execution error (``isError: true``).
+
+    For failures the tool detects itself after its API calls returned, such as a batch in which
+    every item failed. Raises FastMCP ``ToolError`` with the ``{"error": {"type": ..., "message":
+    ...}}`` JSON, redacted as a whole document like ``rm_tool``'s API errors, ``from None``.
+    ``rm_tool`` copies the payload onto a fresh ``ToolError`` (same JSON, no chain).
+    """
+    payload: dict[str, Any] = {"type": error_type, "message": message, **details}
+    raise ToolError(_redact_secrets(json.dumps({"error": payload}, indent=2))) from None
 
 
 def _destructive_gate(confirm: bool, action_name: str) -> str | None:
     """Enforce explicit user confirmation for destructive tools.
 
-    Returns an error document string if confirmation is missing, or None if confirmed.
+    Without confirmation, returns the confirm two-step prompt as a normal tool result
+    (``isError: false``): the tool made no change and tells the caller to re-call with
+    ``confirm=true``. That is the designed behavior, not a failed call. Returns None if confirmed.
     """
     if not confirm:
-        return _invalid_request(
-            f"Action '{action_name}' is destructive and requires explicit confirmation. Pass confirm=True to execute."
+        return json.dumps(
+            {
+                "status": "confirmation_required",
+                "executed": False,
+                "message": (
+                    f"Action '{action_name}' is destructive and was not executed. "
+                    "Re-call this tool with confirm=true to proceed."
+                ),
+            },
+            indent=2,
         )
     return None
 
@@ -169,27 +201,41 @@ get_rm_client = get_client
 
 
 def rm_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """Decorator that wraps MCP tools with structured error handling, secret redaction, and timing."""
+    """Decorator that wraps MCP tools with structured error handling, secret redaction, and timing.
+
+    A failed call raises FastMCP ``ToolError`` carrying the redacted ``{"error": ...}`` JSON,
+    so the client receives a ``tools/call`` result with ``isError: true``. It is raised
+    outside the ``except`` block (``from None``) so the unredacted original exception
+    does not ride along as ``__cause__`` or ``__context__``.
+    """
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> str:
         start_t = time.perf_counter()
+        pending: ToolError | None = None
         try:
             result: str = await fn(*args, **kwargs)
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.info("Tool executed successfully", extra={"tool_name": fn.__name__, "duration_ms": duration_ms})
             return result
+        except ToolError as e:
+            # Already a redacted tool execution error; copy the payload onto a fresh
+            # ToolError so a prior ``__context__`` from an inner ``except`` does not leak.
+            pending = ToolError(str(e))
         except SmartsheetRMAPIError as e:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error("Tool failed with API error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms})
             err_doc = json.dumps({"error": e.to_dict()})
-            return _redact_secrets(err_doc)
+            pending = ToolError(_redact_secrets(err_doc))
         except Exception as e:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error(
                 "Tool failed with internal error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms}
             )
             msg = _redact_secrets(str(e))
-            return json.dumps({"error": {"type": "internal", "message": msg}})
+            pending = ToolError(json.dumps({"error": {"type": "internal", "message": msg}}))
+        # Raise outside the ``except`` blocks so ``__context__`` is not the original exception.
+        assert pending is not None
+        raise pending from None
 
     return wrapper

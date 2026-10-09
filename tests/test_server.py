@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 import smartsheet_rm_mcp.server as srv
 from smartsheet_rm_mcp.client import SmartsheetRMClient
@@ -38,6 +40,7 @@ def setup_mock_client():
     mock_client.update_project.return_value = {"id": 100, "name": "Updated Apollo"}
     mock_client.delete_project.return_value = {"status": "deleted"}
     mock_client.list_project_phases.return_value = {"data": []}
+    mock_client.list_project_users.return_value = {"data": []}
     mock_client.get_project_phase.return_value = {"id": 10, "name": "Phase 1"}
     mock_client.create_project_phase.return_value = {"id": 11, "name": "Phase 2"}
     mock_client.update_project_phase.return_value = {"id": 10, "name": "Phase 1b"}
@@ -337,14 +340,22 @@ async def test_decorator_error_handling() -> None:
     async def failing_generic_tool():
         raise RuntimeError("Unexpected failure with token=secret")
 
-    res1 = await failing_api_tool()
-    data1 = json.loads(res1)
+    with pytest.raises(ToolError) as exc1:
+        await failing_api_tool()
+    data1 = json.loads(str(exc1.value))
     assert data1["error"]["status_code"] == 404
     assert "Resource not found" in data1["error"]["detail"]
+    assert "message" in data1["error"]
+    assert exc1.value.__cause__ is None
+    assert exc1.value.__context__ is None
+    assert exc1.value.__suppress_context__
 
-    res2 = await failing_generic_tool()
-    data2 = json.loads(res2)
+    with pytest.raises(ToolError) as exc2:
+        await failing_generic_tool()
+    data2 = json.loads(str(exc2.value))
     assert data2["error"]["type"] == "internal"
+    assert exc2.value.__cause__ is None
+    assert exc2.value.__context__ is None
 
 
 @pytest.mark.asyncio
@@ -365,19 +376,19 @@ async def test_time_tracking_tools(setup_mock_client) -> None:
 
     # update_time_entry
     await srv.rm_update_time_entry(1, hours=7.5, notes="N", date="2026-08-11", is_billable=True)
-    res_empty_up = await srv.rm_update_time_entry(1)
-    assert "invalid_request" in json.loads(res_empty_up)["error"]["type"]
+    with pytest.raises(ToolError, match="invalid_request"):
+        await srv.rm_update_time_entry(1)
 
     # delete_time_entry
     gate_res = await srv.rm_delete_time_entry(1, confirm=False)
-    assert "requires explicit confirmation" in json.loads(gate_res)["error"]["message"]
+    assert "Re-call this tool with confirm=true" in json.loads(gate_res)["message"]
     await srv.rm_delete_time_entry(1, confirm=True)
 
     # suggestions & approval & locks
     await srv.rm_list_user_suggestions(1, from_date="2026-08-01", to_date="2026-08-07")
     await srv.rm_update_time_approval_status(1, [10, 11], "approved", approver_notes="Approved")
-    invalid_status = await srv.rm_update_time_approval_status(1, [10], "unknown")
-    assert "Status must be one of" in json.loads(invalid_status)["error"]["message"]
+    with pytest.raises(ToolError, match="Status must be one of"):
+        await srv.rm_update_time_approval_status(1, [10], "unknown")
 
     await srv.rm_lock_timesheet(1, "2026-08-01", unlock=False)
 
@@ -409,10 +420,10 @@ async def test_project_and_phase_tools(setup_mock_client) -> None:
         description="D2",
         archived=False,
     )
-    assert "invalid_request" in json.loads(await srv.rm_update_project(100))["error"]["type"]
+    with pytest.raises(ToolError, match="invalid_request"):
+        await srv.rm_update_project(100)
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_project(100, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_project(100, confirm=False))["message"]
     )
     await srv.rm_delete_project(100, confirm=True)
     await srv.rm_list_project_users(100, page=1, per_page=10)
@@ -424,10 +435,11 @@ async def test_project_and_phase_tools(setup_mock_client) -> None:
     await srv.rm_update_project_phase(
         100, 10, name="Phase 1b", start_date="2026-08-02", end_date="2026-08-16", budget=600.0, description="Desc2"
     )
-    assert "invalid_request" in json.loads(await srv.rm_update_project_phase(100, 10))["error"]["type"]
+    with pytest.raises(ToolError, match="invalid_request"):
+        await srv.rm_update_project_phase(100, 10)
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_project_phase(100, 10, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true"
+        in json.loads(await srv.rm_delete_project_phase(100, 10, confirm=False))["message"]
     )
     await srv.rm_delete_project_phase(100, 10, confirm=True)
 
@@ -450,10 +462,11 @@ async def test_assignment_tools(setup_mock_client) -> None:
         fixed_hours=20,
         note="Updated",
     )
-    assert "invalid_request" in json.loads(await srv.rm_update_assignment(200))["error"]["type"]
+    with pytest.raises(ToolError, match="invalid_request"):
+        await srv.rm_update_assignment(200)
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_assignment(200, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true"
+        in json.loads(await srv.rm_delete_assignment(200, confirm=False))["message"]
     )
     await srv.rm_delete_assignment(200, confirm=True)
 
@@ -487,10 +500,9 @@ async def test_user_role_discipline_tools(setup_mock_client) -> None:
         cost_rate=80.0,
         archived=False,
     )
-    assert "invalid_request" in json.loads(await srv.rm_update_user(1))["error"]["type"]
-    assert (
-        "requires explicit confirmation" in json.loads(await srv.rm_delete_user(1, confirm=False))["error"]["message"]
-    )
+    with pytest.raises(ToolError, match="invalid_request"):
+        await srv.rm_update_user(1)
+    assert "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_user(1, confirm=False))["message"]
     await srv.rm_delete_user(1, confirm=True)
 
     # Rates & capacity
@@ -503,9 +515,7 @@ async def test_user_role_discipline_tools(setup_mock_client) -> None:
     await srv.rm_list_roles()
     await srv.rm_create_role("Architect")
     await srv.rm_update_role(1, "Principal Architect")
-    assert (
-        "requires explicit confirmation" in json.loads(await srv.rm_delete_role(1, confirm=False))["error"]["message"]
-    )
+    assert "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_role(1, confirm=False))["message"]
     await srv.rm_delete_role(1, confirm=True)
 
     # Disciplines
@@ -513,8 +523,7 @@ async def test_user_role_discipline_tools(setup_mock_client) -> None:
     await srv.rm_create_discipline("Design")
     await srv.rm_update_discipline(1, "Product Design")
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_discipline(1, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_discipline(1, confirm=False))["message"]
     )
     await srv.rm_delete_discipline(1, confirm=True)
 
@@ -527,17 +536,16 @@ async def test_client_and_contact_tools(setup_mock_client) -> None:
     await srv.rm_update_client(
         1, name="Beta Inc", address="124 Main", city="Tampa", state="FL", zipcode="33601", country="USA", archived=False
     )
-    assert "invalid_request" in json.loads(await srv.rm_update_client(1))["error"]["type"]
-    assert (
-        "requires explicit confirmation" in json.loads(await srv.rm_delete_client(1, confirm=False))["error"]["message"]
-    )
+    with pytest.raises(ToolError, match="invalid_request"):
+        await srv.rm_update_client(1)
+    assert "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_client(1, confirm=False))["message"]
     await srv.rm_delete_client(1, confirm=True)
 
     await srv.rm_list_client_contacts(1)
     await srv.rm_create_client_contact(1, "John", "Doe", email="j@doe.com", phone="555-1234", title="VP")
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_client_contact(1, 10, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true"
+        in json.loads(await srv.rm_delete_client_contact(1, 10, confirm=False))["message"]
     )
     await srv.rm_delete_client_contact(1, 10, confirm=True)
 
@@ -549,8 +557,7 @@ async def test_leave_and_holiday_tools(setup_mock_client) -> None:
     await srv.rm_create_leave_type("Sabbatical")
     await srv.rm_update_leave_type(1, "Extended Leave")
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_leave_type(1, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_leave_type(1, confirm=False))["message"]
     )
     await srv.rm_delete_leave_type(1, confirm=True)
 
@@ -558,11 +565,9 @@ async def test_leave_and_holiday_tools(setup_mock_client) -> None:
     await srv.rm_get_holiday(1)
     await srv.rm_create_holiday("Memorial Day", "2026-05-25", "2026-05-25")
     await srv.rm_update_holiday(1, name="Memorial Day Observed", date="2026-05-26", end_date="2026-05-26")
-    assert "invalid_request" in json.loads(await srv.rm_update_holiday(1))["error"]["type"]
-    assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_holiday(1, confirm=False))["error"]["message"]
-    )
+    with pytest.raises(ToolError, match="invalid_request"):
+        await srv.rm_update_holiday(1)
+    assert "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_holiday(1, confirm=False))["message"]
     await srv.rm_delete_holiday(1, confirm=True)
 
 
@@ -574,18 +579,16 @@ async def test_expense_tools(setup_mock_client) -> None:
     await srv.rm_get_expense(1)
     await srv.rm_create_expense(100, 1, 1, 150.0, "2026-08-05", notes="Flight", is_billable=True)
     await srv.rm_update_expense(1, amount=175.0, notes="Flight upgrade", is_billable=True, date="2026-08-06")
-    assert "invalid_request" in json.loads(await srv.rm_update_expense(1))["error"]["type"]
-    assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_expense(1, confirm=False))["error"]["message"]
-    )
+    with pytest.raises(ToolError, match="invalid_request"):
+        await srv.rm_update_expense(1)
+    assert "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_expense(1, confirm=False))["message"]
     await srv.rm_delete_expense(1, confirm=True)
 
     await srv.rm_list_expense_categories()
     await srv.rm_create_expense_category("Software")
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_expense_category(1, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true"
+        in json.loads(await srv.rm_delete_expense_category(1, confirm=False))["message"]
     )
     await srv.rm_delete_expense_category(1, confirm=True)
 
@@ -594,17 +597,18 @@ async def test_expense_tools(setup_mock_client) -> None:
 async def test_tags_and_custom_fields_tools(setup_mock_client) -> None:
     await srv.rm_list_tags()
     await srv.rm_create_tag("High Priority")
-    assert "requires explicit confirmation" in json.loads(await srv.rm_delete_tag(1, confirm=False))["error"]["message"]
+    assert "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_tag(1, confirm=False))["message"]
     await srv.rm_delete_tag(1, confirm=True)
 
     await srv.rm_list_custom_fields()
     await srv.rm_get_custom_field(1)
     await srv.rm_create_custom_field("Department", "select", "User", options=["Sales", "Eng"])
     await srv.rm_update_custom_field(1, name="Department Name", options=["Sales", "Eng", "Ops"])
-    assert "invalid_request" in json.loads(await srv.rm_update_custom_field(1))["error"]["type"]
+    with pytest.raises(ToolError, match="invalid_request"):
+        await srv.rm_update_custom_field(1)
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_custom_field(1, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true"
+        in json.loads(await srv.rm_delete_custom_field(1, confirm=False))["message"]
     )
     await srv.rm_delete_custom_field(1, confirm=True)
 
@@ -619,7 +623,7 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     data1 = json.loads(res1)
     assert data1["status"] == "success"
     assert data1["total_hours"] == 40.0
-    assert data1["created_count"] == 5
+    assert data1["filled_count"] == 5
 
     # Auto-resolve assignment project
     res1_auto = await srv.rm_fill_weekly_timesheet(1, "2026-08-10", daily_hours=8.0)
@@ -627,17 +631,17 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
 
     # Auto-resolve failure when no assignments
     setup_mock_client.list_user_assignments.return_value = []
-    res1_fail = await srv.rm_fill_weekly_timesheet(1, "2026-08-10")
-    assert "No active assignments found" in json.loads(res1_fail)["error"]["message"]
+    with pytest.raises(ToolError, match="No active assignments found"):
+        await srv.rm_fill_weekly_timesheet(1, "2026-08-10")
 
     # Auto-resolve failure when assignment missing project_id
     setup_mock_client.list_user_assignments.return_value = [{}]
-    res1_fail2 = await srv.rm_fill_weekly_timesheet(1, "2026-08-10")
-    assert "Unable to resolve project_id" in json.loads(res1_fail2)["error"]["message"]
+    with pytest.raises(ToolError, match="Unable to resolve project_id"):
+        await srv.rm_fill_weekly_timesheet(1, "2026-08-10")
 
     # Invalid date format
-    res1_bad_date = await srv.rm_fill_weekly_timesheet(1, "invalid-date")
-    assert "Invalid start_date" in json.loads(res1_bad_date)["error"]["message"]
+    with pytest.raises(ToolError, match="Invalid start_date"):
+        await srv.rm_fill_weekly_timesheet(1, "invalid-date")
 
     # Partial creation failure
     setup_mock_client.create_time_entry.side_effect = [
@@ -650,7 +654,7 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     res1_partial = await srv.rm_fill_weekly_timesheet(1, "2026-08-10", project_id=100)
     data1_partial = json.loads(res1_partial)
     assert data1_partial["status"] == "partial_success"
-    assert data1_partial["created_count"] == 4
+    assert data1_partial["filled_count"] == 4
     assert data1_partial["failed_count"] == 1
     setup_mock_client.create_time_entry.side_effect = None
 
@@ -660,7 +664,7 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     )
     data1_weekend = json.loads(res1_weekend)
     assert data1_weekend["status"] == "success"
-    assert data1_weekend["days_filled"] == 7
+    assert data1_weekend["filled_count"] == 7
     assert data1_weekend["total_hours"] == 48.0
 
     # 2. rm_confirm_suggested_hours
@@ -684,8 +688,8 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
 
     # 3. rm_reconcile_and_submit_week
     # Invalid date
-    res3_bad = await srv.rm_reconcile_and_submit_week(1, "not-a-date")
-    assert "Invalid start_date" in json.loads(res3_bad)["error"]["message"]
+    with pytest.raises(ToolError, match="Invalid start_date"):
+        await srv.rm_reconcile_and_submit_week(1, "not-a-date")
 
     # Balanced (40h)
     setup_mock_client.list_user_time_entries.return_value = {"data": [{"id": i, "hours": 8.0} for i in range(5)]}
@@ -709,13 +713,13 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
         "project_state": "Confirmed",
         "client_id": 5,
     }
-    res4_no_start = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01")
-    assert "Source project has no starts_at date" in json.loads(res4_no_start)["error"]["message"]
+    with pytest.raises(ToolError, match="Source project has no starts_at date"):
+        await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="2026-09-01")
 
     # Error when new_start_date has invalid date format
     setup_mock_client.get_project.return_value["starts_at"] = "2026-08-01"
-    res4_bad_date = await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="invalid-date")
-    assert "Invalid date format" in json.loads(res4_bad_date)["error"]["message"]
+    with pytest.raises(ToolError, match="Invalid date format"):
+        await srv.rm_clone_project_schedule(100, "Cloned Project", new_start_date="invalid-date")
 
     # Success: shifting timeline (source: 2026-08-01 to 2026-08-31 shifted to 2026-09-01 -> 31 day shift)
     setup_mock_client.get_project.return_value = {
@@ -766,10 +770,35 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     res4_fallback = await srv.rm_clone_project_schedule(100, "Cloned Project 2")
     assert json.loads(res4_fallback)["status"] == "success"
 
+    # Phase failure leaves the new project in place (no delete)
+    setup_mock_client.create_project.return_value = {"id": 777, "name": "Partial Clone"}
+    setup_mock_client.create_project_phase.side_effect = SmartsheetRMAPIError(
+        500, "/projects/777/phases", "POST", "phase boom"
+    )
+    with pytest.raises(ToolError) as clone_exc:
+        await srv.rm_clone_project_schedule(100, "Cloned Project Partial", new_start_date="2026-09-01")
+    clone_err = json.loads(str(clone_exc.value))["error"]
+    assert clone_err["type"] == "clone_phase_failed"
+    assert clone_err["project_id"] == 777
+    assert "left in place" in clone_err["message"]
+    setup_mock_client.delete_project.assert_not_called()
+    setup_mock_client.create_project_phase.side_effect = None
+    setup_mock_client.create_project.return_value = {"id": 778, "name": "Partial Clone 2"}
+    setup_mock_client.create_project_phase.side_effect = RuntimeError("transport broken")
+    with pytest.raises(ToolError) as clone_exc2:
+        await srv.rm_clone_project_schedule(100, "Cloned Project Transport", new_start_date="2026-09-01")
+    clone_err2 = json.loads(str(clone_exc2.value))["error"]
+    assert clone_err2["type"] == "clone_phase_failed"
+    assert clone_err2["project_id"] == 778
+    assert clone_err2["error"]["type"] == "internal"
+    assert "transport broken" in clone_err2["error"]["message"]
+    setup_mock_client.create_project_phase.side_effect = None
+    setup_mock_client.create_project_phase.return_value = {"id": 11, "name": "Phase 2"}
+
     # 5. Bulk destructive operations
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_bulk_delete_time_entries([1, 2], confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true"
+        in json.loads(await srv.rm_bulk_delete_time_entries([1, 2], confirm=False))["message"]
     )
     res_b_time = await srv.rm_bulk_delete_time_entries([1, 2], confirm=True)
     assert json.loads(res_b_time)["deleted_count"] == 2
@@ -787,8 +816,8 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     setup_mock_client.delete_time_entry.side_effect = None
 
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_bulk_delete_assignments([10, 20], confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true"
+        in json.loads(await srv.rm_bulk_delete_assignments([10, 20], confirm=False))["message"]
     )
     res_b_assign = await srv.rm_bulk_delete_assignments([10, 20], confirm=True)
     assert json.loads(res_b_assign)["deleted_count"] == 2
@@ -807,8 +836,7 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     assert "data" in json.loads(await srv.rm_list_approvals())
     assert json.loads(await srv.rm_create_approval("time_entries", [1, 2], notes="Ok"))["status"] == "approved"
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_approval(1, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_approval(1, confirm=False))["message"]
     )
     assert json.loads(await srv.rm_delete_approval(1, confirm=True))["status"] == "deleted"
 
@@ -817,7 +845,8 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
 
     # User statuses
     assert len(json.loads(await srv.rm_get_user_statuses(1))) == 1
-    assert "Status must be one of" in json.loads(await srv.rm_set_user_status(1, "INVALID"))["error"]["message"]
+    with pytest.raises(ToolError, match="Status must be one of"):
+        await srv.rm_set_user_status(1, "INVALID")
     assert json.loads(await srv.rm_set_user_status(1, "WFH", notes="Remote"))["status"] == "WFH"
 
     # Placeholders
@@ -829,8 +858,8 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
         == 1
     )
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_placeholder_resource(1, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true"
+        in json.loads(await srv.rm_delete_placeholder_resource(1, confirm=False))["message"]
     )
     assert json.loads(await srv.rm_delete_placeholder_resource(1, confirm=True))["status"] == "deleted"
 
@@ -838,8 +867,8 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     assert len(json.loads(await srv.rm_list_assignment_subtasks(100, 10))) == 1
     assert json.loads(await srv.rm_create_assignment_subtask(100, 10, "Task 1", completed=True))["id"] == 2
     assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_assignment_subtask(100, 10, 5, confirm=False))["error"]["message"]
+        "Re-call this tool with confirm=true"
+        in json.loads(await srv.rm_delete_assignment_subtask(100, 10, 5, confirm=False))["message"]
     )
     assert json.loads(await srv.rm_delete_assignment_subtask(100, 10, 5, confirm=True))["status"] == "deleted"
 
@@ -850,10 +879,7 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     # Webhooks
     assert len(json.loads(await srv.rm_list_webhooks())) == 1
     assert json.loads(await srv.rm_create_webhook("time.entry.created", "https://hook.test"))["id"] == 2
-    assert (
-        "requires explicit confirmation"
-        in json.loads(await srv.rm_delete_webhook(1, confirm=False))["error"]["message"]
-    )
+    assert "Re-call this tool with confirm=true" in json.loads(await srv.rm_delete_webhook(1, confirm=False))["message"]
     assert json.loads(await srv.rm_delete_webhook(1, confirm=True))["status"] == "deleted"
 
 
@@ -1211,3 +1237,40 @@ def test_streamable_http_app_allowed_hosts_dynamic_port(monkeypatch: pytest.Monk
     captured_kwargs.clear()
     srv.mcp.streamable_http_app(allowed_hosts=["explicit.domain"])
     assert captured_kwargs["allowed_hosts"] == ["explicit.domain"]
+
+
+@pytest.mark.asyncio
+async def test_tool_failure_reaches_client_as_is_error(
+    setup_mock_client: AsyncMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An upstream failure reaches the client as isError: true, redacted on the wire and in logs."""
+    setup_mock_client.get_project.side_effect = RuntimeError("upstream rejected Bearer secret-token-abc")
+
+    caplog.set_level(logging.DEBUG)
+    async with Client(srv.create_server()) as mcp_client:
+        result = await mcp_client.call_tool("projects_get_project", {"project_id": 100}, raise_on_error=False)
+
+    assert result.is_error
+    text = result.content[0].text
+    assert json.loads(text)["error"]["type"] == "internal"
+    assert "secret-token-abc" not in text
+    logged = "\n".join(
+        record.getMessage() + (logging.Formatter().formatException(record.exc_info) if record.exc_info else "")
+        for record in caplog.records
+    )
+    assert "secret-token-abc" not in logged
+
+
+@pytest.mark.asyncio
+async def test_code_mode_execute_runs_real_tool() -> None:
+    """execute runs Python in the Code Mode sandbox and reaches a real catalog tool."""
+    app = srv.create_server(profile="full", enable_code_mode=True, enable_tool_search=False)
+    code = "res = await call_tool('projects_get_project', {'project_id': 100})\nreturn res"
+    async with Client(app) as mcp_client:
+        arith = await mcp_client.call_tool("execute", {"code": "return 1 + 1"}, raise_on_error=False)
+        res = await mcp_client.call_tool("execute", {"code": code}, raise_on_error=False)
+
+    assert not arith.is_error, arith.content
+    assert [getattr(block, "text", None) for block in arith.content] == ["2"]
+    assert not res.is_error, res.content
+    assert "Apollo" in str(res.content)

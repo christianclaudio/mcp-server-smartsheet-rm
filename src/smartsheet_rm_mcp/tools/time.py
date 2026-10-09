@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 from typing import Any
 
 from fastmcp import FastMCP
@@ -15,11 +16,14 @@ from smartsheet_rm_mcp.common import (
     ANNOTATION_WRITE_SAFE,
     _destructive_gate,
     _invalid_request,
+    _tool_failure,
     get_client,
     rm_tool,
 )
-from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
+from smartsheet_rm_mcp.errors import SmartsheetRMAPIError, redact_secrets
 from smartsheet_rm_mcp.middleware import TimeDomainGuardMiddleware
+
+logger = logging.getLogger("smartsheet_rm_mcp")
 
 
 @rm_tool
@@ -108,7 +112,7 @@ async def rm_update_time_entry(
         payload["billable"] = is_billable
 
     if not payload:
-        return _invalid_request("No update fields provided")
+        _invalid_request("No update fields provided")
 
     client = await get_client()
     data = await client.update_time_entry(entry_id, payload)
@@ -153,7 +157,7 @@ async def rm_update_time_approval_status(
 ) -> str:
     """Approve or reject time entries for a user (status: 'approved', 'rejected', 'pending')."""
     if status not in ("approved", "rejected", "pending"):
-        return _invalid_request("Status must be one of: 'approved', 'rejected', 'pending'")
+        _invalid_request("Status must be one of: 'approved', 'rejected', 'pending'")
     payload: dict[str, Any] = {"time_entry_ids": entry_ids, "status": status}
     if approver_notes:
         payload["notes"] = approver_notes
@@ -192,10 +196,13 @@ async def rm_fill_weekly_timesheet(
     include_weekends: When True, logs Saturday and Sunday entries as well.
     weekend_hours: Specific hours for Saturday/Sunday (defaults to daily_hours if omitted).
     """
+    date_error: str | None = None
     try:
         start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
     except ValueError:
-        return _invalid_request(f"Invalid start_date '{start_date}'. Must be in YYYY-MM-DD format.")
+        date_error = f"Invalid start_date '{start_date}'. Must be in YYYY-MM-DD format."
+    if date_error is not None:
+        _invalid_request(date_error)
 
     client = await get_client()
 
@@ -206,16 +213,16 @@ async def rm_fill_weekly_timesheet(
         assignments = await client.list_user_assignments(user_id, params={"from": start_date, "to": end_date_str})
         entries = assignments.get("data", []) if isinstance(assignments, dict) else assignments
         if not entries:
-            return _invalid_request(
+            _invalid_request(
                 f"No active assignments found for user {user_id} in week {start_date}. Specify project_id explicitly."
             )
         target_project_id = entries[0].get("project_id") or entries[0].get("assignable_id")
         if not target_project_id:
-            return _invalid_request("Unable to resolve project_id from assignment.")
+            _invalid_request("Unable to resolve project_id from assignment.")
 
     days_to_fill = 7 if include_weekends else 5
-    created_entries = []
-    errors = []
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
     total_hours = 0.0
     for day_offset in range(days_to_fill):
         entry_date = (start_dt + datetime.timedelta(days=day_offset)).strftime("%Y-%m-%d")
@@ -231,22 +238,38 @@ async def rm_fill_weekly_timesheet(
         }
         try:
             res = await client.create_time_entry(entry_data)
-            created_entries.append(res)
+            results.append({"date": entry_date, "status": "created", "result": res})
             total_hours += hours_for_day
         except SmartsheetRMAPIError as err:
-            errors.append({"date": entry_date, "error": err.to_dict()})
+            errors.append({"date": entry_date, "status": "failed", "error": err.to_dict()})
+        except Exception as exc:
+            msg = redact_secrets(str(exc))
+            logger.error(msg)
+            errors.append({"date": entry_date, "status": "failed", "error": {"type": "internal", "message": msg}})
 
+    if errors and not results:
+        _tool_failure(
+            "batch_failed",
+            f"All {len(errors)} time entries failed to create; nothing was logged.",
+            user_id=user_id,
+            project_id=target_project_id,
+            week_start=start_date,
+            failed_count=len(errors),
+            errors=errors,
+        )
     return json.dumps(
         {
-            "status": "success" if not errors else ("partial_success" if created_entries else "failed"),
+            "status": "success" if not errors else "partial_success",
             "user_id": user_id,
             "project_id": target_project_id,
             "week_start": start_date,
+            "filled_count": len(results),
             "days_filled": days_to_fill,
             "total_hours": total_hours,
-            "created_count": len(created_entries),
+            "created_count": len(results),
             "failed_count": len(errors),
-            "entries": created_entries,
+            "results": results,
+            "entries": [r["result"] for r in results],
             "errors": errors,
         },
         indent=2,
@@ -265,8 +288,8 @@ async def rm_confirm_suggested_hours(
         user_id, params={"from": from_date, "to": to_date, "with_suggestions": "true"}
     )
     items = data.get("data", []) if isinstance(data, dict) else data
-    confirmed = []
-    errors = []
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
 
     for item in items:
         # If suggestion is unconfirmed (e.g. is_suggestion is True or hours unconfirmed)
@@ -283,18 +306,32 @@ async def rm_confirm_suggested_hours(
                             "notes": item.get("notes") or "Auto-confirmed suggestion",
                         },
                     )
-                    confirmed.append(res)
+                    results.append({"id": entry_id, "status": "confirmed", "result": res})
                 except SmartsheetRMAPIError as err:
-                    errors.append({"id": entry_id, "error": err.to_dict()})
+                    errors.append({"id": entry_id, "status": "failed", "error": err.to_dict()})
+                except Exception as exc:
+                    msg = redact_secrets(str(exc))
+                    logger.error(msg)
+                    errors.append({"id": entry_id, "status": "failed", "error": {"type": "internal", "message": msg}})
 
+    if errors and not results:
+        _tool_failure(
+            "batch_failed",
+            f"All {len(errors)} suggested entries failed to confirm; nothing was confirmed.",
+            user_id=user_id,
+            date_range=f"{from_date} to {to_date}",
+            failed_count=len(errors),
+            errors=errors,
+        )
     return json.dumps(
         {
-            "status": "success" if not errors else ("partial_success" if confirmed else "failed"),
+            "status": "success" if not errors else "partial_success",
             "user_id": user_id,
             "date_range": f"{from_date} to {to_date}",
-            "confirmed_count": len(confirmed),
+            "confirmed_count": len(results),
             "failed_count": len(errors),
-            "confirmed_entries": confirmed,
+            "results": results,
+            "confirmed_entries": [r["result"] for r in results],
             "errors": errors,
         },
         indent=2,
@@ -309,10 +346,13 @@ async def rm_reconcile_and_submit_week(
     auto_submit: bool = False,
 ) -> str:
     """Audit weekly logged hours against a target (40h) and optionally submit/approve timesheet."""
+    date_error: str | None = None
     try:
         start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
     except ValueError:
-        return _invalid_request(f"Invalid start_date '{start_date}'. Must be in YYYY-MM-DD format.")
+        date_error = f"Invalid start_date '{start_date}'. Must be in YYYY-MM-DD format."
+    if date_error is not None:
+        _invalid_request(date_error)
 
     end_date_str = (start_dt + datetime.timedelta(days=6)).strftime("%Y-%m-%d")
 
@@ -365,10 +405,21 @@ async def rm_bulk_delete_time_entries(
             deleted.append({"id": entry_id, "status": "deleted", "result": res})
         except SmartsheetRMAPIError as err:
             errors.append({"id": entry_id, "status": "failed", "error": err.to_dict()})
+        except Exception as exc:
+            msg = redact_secrets(str(exc))
+            logger.error(msg)
+            errors.append({"id": entry_id, "status": "failed", "error": {"type": "internal", "message": msg}})
 
+    if errors and not deleted:
+        _tool_failure(
+            "batch_failed",
+            f"All {len(errors)} time entry deletions failed; nothing was deleted.",
+            failed_count=len(errors),
+            errors=errors,
+        )
     return json.dumps(
         {
-            "status": "success" if not errors else ("partial_success" if deleted else "failed"),
+            "status": "success" if not errors else "partial_success",
             "deleted_count": len(deleted),
             "failed_count": len(errors),
             "results": deleted,

@@ -36,7 +36,7 @@ This skill provides expert instructions, architectural workflows, and safety pro
 ## 🛡️ Safety & Execution Rules for AI Agents
 
 1. **Confirmation Gating on Destructive Tools**:
-   All destructive deletion tools **MUST** explicitly receive `confirm=True` to execute. Calls with `confirm=False` (default) are automatically rejected:
+   All destructive deletion tools **MUST** explicitly receive `confirm=True` to execute. Calls with `confirm=False` (default) change nothing and return a normal result (`isError: false`) with `"status": "confirmation_required"` and a message to re-call with `confirm=true`. Missing or invalid arguments are errors instead (`isError: true`, `"type": "invalid_request"`); fix the argument and call again. A batch tool (`time_fill_weekly_timesheet`, `time_confirm_suggested_hours`, the two bulk deletes) whose every item failed is an error too (`isError: true`, `"type": "batch_failed"`, with per-item `errors`); a partial success is a normal result with `"status": "partial_success"`, `results` and `errors`. Each failed item's `error` carries a `message`; a non-API exception fails only that item (cancellation is not swallowed). The gated tools:
    - `time_delete_time_entry`
    - `projects_delete_project`, `projects_delete_project_phase`
    - `projects_delete_assignment`
@@ -71,7 +71,7 @@ This skill provides expert instructions, architectural workflows, and safety pro
    `SMARTSHEET_RM_READONLY=1` keeps only the read-only tools of the active profile. Any other call is refused with `isError: true`. An unknown name returns `Unknown tool`, so check the spelling rather than assuming the tool is blocked.
 
 6. **Tool Search and Code Mode (`full` only)**:
-   On `full`, `--enable-tool-search` / `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1` replaces the list with `search_tools` and `call_tool` (`regex` or `bm25` backend). `--enable-code-mode` / `SMARTSHEET_RM_ENABLE_CODE_MODE=1` attaches experimental Code Mode instead; the two cannot be combined. Under read-only, writes through `call_tool` and Code Mode `execute` are refused. On other profiles both flags are ignored with a warning.
+   On `full`, `--enable-tool-search` / `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1` replaces the list with `search_tools` and `call_tool` (`regex` or `bm25` backend). `--enable-code-mode` / `SMARTSHEET_RM_ENABLE_CODE_MODE=1` attaches experimental Code Mode instead; the two cannot be combined. Code Mode needs the `fastmcp[code-mode]` extra on the server (for example `uvx --with "fastmcp[code-mode]" mcp-server-smartsheet-rm --enable-code-mode`); without it the server logs a warning, skips Code Mode, and keeps the flat list, so `execute` is not listed. Under read-only, writes through `call_tool` and Code Mode `execute` are refused. On other profiles both flags are ignored with a warning.
 
 ---
 
@@ -116,7 +116,7 @@ FastMCP Gateway (create_server)
 | Layer | Component | Responsibility |
 | :--- | :--- | :--- |
 | **Settings** | `SmartsheetRMSettings` (`config.py`) | Strongly-typed configuration bound to `SMARTSHEET_RM_*` environment variables. |
-| **Common** | `@rm_tool` & `get_client` (`common.py`) | Standardized execution wrapper, client caching, and fail-closed secret redaction. |
+| **Common** | `@rm_tool` & `get_client` (`common.py`) | Standardized execution wrapper, client caching, and fail-closed secret redaction. A failed call returns the redacted `{"error": ...}` JSON with `isError: true`. |
 | **Middleware** | `ParentAuditMiddleware`, `ReadOnlyGateMiddleware`, Guards (`middleware.py`) | Hierarchical invocation logging, read-only gating, and domain argument validation. |
 | **Domain Tools** | `time.py`, `projects.py`, `admin.py` (`tools/`) | Autonomous domain sub-servers with dedicated tools, prompts, and resources. |
 | **Profiles** | `PROFILES`, `FULL_ONLY_TOOLS`, `ReadOnlyToolFilter` (`profiles.py`) | Domain-mount and job allowlist profiles; annotation-driven read-only filtering. |
