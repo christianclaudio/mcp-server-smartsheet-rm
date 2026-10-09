@@ -107,7 +107,7 @@ jobs:
           body_path: release-notes.md
 
   docker:
-    name: Publish Docker image and MCP Registry entry
+    name: Publish Docker image
     # Ship nothing (GHCR `:latest` included) unless the publish job, which builds
     # the release notes and uploads to PyPI, succeeded.
     needs: [build, publish]
@@ -115,7 +115,6 @@ jobs:
     permissions:
       contents: read     # checkout
       packages: write    # push the image to GHCR
-      id-token: write    # MCP Registry login (github-oidc)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -143,9 +142,22 @@ jobs:
           build-args: |
             UV_DYNAMIC_VERSIONING_BYPASS=${{ steps.version.outputs.version }}
 
-      # Publish to the official MCP Registry last, after PyPI, the GitHub Release
-      # and GHCR, so a registry failure cannot skip any of them. A re-run of this
-      # job re-pushes the same image tags and retries only the registry publish.
+  registry:
+    name: Publish MCP Registry entry
+    # Publish to the official MCP Registry last, after PyPI, the GitHub Release
+    # and GHCR, so a registry failure cannot skip any of them. Running in its own
+    # job keeps the OIDC token away from the GHCR push, and a re-run of this job
+    # retries only the registry publish.
+    needs: [docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read     # checkout (server.json)
+      id-token: write    # MCP Registry login (github-oidc)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Install and Verify mcp-publisher
         run: |
           OS=$(uname -s | tr '[:upper:]' '[:lower:]')
