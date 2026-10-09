@@ -345,7 +345,9 @@ async def test_decorator_error_handling() -> None:
     data1 = json.loads(str(exc1.value))
     assert data1["error"]["status_code"] == 404
     assert "Resource not found" in data1["error"]["detail"]
+    assert "message" in data1["error"]
     assert exc1.value.__cause__ is None
+    assert exc1.value.__context__ is None
     assert exc1.value.__suppress_context__
 
     with pytest.raises(ToolError) as exc2:
@@ -353,6 +355,7 @@ async def test_decorator_error_handling() -> None:
     data2 = json.loads(str(exc2.value))
     assert data2["error"]["type"] == "internal"
     assert exc2.value.__cause__ is None
+    assert exc2.value.__context__ is None
 
 
 @pytest.mark.asyncio
@@ -620,7 +623,7 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     data1 = json.loads(res1)
     assert data1["status"] == "success"
     assert data1["total_hours"] == 40.0
-    assert data1["created_count"] == 5
+    assert data1["filled_count"] == 5
 
     # Auto-resolve assignment project
     res1_auto = await srv.rm_fill_weekly_timesheet(1, "2026-08-10", daily_hours=8.0)
@@ -651,7 +654,7 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     res1_partial = await srv.rm_fill_weekly_timesheet(1, "2026-08-10", project_id=100)
     data1_partial = json.loads(res1_partial)
     assert data1_partial["status"] == "partial_success"
-    assert data1_partial["created_count"] == 4
+    assert data1_partial["filled_count"] == 4
     assert data1_partial["failed_count"] == 1
     setup_mock_client.create_time_entry.side_effect = None
 
@@ -661,7 +664,7 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     )
     data1_weekend = json.loads(res1_weekend)
     assert data1_weekend["status"] == "success"
-    assert data1_weekend["days_filled"] == 7
+    assert data1_weekend["filled_count"] == 7
     assert data1_weekend["total_hours"] == 48.0
 
     # 2. rm_confirm_suggested_hours
@@ -766,6 +769,31 @@ async def test_composite_workflow_recipes(setup_mock_client) -> None:
     }
     res4_fallback = await srv.rm_clone_project_schedule(100, "Cloned Project 2")
     assert json.loads(res4_fallback)["status"] == "success"
+
+    # Phase failure leaves the new project in place (no delete)
+    setup_mock_client.create_project.return_value = {"id": 777, "name": "Partial Clone"}
+    setup_mock_client.create_project_phase.side_effect = SmartsheetRMAPIError(
+        500, "/projects/777/phases", "POST", "phase boom"
+    )
+    with pytest.raises(ToolError) as clone_exc:
+        await srv.rm_clone_project_schedule(100, "Cloned Project Partial", new_start_date="2026-09-01")
+    clone_err = json.loads(str(clone_exc.value))["error"]
+    assert clone_err["type"] == "clone_phase_failed"
+    assert clone_err["project_id"] == 777
+    assert "left in place" in clone_err["message"]
+    setup_mock_client.delete_project.assert_not_called()
+    setup_mock_client.create_project_phase.side_effect = None
+    setup_mock_client.create_project.return_value = {"id": 778, "name": "Partial Clone 2"}
+    setup_mock_client.create_project_phase.side_effect = RuntimeError("transport broken")
+    with pytest.raises(ToolError) as clone_exc2:
+        await srv.rm_clone_project_schedule(100, "Cloned Project Transport", new_start_date="2026-09-01")
+    clone_err2 = json.loads(str(clone_exc2.value))["error"]
+    assert clone_err2["type"] == "clone_phase_failed"
+    assert clone_err2["project_id"] == 778
+    assert clone_err2["error"]["type"] == "internal"
+    assert "transport broken" in clone_err2["error"]["message"]
+    setup_mock_client.create_project_phase.side_effect = None
+    setup_mock_client.create_project_phase.return_value = {"id": 11, "name": "Phase 2"}
 
     # 5. Bulk destructive operations
     assert (

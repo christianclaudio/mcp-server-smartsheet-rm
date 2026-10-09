@@ -204,31 +204,37 @@ def rm_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
 
     A failed call raises FastMCP ``ToolError`` carrying the redacted ``{"error": ...}`` JSON,
     so the client receives a ``tools/call`` result with ``isError: true``. It is raised
-    ``from None`` so the unredacted original exception does not ride along as the cause.
+    outside the ``except`` block (``from None``) so the unredacted original exception
+    does not ride along as ``__cause__`` or ``__context__``.
     """
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> str:
         start_t = time.perf_counter()
+        pending: ToolError | None = None
         try:
             result: str = await fn(*args, **kwargs)
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.info("Tool executed successfully", extra={"tool_name": fn.__name__, "duration_ms": duration_ms})
             return result
-        except ToolError:
-            # Already a redacted tool execution error (``_invalid_request``); keep its payload.
-            raise
+        except ToolError as e:
+            # Already a redacted tool execution error; copy the payload onto a fresh
+            # ToolError so a prior ``__context__`` from an inner ``except`` does not leak.
+            pending = ToolError(str(e))
         except SmartsheetRMAPIError as e:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error("Tool failed with API error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms})
             err_doc = json.dumps({"error": e.to_dict()})
-            raise ToolError(_redact_secrets(err_doc)) from None
+            pending = ToolError(_redact_secrets(err_doc))
         except Exception as e:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error(
                 "Tool failed with internal error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms}
             )
             msg = _redact_secrets(str(e))
-            raise ToolError(json.dumps({"error": {"type": "internal", "message": msg}})) from None
+            pending = ToolError(json.dumps({"error": {"type": "internal", "message": msg}}))
+        # Raise outside the ``except`` blocks so ``__context__`` is not the original exception.
+        assert pending is not None
+        raise pending from None
 
     return wrapper

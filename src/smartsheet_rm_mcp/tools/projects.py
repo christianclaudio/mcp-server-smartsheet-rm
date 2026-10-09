@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, timedelta
 from typing import Any
 
@@ -18,8 +19,10 @@ from smartsheet_rm_mcp.common import (
     get_client,
     rm_tool,
 )
-from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
+from smartsheet_rm_mcp.errors import SmartsheetRMAPIError, redact_secrets
 from smartsheet_rm_mcp.middleware import ProjectsDomainGuardMiddleware
+
+logger = logging.getLogger("smartsheet_rm_mcp")
 
 
 @rm_tool
@@ -401,10 +404,14 @@ async def rm_clone_project_schedule(
         source_start_date = source_project.get("starts_at")
         if not source_start_date:
             _invalid_request("Source project has no starts_at date to calculate schedule offset")
+        date_error: str | None = None
         try:
             date_offset = date.fromisoformat(new_start_date) - date.fromisoformat(source_start_date)
         except ValueError as exc:
-            _invalid_request(f"Invalid date format: {exc}")
+            date_error = f"Invalid date format: {exc}"
+        if date_error is not None:
+            _invalid_request(date_error)
+        assert date_offset is not None
 
         new_proj_payload["starts_at"] = new_start_date
         if source_project.get("ends_at"):
@@ -441,7 +448,27 @@ async def rm_clone_project_schedule(
                     "budget": phase.get("budget"),
                     "description": phase.get("description"),
                 }
-                created_p = await client.create_project_phase(new_proj_id, phase_payload)
+                try:
+                    created_p = await client.create_project_phase(new_proj_id, phase_payload)
+                except SmartsheetRMAPIError as err:
+                    # Leave the new project (and any phases already created) in place.
+                    _tool_failure(
+                        "clone_phase_failed",
+                        (f"Failed to clone a phase into project {new_proj_id}; the new project was left in place."),
+                        project_id=new_proj_id,
+                        phase_name=phase.get("name", "Phase"),
+                        error=err.to_dict(),
+                    )
+                except Exception as exc:
+                    msg = redact_secrets(str(exc))
+                    logger.error(msg)
+                    _tool_failure(
+                        "clone_phase_failed",
+                        (f"Failed to clone a phase into project {new_proj_id}; the new project was left in place."),
+                        project_id=new_proj_id,
+                        phase_name=phase.get("name", "Phase"),
+                        error={"type": "internal", "message": msg},
+                    )
                 created_phases.append(created_p)
 
     return json.dumps(
@@ -474,6 +501,10 @@ async def rm_bulk_delete_assignments(
             deleted.append({"id": aid, "status": "deleted", "result": res})
         except SmartsheetRMAPIError as err:
             errors.append({"id": aid, "status": "failed", "error": err.to_dict()})
+        except Exception as exc:
+            msg = redact_secrets(str(exc))
+            logger.error(msg)
+            errors.append({"id": aid, "status": "failed", "error": {"type": "internal", "message": msg}})
 
     if errors and not deleted:
         _tool_failure(

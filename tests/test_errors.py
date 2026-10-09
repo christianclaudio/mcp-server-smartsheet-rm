@@ -65,6 +65,8 @@ def test_smartsheet_rm_api_error_to_dict() -> None:
     assert data["request_id"] == "req-abc-123"
     assert data["detail"]["token"] == "[redacted]"
     assert data["detail"]["error"] == "Not Found"
+    assert data["message"] == "Smartsheet RM API GET /projects/999 returned 404"
+    assert "message" in data
 
 
 def test_redact_secrets_api_key_and_password() -> None:

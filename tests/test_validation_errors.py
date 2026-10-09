@@ -82,12 +82,10 @@ async def test_confirm_prompt_is_a_normal_result(api: AsyncMock) -> None:
 def test_invalid_request_raises_redacted_tool_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reverting the helper to return a string, or dropping its redaction, fails here."""
     monkeypatch.setenv("SMARTSHEET_RM_API_TOKEN", _SECRET)
-    try:
-        raise ValueError(_SECRET)
-    except ValueError:
-        with pytest.raises(ToolError) as exc_info:
-            _invalid_request(f"bad value {_SECRET}")
+    with pytest.raises(ToolError) as exc_info:
+        _invalid_request(f"bad value {_SECRET}")
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
     assert exc_info.value.__suppress_context__ is True
     assert json.loads(str(exc_info.value)) == {
         "error": {"type": "invalid_request", "message": "bad value ***REDACTED***"}

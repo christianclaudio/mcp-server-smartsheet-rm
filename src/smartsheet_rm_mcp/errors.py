@@ -90,6 +90,7 @@ class SmartsheetRMAPIError(Exception):
             "path": self.path,
             "detail": _sanitize(self.detail),
             "request_id": self.request_id,
+            "message": _sanitize(str(self)),
         }
 
 
