@@ -74,10 +74,54 @@ def test_smartsheet_rm_api_error_to_dict() -> None:
 def test_redact_secrets_api_key_and_password() -> None:
     from smartsheet_rm_mcp.errors import redact_secrets
 
-    assert redact_secrets("api_key=secret-key-123") == "***REDACTED***"
-    assert redact_secrets('{"api_key": "secret-key-123"}') == "{***REDACTED***}"
-    assert redact_secrets("password=mypassword123") == "***REDACTED***"
-    assert redact_secrets('{"password": "mypassword123"}') == "{***REDACTED***}"
+    assert redact_secrets("api_key=secret-key-123") == "api_key=***REDACTED***"
+    assert redact_secrets('{"api_key": "secret-key-123"}') == '{"api_key": "***REDACTED***"}'
+    assert redact_secrets("password=mypassword123") == "password=***REDACTED***"
+    assert redact_secrets('{"password": "mypassword123"}') == '{"password": "***REDACTED***"}'
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param('password: "Fake!pw#9"', 'password: "***REDACTED***"', id="password_colon_quoted"),
+        pytest.param("{'password': 'fakepw99'}", "{'password': '***REDACTED***'}", id="password_dict"),
+        pytest.param("api_key FAKEKEY12345", "api_key ***REDACTED***", id="api_key_space"),
+        pytest.param("api-key: FAKEKEY12345", "api-key: ***REDACTED***", id="api_key_header"),
+        pytest.param("client_secret FAKESEC12345", "client_secret ***REDACTED***", id="client_secret_space"),
+        pytest.param("client_secret=FAKESEC12345", "client_secret=***REDACTED***", id="client_secret_equals"),
+        pytest.param(
+            '{"client_secret": "FAKESEC12345"}', '{"client_secret": "***REDACTED***"}', id="client_secret_json"
+        ),
+        pytest.param("password=abc", "password=***REDACTED***", id="short_password"),
+        pytest.param('{"password": "x"}', '{"password": "***REDACTED***"}', id="short_password_json"),
+        pytest.param('{"password": "fakepw99"}', '{"password": "***REDACTED***"}', id="password_json"),
+        pytest.param('{"api_key": "FAKEKEY12345"}', '{"api_key": "***REDACTED***"}', id="api_key_json"),
+        pytest.param('{"api_token": "SECRET9"}', '{"api_token": "***REDACTED***"}', id="api_token_json"),
+        pytest.param("/x?token=SECRET#frag", "/x?token=***REDACTED***#frag", id="query_token_fragment"),
+    ],
+)
+def test_redact_secrets_house_credential_forms_keep_key(raw: str, expected: str) -> None:
+    """Password, api_key and client_secret values are redacted; the key and its quotes stay."""
+    from smartsheet_rm_mcp.errors import redact_secrets
+
+    assert redact_secrets(raw) == expected
+
+
+def test_redact_secrets_bearer_b64token_tail_does_not_survive() -> None:
+    """The repo's broad bearer pattern runs first and removes the whole b64token, tail included."""
+    from smartsheet_rm_mcp.errors import redact_secrets
+
+    out = redact_secrets("Authorization: Bearer abc.def~ghi/jk+l== next")
+    assert out == "Authorization: ***REDACTED*** next"
+    for fragment in ("abc.def", "~ghi", "/jk", "+l=="):
+        assert fragment not in out
+    assert redact_secrets("Bearer abc.def~ghi/jk+l==") == "***REDACTED***"
+
+
+def test_redact_secrets_env_token_assignment_is_redacted() -> None:
+    from smartsheet_rm_mcp.errors import redact_secrets
+
+    assert redact_secrets("SMARTSHEET_RM_API_TOKEN=abc123") == "***REDACTED***"
 
 
 def test_redact_secrets_token_forms() -> None:
@@ -85,8 +129,7 @@ def test_redact_secrets_token_forms() -> None:
     from smartsheet_rm_mcp.errors import redact_secrets
 
     cases = {
-        # The older api_token pattern replaces the whole pair, as it did on main.
-        "api_token=SECRET1": "***REDACTED***",
+        "api_token=SECRET1": "api_token=***REDACTED***",
         "api-token: SECRET1": "api-token: ***REDACTED***",
         "access_token: SECRET2": "access_token: ***REDACTED***",
         "access_token=SECRET2": "access_token=***REDACTED***",
@@ -208,5 +251,7 @@ def test_redact_secrets_leaves_token_words_alone() -> None:
         "page_token: abc",
         "X-Auth-Token-Expires: 5",
         '{"token": null}',
+        "page_token=abc123",
+        "max_tokens=1024",
     ):
         assert redact_secrets(text) == text, text

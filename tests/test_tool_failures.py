@@ -498,11 +498,11 @@ async def test_batch_partial_api_error_item_is_redacted(
     assert "returned 401" in item_error["message"]
     assert item_error["detail"]["errors"] == [
         "invalid ***REDACTED***",
-        "retry with ***REDACTED***",
+        "retry with api_token=***REDACTED***",
         "refresh with access_token=***REDACTED***",
         "callback /cb?token=***REDACTED***",
     ]
-    assert item_error["path"].endswith("?token=***REDACTED***&***REDACTED***&access_token=***REDACTED***")
+    assert item_error["path"].endswith("?token=***REDACTED***&api_token=***REDACTED***&access_token=***REDACTED***")
 
 
 def _setup_leaky_all_failed(api: AsyncMock, tool: str) -> None:

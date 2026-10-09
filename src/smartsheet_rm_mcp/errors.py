@@ -20,19 +20,22 @@ _REDACT_KEYS = {
     "authorization",
 }
 
+# Repo extras that cover more than the house set; the whole match is replaced.
 _SECRET_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)bearer\s+[a-zA-Z0-9\-\._~\+\/]+=*"),
     re.compile(r"(?i)auth:\s*[a-zA-Z0-9\-\._~\+\/]+"),
-    re.compile(r"(?i)(api_token=|\"api_token\":\s*\")[a-zA-Z0-9\-\._~\+\/]+=*\"?"),
     re.compile(r"(?i)(SMARTSHEET_RM_API_TOKEN=)[a-zA-Z0-9\-\._~\+\/]+"),
-    re.compile(r"(?i)(api_key=|\"api_key\":\s*\"?)[a-zA-Z0-9\-\._~\+\/]+=*\"?"),
-    re.compile(r"(?i)(password=|\"password\":\s*\"?)[^\s,}\"]+\"?"),
 ]
 
-# Token forms, copied verbatim from the house standard and applied in this order after the
+# The house standard's patterns 1-9, copied verbatim and applied in this order after the
 # patterns above. Group 1 (the key, header or parameter name) is kept and only the value is
 # replaced, so JSON stays valid.
 _KEYED_SECRET_PATTERNS: list[re.Pattern[str]] = [
+    # Bearer value: base64url and base64 characters (``~``, ``+``, ``/``) plus ``=`` padding.
+    re.compile(r"(?i)(bearer\s+)[a-z0-9_\-\.~+/]{8,}=*", re.IGNORECASE),
+    re.compile(r"(?i)(api[_-]?key[\"'\s:=]+)[a-z0-9_\-\.]{8,}", re.IGNORECASE),
+    re.compile(r"(?i)(client[_-]?secret[\"'\s:=]+)[a-z0-9_\-\.]{8,}", re.IGNORECASE),
+    re.compile(r"(?i)(password[\"'\s:=]+)[^\s\"',]{4,}", re.IGNORECASE),
     # api/access/refresh/auth/id/session tokens as key=value, key: value, an
     # ``X-Auth-Token:`` header and JSON ("key": "value", also backslash-escaped inside an
     # already-serialized JSON string).
@@ -63,6 +66,9 @@ _KEYED_SECRET_PATTERNS: list[re.Pattern[str]] = [
         r"(?i)((?<![A-Za-z0-9_])token\s*[:=]\s*(?:\\?[\"'])?)[^\s\"'\\&#]+",
         re.IGNORECASE,
     ),
+    # Repo extra after the house set: short passwords (1-3 characters, below house pattern 4's
+    # minimum) as ``password=`` or JSON. Already-redacted text matches it unchanged.
+    re.compile(r"(?i)(password=|\"password\":\s*\"?)[^\s,}\"]+"),
 ]
 
 
