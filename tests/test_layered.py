@@ -159,26 +159,30 @@ async def test_full_code_mode_attaches_when_available(caplog: pytest.LogCaptureF
 
 
 @pytest.mark.asyncio
-async def test_code_mode_skips_attach_on_import_error(
+async def test_code_mode_skips_attach_without_sandbox(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """When CodeMode cannot be imported, create_server logs and keeps the flat catalog."""
-    import builtins
+    """Without pydantic-monty (no fastmcp[code-mode]), Code Mode is skipped with a warning.
 
-    real_import = builtins.__import__
+    The CodeMode import itself succeeds on a plain install; only the sandbox is missing.
+    """
+    import importlib.util
 
-    def fake_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name == "fastmcp.experimental.transforms.code_mode":
-            raise ImportError("simulated missing CodeMode")
-        return real_import(name, *args, **kwargs)
+    real_find_spec = importlib.util.find_spec
 
-    monkeypatch.setattr(builtins, "__import__", fake_import)
+    def fake_find_spec(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "pydantic_monty":
+            return None
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
     with caplog.at_level(logging.WARNING):
         app = create_server(profile="full", enable_code_mode=True, enable_tool_search=False)
     names = {t.name for t in await app.list_tools()}
     assert "execute" not in names
+    assert "search" not in names
     assert "time_list_time_entries" in names
-    assert any("Code Mode requested but" in r.message for r in caplog.records)
+    assert any("pydantic-monty" in r.message and "fastmcp[code-mode]" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio

@@ -299,9 +299,10 @@ async def test_bulk_tool_runs_with_gate_and_still_needs_confirm(monkeypatch: pyt
     app = create_server(profile="full")
     res = await app.call_tool("time_bulk_delete_time_entries", {"entry_ids": [1], "confirm": False})
     assert not res.is_error
-    message = json.loads(res.content[0].text)["error"]["message"]  # type: ignore[union-attr]
-    assert "time_bulk_delete_time_entries(count=1)" in message
-    assert "requires explicit confirmation" in message
+    payload = json.loads(res.content[0].text)  # type: ignore[union-attr]
+    assert payload["status"] == "confirmation_required"
+    assert "time_bulk_delete_time_entries(count=1)" in payload["message"]
+    assert "Re-call this tool with confirm=true" in payload["message"]
 
 
 # ---------------------------------------------------------------------------

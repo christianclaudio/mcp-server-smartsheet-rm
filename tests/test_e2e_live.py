@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 import pytest
+from fastmcp.exceptions import ToolError
 
 import smartsheet_rm_mcp.server as server
 from smartsheet_rm_mcp.client import SmartsheetRMClient
@@ -197,6 +198,14 @@ async def dispatch_tool_call(
         if tool_name in BULK_GATED_TOOLS and "Bulk destructive operations disabled" in str(exc):
             # Listed in full but refused at call time without SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1.
             return ("PASS", False, None)
+        if isinstance(exc, ToolError) and tool_name in SAFE_PROBE_EXPECTED_NOT_FOUND_TOOLS:
+            # A failed call raises ToolError (isError: true) carrying the {"error": ...} JSON.
+            try:
+                err_obj = json.loads(str(exc)).get("error")
+            except ValueError:
+                err_obj = None
+            if isinstance(err_obj, dict) and err_obj.get("status_code") == 404:
+                return ("PASS", False, None)
         return ("FAIL", True, _redact_secrets(str(exc)))
 
 
