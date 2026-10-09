@@ -1,0 +1,63 @@
+"""rm_tool error hygiene: no exception chain, and the decorator's own redaction.
+
+The decorator raises ToolError ``from None`` so the unredacted original exception never
+rides along as ``__cause__`` or ``__context__`` (tracebacks, OpenTelemetry exception
+events). Its own ``_redact_secrets`` call must scrub a secret from an unexpected
+exception message before it reaches the client or the logs.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+
+import pytest
+from fastmcp.exceptions import ToolError
+
+from smartsheet_rm_mcp.common import rm_tool
+from smartsheet_rm_mcp.errors import SmartsheetRMAPIError
+
+_SECRET = "rm-api-token-for-hygiene-test-0123456789"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        SmartsheetRMAPIError(500, "/users", "GET", f"upstream echoed {_SECRET}"),
+        RuntimeError(f"unexpected failure {_SECRET}"),
+    ],
+    ids=["api_error", "internal_error"],
+)
+async def test_decorator_suppresses_the_original_exception(exc: Exception) -> None:
+    @rm_tool
+    async def handler() -> str:
+        raise exc
+
+    with pytest.raises(ToolError) as exc_info:
+        await handler()
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__suppress_context__ is True
+
+
+@pytest.mark.asyncio
+async def test_decorator_redacts_an_unexpected_exception(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A non-client exception carrying a secret is redacted in the ToolError and the logs."""
+    monkeypatch.setenv("SMARTSHEET_RM_API_TOKEN", _SECRET)
+    caplog.set_level(logging.DEBUG)
+
+    @rm_tool
+    async def handler() -> str:
+        raise RuntimeError(f"connect failed for {_SECRET} with Bearer abc.def.ghi")
+
+    with pytest.raises(ToolError) as exc_info:
+        await handler()
+    text = str(exc_info.value)
+    assert json.loads(text) == {
+        "error": {"type": "internal", "message": "connect failed for ***REDACTED*** with ***REDACTED***"}
+    }
+    assert _SECRET not in caplog.text
+    assert "abc.def.ghi" not in caplog.text
+    assert "Tool failed with internal error" in caplog.text
