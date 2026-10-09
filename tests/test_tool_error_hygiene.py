@@ -84,3 +84,29 @@ async def test_decorator_context_does_not_hold_bearer_token(
     assert exc_info.value.__context__ is None
     assert token not in str(exc_info.value)
     assert token not in repr(exc_info.value.__context__)
+
+
+@pytest.mark.asyncio
+async def test_decorator_rebuilds_a_tool_error_raised_inside_an_except() -> None:
+    """A ToolError raised inside a tool's own ``except`` reaches the caller without that chain.
+
+    rm_tool copies the payload onto a fresh ToolError, so a bare re-raise of the original
+    (which carries the inner exception as ``__context__``) fails this test.
+    """
+    token = "sk-live-inner-context-token"
+    payload = json.dumps({"error": {"type": "clone_phase_failed", "message": "redacted"}})
+
+    @rm_tool
+    async def handler() -> str:
+        try:
+            raise RuntimeError(f"inner Authorization: Bearer {token}")
+        except RuntimeError:
+            raise ToolError(payload)  # noqa: B904 - the chain is what this test checks
+
+    with pytest.raises(ToolError) as exc_info:
+        await handler()
+    assert str(exc_info.value) == payload
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    assert exc_info.value.__suppress_context__ is True
+    assert token not in repr(exc_info.value.__context__)

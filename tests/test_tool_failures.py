@@ -416,3 +416,305 @@ async def test_confirm_suggested_network_error_continues(api: AsyncMock) -> None
     assert [r["id"] for r in data["results"]] == [10, 12]
     assert data["errors"][0]["id"] == 11
     assert data["errors"][0]["error"]["type"] == "internal"
+
+
+# --- Redaction, cancellation and logging on every batch tool and the clone recipe ---
+
+_BEARER = "sk-live-abc123"
+_API_TOKEN = "apitok-raw-9876543210"
+_ACCESS_TOKEN = "acctok-raw-5555"
+_QUERY_TOKEN = "qtok-raw-4444"
+_RAW_VALUES = (_BEARER, _API_TOKEN, _ACCESS_TOKEN, _QUERY_TOKEN)
+
+
+def _leaky_api_error(path: str, method: str) -> SmartsheetRMAPIError:
+    """An API error whose path, detail and message all carry raw credentials."""
+    return SmartsheetRMAPIError(
+        401,
+        f"{path}?token={_QUERY_TOKEN}&api_token={_API_TOKEN}&access_token={_ACCESS_TOKEN}",
+        method,
+        {
+            "errors": [
+                f"invalid Bearer {_BEARER}",
+                f"retry with api_token={_API_TOKEN}",
+                f"refresh with access_token={_ACCESS_TOKEN}",
+                f"callback /cb?token={_QUERY_TOKEN}",
+            ]
+        },
+    )
+
+
+def _assert_no_raw_tokens(text: str) -> None:
+    for raw in _RAW_VALUES:
+        assert raw not in text
+
+
+def _setup_leaky_partial(api: AsyncMock, tool: str) -> None:
+    """One item succeeds and one fails with a credential-bearing API error."""
+    if tool == "time_fill_weekly_timesheet":
+        api.create_time_entry.side_effect = [
+            {"id": 1},
+            _leaky_api_error("/time_entries", "POST"),
+            {"id": 3},
+            {"id": 4},
+            {"id": 5},
+        ]
+    elif tool == "time_confirm_suggested_hours":
+        api.list_user_time_entries.return_value = {
+            "data": [
+                {"id": 10, "is_suggestion": True, "hours": 8.0, "date": "2026-08-10"},
+                {"id": 11, "is_suggestion": True, "hours": 4.0, "date": "2026-08-11"},
+            ]
+        }
+        api.update_time_entry.side_effect = [{"id": 10}, _leaky_api_error("/time_entries/11", "PUT")]
+    elif tool == "time_bulk_delete_time_entries":
+        api.delete_time_entry.side_effect = [{}, _leaky_api_error("/time_entries/2", "DELETE")]
+    else:
+        api.delete_assignment.side_effect = [{}, _leaky_api_error("/assignments/2", "DELETE")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tool", "args", "message", "count", "verb", "key"), _CASES, ids=[c[0] for c in _CASES])
+async def test_batch_partial_api_error_item_is_redacted(
+    api: AsyncMock, tool: str, args: dict[str, Any], message: str, count: int, verb: str, key: str
+) -> None:
+    """A partial result is not redacted as a whole, so each API item error must be."""
+    _setup_leaky_partial(api, tool)
+    res = await _call(tool, args)
+    assert res.is_error is False
+    text = res.content[0].text  # type: ignore[union-attr]
+    _assert_no_raw_tokens(text)
+    data = json.loads(text)
+    assert data["status"] == "partial_success"
+    assert data["failed_count"] == 1
+    assert data[verb] >= 1
+    item_error = data["errors"][0]["error"]
+    assert item_error["type"] == "smartsheet_rm_api_error"
+    assert item_error["status_code"] == 401
+    for field in ("message", "path", "detail"):
+        rendered = json.dumps(item_error[field])
+        _assert_no_raw_tokens(rendered)
+        assert "***REDACTED***" in rendered
+    assert "returned 401" in item_error["message"]
+    assert item_error["detail"]["errors"] == [
+        "invalid ***REDACTED***",
+        "retry with ***REDACTED***",
+        "refresh with access_token=***REDACTED***",
+        "callback /cb?token=***REDACTED***",
+    ]
+    assert item_error["path"].endswith("?token=***REDACTED***&***REDACTED***&access_token=***REDACTED***")
+
+
+def _setup_leaky_all_failed(api: AsyncMock, tool: str) -> None:
+    """Every item fails with a credential-bearing API error."""
+    if tool == "time_fill_weekly_timesheet":
+        api.create_time_entry.side_effect = _leaky_api_error("/time_entries", "POST")
+    elif tool == "time_confirm_suggested_hours":
+        api.list_user_time_entries.return_value = {
+            "data": [
+                {"id": 10, "is_suggestion": True, "hours": 8.0, "date": "2026-08-10"},
+                {"id": 11, "is_suggestion": True, "hours": 4.0, "date": "2026-08-11"},
+            ]
+        }
+        api.update_time_entry.side_effect = _leaky_api_error("/time_entries/10", "PUT")
+    elif tool == "time_bulk_delete_time_entries":
+        api.delete_time_entry.side_effect = _leaky_api_error("/time_entries/1", "DELETE")
+    else:
+        api.delete_assignment.side_effect = _leaky_api_error("/assignments/1", "DELETE")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tool", "args", "message", "count", "verb", "key"), _CASES, ids=[c[0] for c in _CASES])
+async def test_batch_all_failed_api_errors_are_redacted(
+    api: AsyncMock, tool: str, args: dict[str, Any], message: str, count: int, verb: str, key: str
+) -> None:
+    """The all-failed ToolError carries no api_token, access_token, ?token= or Bearer value."""
+    _setup_leaky_all_failed(api, tool)
+    res = await _call(tool, args)
+    assert res.is_error is True
+    text = res.content[0].text  # type: ignore[union-attr]
+    _assert_no_raw_tokens(text)
+    err = json.loads(text)["error"]
+    assert err["type"] == "batch_failed"
+    assert err["failed_count"] == count
+    for item in err["errors"]:
+        rendered = json.dumps(item["error"])
+        _assert_no_raw_tokens(rendered)
+        assert "***REDACTED***" in item["error"]["path"]
+        assert "***REDACTED***" in json.dumps(item["error"]["detail"])
+
+
+def test_api_error_to_dict_redacts_string_detail() -> None:
+    err = SmartsheetRMAPIError(401, "/x", "GET", f"invalid Bearer {_BEARER}").to_dict()
+    assert err["detail"] == "invalid ***REDACTED***"
+    assert err["path"] == "/x"
+    assert err["message"] == "Smartsheet RM API GET /x returned 401"
+
+
+@pytest.mark.asyncio
+async def test_fill_weekly_cancelled_error_propagates(api: AsyncMock) -> None:
+    """asyncio.CancelledError must escape fill_weekly's loop, not become a failed item."""
+    calls: list[int] = []
+
+    async def side_effect(payload: dict[str, Any], *a: Any, **k: Any) -> dict[str, Any]:
+        calls.append(1)
+        if len(calls) == 2:
+            raise asyncio.CancelledError()
+        return {"id": len(calls)}
+
+    api.create_time_entry.side_effect = side_effect
+    with pytest.raises(asyncio.CancelledError):
+        await server.rm_fill_weekly_timesheet(1, "2026-08-10", project_id=100)
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_confirm_suggested_cancelled_error_propagates(api: AsyncMock) -> None:
+    """asyncio.CancelledError must escape confirm's loop, not become a failed item."""
+    api.list_user_time_entries.return_value = {
+        "data": [
+            {"id": 10, "is_suggestion": True, "hours": 8.0, "date": "2026-08-10"},
+            {"id": 11, "is_suggestion": True, "hours": 4.0, "date": "2026-08-11"},
+            {"id": 12, "is_suggestion": True, "hours": 4.0, "date": "2026-08-12"},
+        ]
+    }
+    calls: list[Any] = []
+
+    async def side_effect(entry_id: Any, *a: Any, **k: Any) -> dict[str, Any]:
+        calls.append(entry_id)
+        if entry_id == 11:
+            raise asyncio.CancelledError()
+        return {"id": entry_id}
+
+    api.update_time_entry.side_effect = side_effect
+    with pytest.raises(asyncio.CancelledError):
+        await server.rm_confirm_suggested_hours(1, "2026-08-10", "2026-08-16")
+    assert calls == [10, 11]
+
+
+def _assert_item_log_is_clean(caplog: pytest.LogCaptureFixture) -> None:
+    """The item failure is logged once, redacted, with no exc_info and no traceback."""
+    _assert_no_raw_tokens(caplog.text)
+    assert "Traceback" not in caplog.text
+    item_records = [r for r in caplog.records if "***REDACTED***" in r.getMessage()]
+    assert item_records
+    for record in item_records:
+        assert record.exc_info is None
+        assert record.exc_text is None
+
+
+@pytest.mark.asyncio
+async def test_fill_weekly_non_api_error_is_redacted_without_traceback(
+    api: AsyncMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    calls: list[int] = []
+
+    async def side_effect(payload: dict[str, Any], *a: Any, **k: Any) -> dict[str, Any]:
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError(f"upstream rejected Authorization: Bearer {_BEARER}")
+        return {"id": len(calls)}
+
+    api.create_time_entry.side_effect = side_effect
+    caplog.set_level(logging.DEBUG)
+    res = await _call(
+        "time_fill_weekly_timesheet",
+        {"user_id": 1, "start_date": "2026-08-10", "project_id": 100},
+    )
+    assert res.is_error is False
+    text = res.content[0].text  # type: ignore[union-attr]
+    _assert_no_raw_tokens(text)
+    data = json.loads(text)
+    assert data["filled_count"] == 4
+    err = data["errors"][0]["error"]
+    assert err["type"] == "internal"
+    assert err["message"] == "upstream rejected Authorization: ***REDACTED***"
+    _assert_item_log_is_clean(caplog)
+
+
+@pytest.mark.asyncio
+async def test_confirm_suggested_non_api_error_is_redacted_without_traceback(
+    api: AsyncMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    api.list_user_time_entries.return_value = {
+        "data": [
+            {"id": 10, "is_suggestion": True, "hours": 8.0, "date": "2026-08-10"},
+            {"id": 11, "is_suggestion": True, "hours": 4.0, "date": "2026-08-11"},
+        ]
+    }
+
+    async def side_effect(entry_id: Any, *a: Any, **k: Any) -> dict[str, Any]:
+        if entry_id == 11:
+            raise RuntimeError(f"upstream rejected Authorization: Bearer {_BEARER}")
+        return {"id": entry_id}
+
+    api.update_time_entry.side_effect = side_effect
+    caplog.set_level(logging.DEBUG)
+    res = await _call(
+        "time_confirm_suggested_hours",
+        {"user_id": 1, "from_date": "2026-08-10", "to_date": "2026-08-16"},
+    )
+    assert res.is_error is False
+    text = res.content[0].text  # type: ignore[union-attr]
+    _assert_no_raw_tokens(text)
+    data = json.loads(text)
+    assert data["confirmed_count"] == 1
+    err = data["errors"][0]["error"]
+    assert err["type"] == "internal"
+    assert err["message"] == "upstream rejected Authorization: ***REDACTED***"
+    _assert_item_log_is_clean(caplog)
+
+
+def _setup_clone(api: AsyncMock, phase_error: Exception) -> None:
+    api.get_project.return_value = {"id": 100, "name": "Template", "starts_at": "2026-08-01"}
+    api.list_project_phases.return_value = {
+        "data": [{"name": "Phase 1", "starts_at": "2026-08-01", "ends_at": "2026-08-10"}]
+    }
+    api.create_project.return_value = {"id": 777, "name": "Partial Clone"}
+    api.create_project_phase.side_effect = phase_error
+
+
+_CLONE_ERRORS = [
+    _leaky_api_error("/projects/777/phases", "POST"),
+    RuntimeError(f"transport broken Authorization: Bearer {_BEARER}"),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase_error", _CLONE_ERRORS, ids=["api_error", "internal_error"])
+async def test_clone_phase_failure_raises_after_except_and_names_project(
+    api: AsyncMock, caplog: pytest.LogCaptureFixture, phase_error: Exception
+) -> None:
+    """The tool's own ToolError (before rm_tool) has no chain, names the project, and is redacted."""
+    _setup_clone(api, phase_error)
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(ToolError) as exc_info:
+        await server.rm_clone_project_schedule.__wrapped__(100, "Clone", new_start_date="2026-09-01")
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    text = str(exc_info.value)
+    _assert_no_raw_tokens(text)
+    err = json.loads(text)["error"]
+    assert err["type"] == "clone_phase_failed"
+    assert err["project_id"] == 777
+    assert str(777) in err["message"]
+    assert "left in place" in err["message"]
+    assert "***REDACTED***" in json.dumps(err["error"])
+    api.delete_project.assert_not_called()
+    _assert_no_raw_tokens(caplog.text)
+    assert "Traceback" not in caplog.text
+    if isinstance(phase_error, RuntimeError):
+        assert err["error"] == {"type": "internal", "message": "transport broken Authorization: ***REDACTED***"}
+        _assert_item_log_is_clean(caplog)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase_error", _CLONE_ERRORS, ids=["api_error", "internal_error"])
+async def test_clone_phase_failure_through_rm_tool_has_no_chain(api: AsyncMock, phase_error: Exception) -> None:
+    _setup_clone(api, phase_error)
+    with pytest.raises(ToolError) as exc_info:
+        await server.rm_clone_project_schedule(100, "Clone", new_start_date="2026-09-01")
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    _assert_no_raw_tokens(str(exc_info.value))
+    assert json.loads(str(exc_info.value))["error"]["project_id"] == 777

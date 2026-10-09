@@ -29,6 +29,42 @@ _SECRET_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)(password=|\"password\":\s*\"?)[^\s,}\"]+\"?"),
 ]
 
+# Token forms, copied verbatim from the house standard and applied in this order after the
+# patterns above. Group 1 (the key, header or parameter name) is kept and only the value is
+# replaced, so JSON stays valid.
+_KEYED_SECRET_PATTERNS: list[re.Pattern[str]] = [
+    # api/access/refresh/auth/id/session tokens as key=value, key: value, an
+    # ``X-Auth-Token:`` header and JSON ("key": "value", also backslash-escaped inside an
+    # already-serialized JSON string).
+    re.compile(
+        r"(?i)((?:api|access|refresh|auth|id|session)[_-]?token(?:\\?[\"'])?\s*[:=]\s*"
+        r"(?:\\?[\"'])?)[^\s\"'\\&,;]+",
+        re.IGNORECASE,
+    ),
+    # The same keys URL-encoded (``access_token%3D...``); the value stops at an encoded
+    # ``%26`` (&) or ``%23`` (#), so the parameters after it survive.
+    re.compile(
+        r"(?i)((?:api|access|refresh|auth|id|session)[_-]?token%3D)"
+        r"(?:[^\s\"'\\&,;#%]|%(?!26|23))+",
+        re.IGNORECASE,
+    ),
+    # ``Authorization: Token <value>`` scheme, also as a quoted JSON or dict entry.
+    re.compile(
+        r"(?i)(authorization(?:\\?[\"'])?\s*[:=]\s*(?:\\?[\"'])?token\s+)[^\s\"'\\&,;]+",
+        re.IGNORECASE,
+    ),
+    # JSON ``"token": "value"``; the opening quote right before ``token`` keeps keys such
+    # as ``"next_token"`` and ``"page_token"`` untouched.
+    re.compile(r"(?i)(\\?[\"']token\\?[\"']\s*:\s*\\?[\"'])[^\s\"'\\&,;]+", re.IGNORECASE),
+    # Bare ``token`` key with ``:`` or ``=``, optional spaces and an optional opening quote
+    # (``token=``, ``token: x``, ``token = x``, ``token: "x"``); the lookbehind keeps
+    # ``page_token``, ``next_token``, ``csrf_token`` and ``max_tokens`` untouched.
+    re.compile(
+        r"(?i)((?<![A-Za-z0-9_])token\s*[:=]\s*(?:\\?[\"'])?)[^\s\"'\\&#]+",
+        re.IGNORECASE,
+    ),
+]
+
 
 def redact_secrets(text: str, extra_secret: str | None = None) -> str:
     """Redact tokens, credentials, and API secrets from output and logs."""
@@ -41,6 +77,8 @@ def redact_secrets(text: str, extra_secret: str | None = None) -> str:
         text = text.replace(extra_secret, "***REDACTED***")
     for pattern in _SECRET_PATTERNS:
         text = pattern.sub("***REDACTED***", text)
+    for pattern in _KEYED_SECRET_PATTERNS:
+        text = pattern.sub(r"\1***REDACTED***", text)
     return text
 
 
@@ -64,6 +102,17 @@ def _sanitize(value: Any) -> Any:
     return value
 
 
+def _redact_value(value: Any) -> Any:
+    """Recursively apply ``redact_secrets`` to every string in a nested value."""
+    if isinstance(value, dict):
+        return {k: _redact_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_value(v) for v in value]
+    if isinstance(value, str):
+        return redact_secrets(value)
+    return value
+
+
 class SmartsheetRMAPIError(Exception):
     """Raised when the Smartsheet RM REST API returns a non-2xx response."""
 
@@ -83,14 +132,19 @@ class SmartsheetRMAPIError(Exception):
         super().__init__(f"Smartsheet RM API {method} {path} returned {status_code}")
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the error as a dict with secrets redacted from ``path``, ``detail`` and ``message``.
+
+        Batch tools put this dict in a partial result, which is returned as a normal result
+        without whole-document redaction, so each string field is redacted here.
+        """
         return {
             "type": "smartsheet_rm_api_error",
             "status_code": self.status_code,
             "method": self.method,
-            "path": self.path,
-            "detail": _sanitize(self.detail),
+            "path": redact_secrets(self.path),
+            "detail": _sanitize(_redact_value(self.detail)),
             "request_id": self.request_id,
-            "message": _sanitize(str(self)),
+            "message": _sanitize(redact_secrets(str(self))),
         }
 
 

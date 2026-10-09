@@ -448,26 +448,24 @@ async def rm_clone_project_schedule(
                     "budget": phase.get("budget"),
                     "description": phase.get("description"),
                 }
+                phase_error: dict[str, Any] | None = None
                 try:
                     created_p = await client.create_project_phase(new_proj_id, phase_payload)
                 except SmartsheetRMAPIError as err:
-                    # Leave the new project (and any phases already created) in place.
-                    _tool_failure(
-                        "clone_phase_failed",
-                        (f"Failed to clone a phase into project {new_proj_id}; the new project was left in place."),
-                        project_id=new_proj_id,
-                        phase_name=phase.get("name", "Phase"),
-                        error=err.to_dict(),
-                    )
+                    phase_error = err.to_dict()
                 except Exception as exc:
                     msg = redact_secrets(str(exc))
                     logger.error(msg)
+                    phase_error = {"type": "internal", "message": msg}
+                # Raise after the ``except`` blocks so the ToolError has no ``__context__``.
+                if phase_error is not None:
+                    # Leave the new project (and any phases already created) in place.
                     _tool_failure(
                         "clone_phase_failed",
-                        (f"Failed to clone a phase into project {new_proj_id}; the new project was left in place."),
+                        f"Failed to clone a phase into project {new_proj_id}; the new project was left in place.",
                         project_id=new_proj_id,
                         phase_name=phase.get("name", "Phase"),
-                        error={"type": "internal", "message": msg},
+                        error=phase_error,
                     )
                 created_phases.append(created_p)
 
