@@ -335,7 +335,11 @@ def _redact_value(value: Any) -> Any:
 
 
 class SmartsheetRMAPIError(Exception):
-    """Raised when the Smartsheet RM REST API returns a non-2xx response."""
+    """Raised when the Smartsheet RM REST API returns a non-2xx response.
+
+    The message goes through ``redact_message``, so a secret in the request path is masked
+    on the exception itself and any JSON inside the message keeps its shape.
+    """
 
     def __init__(
         self,
@@ -350,7 +354,8 @@ class SmartsheetRMAPIError(Exception):
         self.method = method
         self.detail = detail
         self.request_id = request_id
-        super().__init__(f"Smartsheet RM API {method} {path} returned {status_code}")
+        self.message = redact_message(f"Smartsheet RM API {method} {path} returned {status_code}")
+        super().__init__(self.message)
 
     def to_dict(self) -> dict[str, Any]:
         """Return the error as a dict with secrets redacted from ``path``, ``detail`` and ``message``.
@@ -365,7 +370,7 @@ class SmartsheetRMAPIError(Exception):
             "path": redact_secrets(self.path),
             "detail": _sanitize(_redact_value(self.detail)),
             "request_id": self.request_id,
-            "message": _sanitize(redact_secrets(str(self))),
+            "message": _sanitize(redact_message(str(self))),
         }
 
 

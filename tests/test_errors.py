@@ -265,3 +265,20 @@ def test_redact_secrets_leaves_token_words_alone() -> None:
         "page_token=abc123",
     ):
         assert redact_secrets(text) == text, text
+
+
+def test_api_error_message_is_redacted_with_redact_message() -> None:
+    """SmartsheetRMAPIError redacts its own message; a JSON fragment in it keeps its shape."""
+    import json
+
+    from smartsheet_rm_mcp.errors import MASK, SmartsheetRMAPIError
+
+    err = SmartsheetRMAPIError(400, '/q {"password": "a, b c", "id": 7}', "POST")
+    text = str(err)
+    assert "a, b c" not in text
+    body = text[text.index("{") : text.rindex("}") + 1]
+    assert json.loads(body) == {"password": MASK, "id": 7}
+    assert err.message == text
+    assert SmartsheetRMAPIError(401, "/x?api_token=abcdefgh123", "GET").to_dict()["message"] == (
+        f"Smartsheet RM API GET /x?api_token={MASK} returned 401"
+    )
