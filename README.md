@@ -144,6 +144,8 @@ pip install mcp-server-smartsheet-rm
 | `SMARTSHEET_RM_ENABLE_TOOL_SEARCH` | Set to `1` (or `--enable-tool-search`) for Tool Search on `full` | `0` |
 | `SMARTSHEET_RM_TOOL_SEARCH_BACKEND` | Tool Search backend: `regex` or `bm25` (or `--tool-search-backend`) | `regex` |
 | `SMARTSHEET_RM_ENABLE_CODE_MODE` | Set to `1` (or `--enable-code-mode`) for experimental Code Mode on `full`; not with Tool Search | `0` |
+| `SMARTSHEET_RM_MCP_AUTH_TOKEN` | Shared bearer token required on HTTP transports (stdio ignores it) | unset |
+| `SMARTSHEET_RM_MCP_ALLOW_UNAUTHENTICATED_BIND` | Set to `1` to accept a tokenless HTTP bind to a non-localhost host | unset |
 | `SMARTSHEET_RM_LOG_FORMAT` | Set to `json` for Datadog/CloudWatch structured logs | `text` |
 | `SMARTSHEET_RM_ALLOWED_HOSTS` | Comma-separated hostnames allowed for base URL overrides. A non-blank value replaces the default. Loopback and private targets stay blocked. | `api.rm.smartsheet.com` |
 
@@ -209,6 +211,17 @@ uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp --transport streamable-htt
 ```
 
 Connect clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTTP path). `run(transport="streamable-http")` does not set a custom path. Binding to `0.0.0.0` or `::` requires an explicit `--allowed-host` (a wildcard `*` is rejected).
+
+**HTTP authentication.** Set `SMARTSHEET_RM_MCP_AUTH_TOKEN` to require `Authorization: Bearer <token>` on every HTTP request; a missing or wrong token gets `401`. The token is stripped, and a blank value counts as unset. It is attached when the server is built, so `smartsheet-rm-mcp`, `fastmcp run` and an ASGI host mounting `mcp.http_app()` all enforce it. stdio never uses it.
+
+With no token, an HTTP bind to `127.0.0.1`, `::1` or `localhost` still starts, unauthenticated, and logs a warning. A tokenless bind to any other host exits with code 2. Set the token, bind to localhost, or set `SMARTSHEET_RM_MCP_ALLOW_UNAUTHENTICATED_BIND` to `1`, `true`, `yes` or `on` to accept an unauthenticated public bind (any other value refuses). To serve the image over HTTP, pass the tokens from your environment or an env file, not on the command line:
+
+```bash
+# export SMARTSHEET_RM_API_TOKEN and SMARTSHEET_RM_MCP_AUTH_TOKEN first, or use --env-file .env
+docker run --rm -p 8000:8000 -e SMARTSHEET_RM_API_TOKEN -e SMARTSHEET_RM_MCP_AUTH_TOKEN \
+  ghcr.io/christianclaudio/mcp-server-smartsheet-rm:latest \
+  --transport streamable-http --host 0.0.0.0 --allowed-host localhost:8000
+```
 
 ---
 

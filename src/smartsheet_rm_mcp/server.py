@@ -20,6 +20,8 @@ Environment variables controlling the gateway:
   SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1     - Opt-in Tool Search (profile=full only).
   SMARTSHEET_RM_TOOL_SEARCH_BACKEND      - Tool Search backend: regex (default) or bm25.
   SMARTSHEET_RM_ENABLE_CODE_MODE=1       - Opt-in experimental Code Mode (profile=full only; not with Tool Search).
+  SMARTSHEET_RM_MCP_AUTH_TOKEN           - Shared bearer token required on HTTP transports (stdio ignores it).
+  SMARTSHEET_RM_MCP_ALLOW_UNAUTHENTICATED_BIND=1 - Accept a tokenless HTTP bind to a non-localhost host.
 
 Build order: domain mounts -> job allowlist -> read-only filter -> discovery (full only).
 """
@@ -44,6 +46,14 @@ from fastmcp.server.transforms.search import BM25SearchTransform, RegexSearchTra
 from fastmcp.tools import FunctionTool
 
 from smartsheet_rm_mcp import __version__
+from smartsheet_rm_mcp.auth import (
+    ALLOW_UNAUTHENTICATED_BIND_ENV,
+    AUTH_TOKEN_ENV,
+    SharedTokenVerifier,
+    allow_unauthenticated_bind,
+    is_localhost,
+    read_auth_token,
+)
 from smartsheet_rm_mcp.client import DEFAULT_BASE_URL, SmartsheetRMClient
 from smartsheet_rm_mcp.common import (
     _HEADER_CLIENT_CACHE,
@@ -376,9 +386,15 @@ def create_server(
     if use_tool_search and use_code_mode:
         raise ValueError("Tool Search and Code Mode are mutually exclusive; enable only one discovery mode.")
 
+    # Bearer auth on every HTTP entry point (``main()``, ``fastmcp run``, ``http_app()``):
+    # FastMCP servers default to ``auth=None``, so the verifier is attached at build time
+    # whenever the stripped token env is non-blank. The localhost bind refusal stays in
+    # ``main()``, the only entry point that knows the bind host.
+    auth_token = read_auth_token()
     root = FastMCP(
         "mcp-server-smartsheet-rm",
         version=__version__,
+        auth=SharedTokenVerifier(auth_token) if auth_token else None,
         lifespan=server_lifespan,
         cache_ttl=settings.CATALOG_CACHE_TTL_MS // 1000,
         cache_scope="public",
@@ -445,6 +461,42 @@ def _handle_shutdown(signum: int, frame: Any) -> None:
     """Gracefully handle SIGTERM/SIGINT from host supervisor and unwind cleanly."""
     logger.info("Received signal %s; shutting down.", signum)
     sys.exit(0)
+
+
+def _apply_http_auth(parser: argparse.ArgumentParser, server: FastMCP, transport: str, host: str) -> None:
+    """Make sure bearer auth from the token env is on, or enforce the localhost-only bind policy.
+
+    ``create_server`` already attaches the verifier when the token env is set at build time;
+    this attaches it at serve time if the env was set after import and no verifier exists
+    yet. A token changed after the server is built is not picked up; rebuild the server.
+    A token that is empty after ``.strip()`` counts as unset. With no token, a bind to any
+    host other than 127.0.0.1, ::1 or localhost exits through ``parser.error`` unless
+    ``SMARTSHEET_RM_MCP_ALLOW_UNAUTHENTICATED_BIND`` opts in. Messages never include the token.
+    """
+    auth_token = read_auth_token()
+    if auth_token:
+        if not isinstance(server.auth, SharedTokenVerifier):
+            server.auth = SharedTokenVerifier(auth_token)
+        logger.info("Bearer token authentication is on for the %s transport", transport)
+        return
+    if not is_localhost(host):
+        if not allow_unauthenticated_bind():
+            parser.error(
+                f"refusing to serve {transport} on non-localhost host {host!r} without "
+                f"authentication: set {AUTH_TOKEN_ENV}, bind to 127.0.0.1, ::1 or localhost, "
+                f"or set {ALLOW_UNAUTHENTICATED_BIND_ENV}=1 to accept an unauthenticated bind"
+            )
+        logger.warning(
+            "%s is set: serving %s on non-localhost host %r without authentication.",
+            ALLOW_UNAUTHENTICATED_BIND_ENV,
+            transport,
+            host,
+        )
+    logger.warning(
+        "%s is not set, so MCP requests on the %s transport are not authenticated.",
+        AUTH_TOKEN_ENV,
+        transport,
+    )
 
 
 def main() -> None:
@@ -549,6 +601,9 @@ def main() -> None:
         tool_search_backend=args.tool_search_backend,
     )
     target_server = server_instance if getattr(mcp.run, "__func__", None) is getattr(FastMCP, "run", None) else mcp
+
+    if args.transport in ("sse", "streamable-http"):
+        _apply_http_auth(parser, target_server, args.transport, args.host)
 
     if args.transport == "sse":  # pragma: no cover
         logger.warning(
