@@ -1264,6 +1264,7 @@ async def test_tool_failure_reaches_client_as_is_error(
 @pytest.mark.asyncio
 async def test_code_mode_execute_runs_real_tool() -> None:
     """execute runs Python in the Code Mode sandbox and reaches a real catalog tool."""
+    pytest.importorskip("pydantic_monty", reason="needs the code-mode extra (fastmcp[code-mode] / pydantic-monty)")
     app = srv.create_server(profile="full", enable_code_mode=True, enable_tool_search=False)
     code = "res = await call_tool('projects_get_project', {'project_id': 100})\nreturn res"
     async with Client(app) as mcp_client:

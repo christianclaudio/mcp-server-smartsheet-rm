@@ -504,7 +504,7 @@ async def test_batch_partial_api_error_item_is_redacted(
         assert "***REDACTED***" in rendered
     assert "returned 401" in item_error["message"]
     assert item_error["detail"]["errors"] == [
-        "invalid ***REDACTED***",
+        "invalid Bearer ***REDACTED***",
         "retry with api_token=***REDACTED***",
         "refresh with access_token=***REDACTED***",
         "callback /cb?token=***REDACTED***",
@@ -553,7 +553,7 @@ async def test_batch_all_failed_api_errors_are_redacted(
 
 def test_api_error_to_dict_redacts_string_detail() -> None:
     err = SmartsheetRMAPIError(401, "/x", "GET", f"invalid Bearer {_BEARER}").to_dict()
-    assert err["detail"] == "invalid ***REDACTED***"
+    assert err["detail"] == "invalid Bearer ***REDACTED***"
     assert err["path"] == "/x"
     assert err["message"] == "Smartsheet RM API GET /x returned 401"
 
@@ -635,7 +635,7 @@ async def test_fill_weekly_non_api_error_is_redacted_without_traceback(
     assert data["filled_count"] == 4
     err = data["errors"][0]["error"]
     assert err["type"] == "internal"
-    assert err["message"] == "upstream rejected Authorization: ***REDACTED***"
+    assert err["message"] == "upstream rejected Authorization: Bearer ***REDACTED***"
     _assert_item_log_is_clean(caplog)
 
 
@@ -668,7 +668,7 @@ async def test_confirm_suggested_non_api_error_is_redacted_without_traceback(
     assert data["confirmed_count"] == 1
     err = data["errors"][0]["error"]
     assert err["type"] == "internal"
-    assert err["message"] == "upstream rejected Authorization: ***REDACTED***"
+    assert err["message"] == "upstream rejected Authorization: Bearer ***REDACTED***"
     _assert_item_log_is_clean(caplog)
 
 
@@ -711,7 +711,7 @@ async def test_clone_phase_failure_raises_after_except_and_names_project(
     _assert_no_raw_tokens(caplog.text)
     assert "Traceback" not in caplog.text
     if isinstance(phase_error, RuntimeError):
-        assert err["error"] == {"type": "internal", "message": "transport broken Authorization: ***REDACTED***"}
+        assert err["error"] == {"type": "internal", "message": "transport broken Authorization: Bearer ***REDACTED***"}
         _assert_item_log_is_clean(caplog)
 
 

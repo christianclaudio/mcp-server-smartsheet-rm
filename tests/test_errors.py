@@ -123,16 +123,16 @@ def test_redact_secrets_bearer_b64token_tail_does_not_survive() -> None:
     from smartsheet_rm_mcp.errors import redact_secrets
 
     out = redact_secrets("Authorization: Bearer abc.def~ghi/jk+l== next")
-    assert out == "Authorization: ***REDACTED*** next"
+    assert out == "Authorization: Bearer ***REDACTED*** next"
     for fragment in ("abc.def", "~ghi", "/jk", "+l=="):
         assert fragment not in out
-    assert redact_secrets("Bearer abc.def~ghi/jk+l==") == "***REDACTED***"
+    assert redact_secrets("Bearer abc.def~ghi/jk+l==") == "Bearer ***REDACTED***"
 
 
 def test_redact_secrets_env_token_assignment_is_redacted() -> None:
     from smartsheet_rm_mcp.errors import redact_secrets
 
-    assert redact_secrets("SMARTSHEET_RM_API_TOKEN=abc123") == "***REDACTED***"
+    assert redact_secrets("SMARTSHEET_RM_API_TOKEN=abc123") == "SMARTSHEET_RM_API_TOKEN=***REDACTED***"
 
 
 def test_redact_secrets_token_forms() -> None:
@@ -265,3 +265,20 @@ def test_redact_secrets_leaves_token_words_alone() -> None:
         "page_token=abc123",
     ):
         assert redact_secrets(text) == text, text
+
+
+def test_api_error_message_is_redacted_with_redact_message() -> None:
+    """SmartsheetRMAPIError redacts its own message; a JSON fragment in it keeps its shape."""
+    import json
+
+    from smartsheet_rm_mcp.errors import MASK, SmartsheetRMAPIError
+
+    err = SmartsheetRMAPIError(400, '/q {"password": "a, b c", "id": 7}', "POST")
+    text = str(err)
+    assert "a, b c" not in text
+    body = text[text.index("{") : text.rindex("}") + 1]
+    assert json.loads(body) == {"password": MASK, "id": 7}
+    assert err.message == text
+    assert SmartsheetRMAPIError(401, "/x?api_token=abcdefgh123", "GET").to_dict()["message"] == (
+        f"Smartsheet RM API GET /x?api_token={MASK} returned 401"
+    )

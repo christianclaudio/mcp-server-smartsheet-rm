@@ -58,7 +58,7 @@ async def test_decorator_redacts_an_unexpected_exception(
         await handler()
     text = str(exc_info.value)
     assert json.loads(text) == {
-        "error": {"type": "internal", "message": "connect failed for ***REDACTED*** with ***REDACTED***"}
+        "error": {"type": "internal", "message": "connect failed for ***REDACTED*** with Bearer ***REDACTED***"}
     }
     assert _SECRET not in caplog.text
     assert "abc.def.ghi" not in caplog.text

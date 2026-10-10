@@ -51,6 +51,14 @@ When running in multi-tenant environments where callers may provide per-request 
 - Credentialed API requests do not follow redirects.
 - At connect time the client resolves the hostname once and opens TCP to an address that passed those checks. The `Host` header, TLS SNI, and certificate verification stay on the original hostname, so a later DNS answer cannot move the connection onto a private or metadata address.
 
+### 6. Release Provenance
+Each release's wheel, sdist and GHCR image carry a GitHub build provenance attestation, created by a separate `attest` job that holds only `contents: read`, `id-token: write` and `attestations: write` (no PyPI, Release or GHCR credentials). Verify before installing:
+
+```bash
+gh attestation verify mcp_server_smartsheet_rm-<version>-py3-none-any.whl --repo christianclaudio/mcp-server-smartsheet-rm
+gh attestation verify oci://ghcr.io/christianclaudio/mcp-server-smartsheet-rm:<version> --repo christianclaudio/mcp-server-smartsheet-rm
+```
+
 ---
 
 ## 🛡️ Summary of Deployment Postures
