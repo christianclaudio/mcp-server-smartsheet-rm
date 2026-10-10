@@ -21,8 +21,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "mcp>=2.2.0",
-    "fastmcp>=4.0.11",
+    "mcp>=2.3.0",
+    "fastmcp>=4.1.0",
     "httpx>=0.28.1",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
@@ -32,10 +32,10 @@ dependencies = [
 # Code Mode is optional: FastMCP ships its pydantic-monty sandbox as the code-mode extra.
 # Users install mcp-server-smartsheet-rm[code-mode]; dev repeats the same pin so tests run execute.
 code-mode = [
-    "fastmcp[code-mode]>=4.0.11",
+    "fastmcp[code-mode]>=4.1.0",
 ]
 dev = [
-    "fastmcp[code-mode]>=4.0.11",
+    "fastmcp[code-mode]>=4.1.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=5.0.0",
