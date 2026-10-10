@@ -20,7 +20,7 @@ from smartsheet_rm_mcp.client import (
     SmartsheetRMClient,
     _validate_base_url,
 )
-from smartsheet_rm_mcp.errors import SmartsheetRMAPIError, redact_secrets
+from smartsheet_rm_mcp.errors import SmartsheetRMAPIError, redact_message, redact_secrets, tool_failure
 
 ANNOTATION_READ_ONLY = ToolAnnotations(
     read_only_hint=True,
@@ -95,7 +95,7 @@ def _invalid_request(message: str) -> NoReturn:
     fresh ``ToolError`` (same JSON, no chain).
     """
     raise ToolError(
-        json.dumps({"error": {"type": "invalid_request", "message": _redact_secrets(message)}}, indent=2)
+        json.dumps({"error": {"type": "invalid_request", "message": redact_message(message)}}, indent=2)
     ) from None
 
 
@@ -104,11 +104,11 @@ def _tool_failure(error_type: str, message: str, **details: Any) -> NoReturn:
 
     For failures the tool detects itself after its API calls returned, such as a batch in which
     every item failed. Raises FastMCP ``ToolError`` with the ``{"error": {"type": ..., "message":
-    ...}}`` JSON, redacted as a whole document like ``rm_tool``'s API errors, ``from None``.
+    ...}}`` JSON, redacted value by value before serialization (``errors.tool_failure``), so the
+    message always parses, ``from None``.
     ``rm_tool`` copies the payload onto a fresh ``ToolError`` (same JSON, no chain).
     """
-    payload: dict[str, Any] = {"type": error_type, "message": message, **details}
-    raise ToolError(_redact_secrets(json.dumps({"error": payload}, indent=2))) from None
+    raise tool_failure(error_type, message, **details) from None
 
 
 def _destructive_gate(confirm: bool, action_name: str) -> str | None:
@@ -226,13 +226,13 @@ def rm_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error("Tool failed with API error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms})
             err_doc = json.dumps({"error": e.to_dict()})
-            pending = ToolError(_redact_secrets(err_doc))
+            pending = ToolError(redact_message(err_doc))
         except Exception as e:
             duration_ms = round((time.perf_counter() - start_t) * 1000, 2)
             logger.error(
                 "Tool failed with internal error", extra={"tool_name": fn.__name__, "duration_ms": duration_ms}
             )
-            msg = _redact_secrets(str(e))
+            msg = redact_message(str(e))
             pending = ToolError(json.dumps({"error": {"type": "internal", "message": msg}}))
         # Raise outside the ``except`` blocks so ``__context__`` is not the original exception.
         assert pending is not None

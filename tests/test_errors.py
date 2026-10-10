@@ -123,16 +123,16 @@ def test_redact_secrets_bearer_b64token_tail_does_not_survive() -> None:
     from smartsheet_rm_mcp.errors import redact_secrets
 
     out = redact_secrets("Authorization: Bearer abc.def~ghi/jk+l== next")
-    assert out == "Authorization: ***REDACTED*** next"
+    assert out == "Authorization: Bearer ***REDACTED*** next"
     for fragment in ("abc.def", "~ghi", "/jk", "+l=="):
         assert fragment not in out
-    assert redact_secrets("Bearer abc.def~ghi/jk+l==") == "***REDACTED***"
+    assert redact_secrets("Bearer abc.def~ghi/jk+l==") == "Bearer ***REDACTED***"
 
 
 def test_redact_secrets_env_token_assignment_is_redacted() -> None:
     from smartsheet_rm_mcp.errors import redact_secrets
 
-    assert redact_secrets("SMARTSHEET_RM_API_TOKEN=abc123") == "***REDACTED***"
+    assert redact_secrets("SMARTSHEET_RM_API_TOKEN=abc123") == "SMARTSHEET_RM_API_TOKEN=***REDACTED***"
 
 
 def test_redact_secrets_token_forms() -> None:
