@@ -212,6 +212,8 @@ uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp --transport streamable-htt
 
 Connect clients to `http://127.0.0.1:8000/mcp` (FastMCP's default Streamable HTTP path). `run(transport="streamable-http")` does not set a custom path. Binding to `0.0.0.0` or `::` requires an explicit `--allowed-host` (a wildcard `*` is rejected).
 
+In the default (stateful) HTTP mode, a session idle for 30 minutes expires: its next request gets HTTP 404 and the client must start a new session. Change this with FastMCP's `session_idle_timeout` (on `http_app()`) or `FASTMCP_HTTP_SESSION_IDLE_TIMEOUT` (seconds, or `none` to never expire); see the [FastMCP 4.1.0 release](https://github.com/PrefectHQ/fastmcp/releases/tag/v4.1.0) and [#5229](https://github.com/PrefectHQ/fastmcp/pull/5229).
+
 **HTTP authentication.** Set `SMARTSHEET_RM_MCP_AUTH_TOKEN` to require `Authorization: Bearer <token>` on every HTTP request; a missing or wrong token gets `401`. The token is stripped, and a blank value counts as unset. It is attached when the server is built, so `smartsheet-rm-mcp`, `fastmcp run` and an ASGI host mounting `mcp.http_app()` all enforce it. stdio never uses it.
 
 With no token, an HTTP bind to `127.0.0.1`, `::1` or `localhost` still starts, unauthenticated, and logs a warning. A tokenless bind to any other host exits with code 2. Set the token, bind to localhost, or set `SMARTSHEET_RM_MCP_ALLOW_UNAUTHENTICATED_BIND` to `1`, `true`, `yes` or `on` to accept an unauthenticated public bind (any other value refuses). To serve the image over HTTP, pass the tokens from your environment or an env file, not on the command line:
