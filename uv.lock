@@ -1346,6 +1346,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+code-mode = [
+    { name = "fastmcp", extra = ["code-mode"] },
+]
 dev = [
     { name = "build" },
     { name = "fastmcp", extra = ["code-mode"] },
@@ -1364,6 +1367,7 @@ dev = [
 requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.2.0" },
     { name = "fastmcp", specifier = ">=4.0.11" },
+    { name = "fastmcp", extras = ["code-mode"], marker = "extra == 'code-mode'", specifier = ">=4.0.11" },
     { name = "fastmcp", extras = ["code-mode"], marker = "extra == 'dev'", specifier = ">=4.0.11" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", specifier = ">=2.2.0" },
@@ -1379,7 +1383,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16,<0.17" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=5.0.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["code-mode", "dev"]
 
 [[package]]
 name = "mcp-types"

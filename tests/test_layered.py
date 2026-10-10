@@ -23,6 +23,8 @@ from smartsheet_rm_mcp.middleware import (
 )
 from smartsheet_rm_mcp.server import create_server, main, server_lifespan
 
+CODE_MODE_SKIP_REASON = "needs the code-mode extra (fastmcp[code-mode] / pydantic-monty)"
+
 
 @pytest.fixture(autouse=True)
 def _clean_gate_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
@@ -139,10 +141,7 @@ def test_tool_search_and_code_mode_are_mutually_exclusive() -> None:
 @pytest.mark.asyncio
 async def test_full_code_mode_attaches_when_available(caplog: pytest.LogCaptureFixture) -> None:
     """full + enable_code_mode attaches experimental meta-tools; curated profiles refuse it."""
-    try:
-        from fastmcp.experimental.transforms.code_mode import CodeMode  # noqa: F401
-    except ImportError:  # pragma: no cover - depends on FastMCP build
-        pytest.skip("CodeMode not available in this FastMCP build")
+    pytest.importorskip("pydantic_monty", reason=CODE_MODE_SKIP_REASON)
 
     app = create_server(profile="full", enable_code_mode=True, enable_tool_search=False)
     names = {t.name for t in await app.list_tools()}

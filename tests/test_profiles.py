@@ -45,6 +45,8 @@ SIGNED_OFF = {
     "portfolio": (33, 18),
 }
 
+CODE_MODE_SKIP_REASON = "needs the code-mode extra (fastmcp[code-mode] / pydantic-monty)"
+
 
 @pytest.fixture(autouse=True)
 def _offline_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
@@ -515,10 +517,7 @@ async def test_code_mode_discovery_read_only_and_execute_refused_under_readonly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Code Mode search/get_schema are annotated read-only; execute is refused under readonly."""
-    try:
-        from fastmcp.experimental.transforms.code_mode import CodeMode  # noqa: F401
-    except ImportError:  # pragma: no cover - depends on FastMCP build
-        pytest.skip("CodeMode not available in this FastMCP build")
+    pytest.importorskip("pydantic_monty", reason=CODE_MODE_SKIP_REASON)
 
     monkeypatch.setattr(settings, "READONLY", True)
     app = create_server(profile="full", enable_code_mode=True)
