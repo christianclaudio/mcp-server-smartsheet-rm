@@ -43,7 +43,7 @@ dev = [
     "ruff>=0.16,<0.17",
     "mypy>=1.11.0",
     "pyyaml>=6.0",
-    "opentelemetry-sdk>=1.44.0,<1.45",
+    "opentelemetry-sdk>=1.44.0,<1.46",
     "build>=1.2.0",
     "twine>=5.0.0",
 ]
