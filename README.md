@@ -26,7 +26,7 @@ graph TD
     SubProj --> Guards
     SubAdmin --> Guards
     Guards --> ClientPool["SmartsheetRMClient (httpx.AsyncClient Pool)"]
-    ClientPool -->|"Bearer Auth + 429 Jitter Retry"| API["Smartsheet RM (10,000ft API)"]
+    ClientPool -->|"auth header + 429 Jitter Retry"| API["Smartsheet RM (10,000ft API)"]
 ```
 
 `create_server` mounts the time, projects, and admin sub-servers with FastMCP 4 `namespace=`, so `tools/list` names are `time_*`, `projects_*`, and `admin_*`. Legacy `rm_*` names are not registered on the gateway.
@@ -107,6 +107,61 @@ Agents call these `tools/list` names. Counts for time and projects include the b
    * Expenses: `admin_list_expenses`, `admin_get_expense`, `admin_create_expense`, `admin_update_expense`, `admin_delete_expense`, `admin_list_expense_categories`, `admin_create_expense_category`, `admin_delete_expense_category`.
    * Tags and custom fields: `admin_list_tags`, `admin_create_tag`, `admin_delete_tag`, `admin_list_custom_fields`, `admin_get_custom_field`, `admin_create_custom_field`, `admin_update_custom_field`, `admin_delete_custom_field`, `admin_list_custom_field_values`, `admin_set_custom_field_values`.
    * Status, reports, and webhooks: `admin_get_user_statuses`, `admin_set_user_status`, `admin_get_report_rows`, `admin_get_report_totals`, `admin_list_webhooks`, `admin_create_webhook`, `admin_delete_webhook`.
+
+### Undocumented routes
+
+The tools below call routes that are in neither Smartsheet's [Resource Management API reference](https://developers.smartsheet.com/api/resource_management/openapi) ([OpenAPI JSON](https://developers.smartsheet.com/_spec/api/resource_management/openapi.json)) nor the archived [10,000ft API docs](https://github.com/10Kft/10kft-api). There are 46 such method and path pairs. They are kept, and not re-pointed, because some documented equivalents take different request shapes, so moving a tool would change what it sends. Smartsheet may change or remove an undocumented route without notice, and each of these tools says so in its description.
+
+| Tool | Undocumented route | Documented equivalent |
+| :--- | :--- | :--- |
+| `time_create_time_entry` | `POST /time_entries` | `POST /users/{user_id}/time_entries` and `POST /projects/{project_id}/time_entries`. |
+| `time_update_time_entry` | `PUT /time_entries/{id}` | `PUT /users/{user_id}/time_entries/{id}`. |
+| `time_delete_time_entry` | `DELETE /time_entries/{id}` | `DELETE /users/{user_id}/time_entries/{id}`. |
+| `time_update_time_approval_status` | `PUT /users/{user_id}/time_entries/approval_status` | None found. |
+| `time_lock_timesheet` | `POST /users/{user_id}/time_entries/lock` | None found. |
+| `time_fill_weekly_timesheet` | `POST /time_entries` | `POST /users/{user_id}/time_entries`. |
+| `time_confirm_suggested_hours` | `PUT /time_entries/{id}` | `PUT /users/{user_id}/time_entries/{id}`. |
+| `time_reconcile_and_submit_week` | `PUT /users/{user_id}/time_entries/approval_status` | None found (called only with `auto_submit=True`). |
+| `time_bulk_delete_time_entries` | `DELETE /time_entries/{id}` | `DELETE /users/{user_id}/time_entries/{id}`. |
+| `projects_get_project_phase` | `GET /projects/{project_id}/phases/{phase_id}` | The reference documents only PUT and DELETE on that path; `GET /projects/{project_id}/phases` lists phases. |
+| `admin_list_user_bill_rates` | `GET /users/{user_id}/bill_rates` | `GET /bill_rates` and `GET /projects/{project_id}/bill_rates`. |
+| `admin_create_user_bill_rate` | `POST /users/{user_id}/bill_rates` | The reference documents bill rates only under `/bill_rates` and `/projects/{project_id}/bill_rates`, with no create. |
+| `admin_get_user_availability` | `GET /users/{user_id}/availability` | `GET /users/{user_id}/availabilities`. |
+| `admin_get_user_utilization` | `GET /users/{user_id}/utilization` | None found. |
+| `admin_create_role` | `POST /roles` | The reference documents only GET for roles. |
+| `admin_update_role` | `PUT /roles/{id}` | The reference documents only GET for roles. |
+| `admin_delete_role` | `DELETE /roles/{id}` | The reference documents only GET for roles. |
+| `admin_create_discipline` | `POST /disciplines` | The reference documents only GET for disciplines. |
+| `admin_update_discipline` | `PUT /disciplines/{id}` | The reference documents only GET for disciplines. |
+| `admin_delete_discipline` | `DELETE /disciplines/{id}` | The reference documents only GET for disciplines. |
+| `admin_list_clients` | `GET /clients` | None found. |
+| `admin_get_client` | `GET /clients/{id}` | None found. |
+| `admin_create_client` | `POST /clients` | None found. |
+| `admin_update_client` | `PUT /clients/{id}` | None found. |
+| `admin_delete_client` | `DELETE /clients/{id}` | None found. |
+| `admin_list_client_contacts` | `GET /clients/{id}/contacts` | None found. |
+| `admin_create_client_contact` | `POST /clients/{id}/contacts` | None found. |
+| `admin_delete_client_contact` | `DELETE /clients/{id}/contacts/{contact_id}` | None found. |
+| `admin_create_leave_type` | `POST /leave_types` | The reference documents only GET for leave types. |
+| `admin_update_leave_type` | `PUT /leave_types/{id}` | The reference documents only GET for leave types. |
+| `admin_delete_leave_type` | `DELETE /leave_types/{id}` | The reference documents only GET for leave types. |
+| `admin_get_holiday` | `GET /holidays/{id}` | The reference documents only `GET /holidays`. |
+| `admin_create_holiday` | `POST /holidays` | The reference documents only `GET /holidays`. |
+| `admin_update_holiday` | `PUT /holidays/{id}` | The reference documents only `GET /holidays`. |
+| `admin_delete_holiday` | `DELETE /holidays/{id}` | The reference documents only `GET /holidays`. |
+| `admin_list_expenses` | `GET /expenses`, `GET /projects/{project_id}/expenses`, `GET /users/{user_id}/expenses` | `GET /users/{user_id}/expense_items` and `GET /projects/{project_id}/expense_items`. |
+| `admin_get_expense` | `GET /expenses/{id}` | `GET /users/{user_id}/expense_items/{expense_item_id}` and `GET /projects/{project_id}/expense_items/{expense_item_id}`. |
+| `admin_create_expense` | `POST /expenses` | `POST /users/{user_id}/expense_items`. |
+| `admin_update_expense` | `PUT /expenses/{id}` | `PUT /users/{user_id}/expense_items/{expense_item_id}`. |
+| `admin_delete_expense` | `DELETE /expenses/{id}` | `DELETE /users/{user_id}/expense_items/{expense_item_id}`. |
+| `admin_list_expense_categories` | `GET /expense_categories` | `GET /expense_item_categories`. |
+| `admin_create_expense_category` | `POST /expense_categories` | The reference documents only `GET /expense_item_categories`. |
+| `admin_delete_expense_category` | `DELETE /expense_categories/{id}` | The reference documents only `GET /expense_item_categories`. |
+| `admin_list_tags` | `GET /tags` | `GET /projects/{project_id}/tags` and `GET /users/{user_id}/tags`. |
+| `admin_create_tag` | `POST /tags` | `POST /projects/{project_id}/tags` and `POST /users/{user_id}/tags`. |
+| `admin_delete_tag` | `DELETE /tags/{id}` | `DELETE /projects/{project_id}/tags/{tag_id}` and `DELETE /users/{user_id}/tags/{tag_id}`. |
+| `admin_list_custom_field_values` | `GET /custom_field_values` | `GET /projects/{project_id}/custom_field_values` and `GET /users/{user_id}/custom_field_values`. |
+| `admin_set_custom_field_values` | `PUT /custom_field_values` | `PUT /projects/{project_id}/custom_field_values/{custom_field_value_id}` and `PUT /users/{user_id}/custom_field_values/{custom_field_value_id}`. |
 
 ---
 

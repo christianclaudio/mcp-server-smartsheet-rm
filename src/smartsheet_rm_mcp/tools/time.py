@@ -74,7 +74,10 @@ async def rm_create_time_entry(
     is_billable: bool = True,
     custom_field_values: dict[str, Any] | None = None,
 ) -> str:
-    """Create a new time entry for a user on a project (date format: YYYY-MM-DD)."""
+    """Create a new time entry for a user on a project (date format: YYYY-MM-DD).
+
+    Undocumented route: `POST /time_entries` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `POST /users/{user_id}/time_entries` and `POST /projects/{project_id}/time_entries`.
+    """
     payload: dict[str, Any] = {
         "user_id": user_id,
         "assignable_id": phase_id or project_id,
@@ -100,7 +103,10 @@ async def rm_update_time_entry(
     date: str | None = None,
     is_billable: bool | None = None,
 ) -> str:
-    """Update an existing time entry."""
+    """Update an existing time entry.
+
+    Undocumented route: `PUT /time_entries/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented route: `PUT /users/{user_id}/time_entries/{id}`.
+    """
     payload: dict[str, Any] = {}
     if hours is not None:
         payload["hours"] = hours
@@ -121,7 +127,10 @@ async def rm_update_time_entry(
 
 @rm_tool
 async def rm_delete_time_entry(entry_id: int | str, confirm: bool = False) -> str:
-    """Delete a time entry (Destructive: requires confirm=True)."""
+    """Delete a time entry (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /time_entries/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented route: `DELETE /users/{user_id}/time_entries/{id}`.
+    """
     gate = _destructive_gate(confirm, f"time_delete_time_entry({entry_id})")
     if gate:
         return gate
@@ -155,7 +164,10 @@ async def rm_update_time_approval_status(
     status: str,
     approver_notes: str | None = None,
 ) -> str:
-    """Approve or reject time entries for a user (status: 'approved', 'rejected', 'pending')."""
+    """Approve or reject time entries for a user (status: 'approved', 'rejected', 'pending').
+
+    Undocumented route: `PUT /users/{user_id}/time_entries/approval_status` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     if status not in ("approved", "rejected", "pending"):
         _invalid_request("Status must be one of: 'approved', 'rejected', 'pending'")
     payload: dict[str, Any] = {"time_entry_ids": entry_ids, "status": status}
@@ -173,7 +185,10 @@ async def rm_lock_timesheet(
     lock_date: str,
     unlock: bool = False,
 ) -> str:
-    """Lock or unlock timesheet records for a user up to a specified lock date (YYYY-MM-DD)."""
+    """Lock or unlock timesheet records for a user up to a specified lock date (YYYY-MM-DD).
+
+    Undocumented route: `POST /users/{user_id}/time_entries/lock` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     payload = {"date": lock_date, "locked": not unlock}
     client = await get_client()
     data = await client.lock_user_timesheet(user_id, payload)
@@ -195,6 +210,8 @@ async def rm_fill_weekly_timesheet(
     start_date: Monday date of the week in YYYY-MM-DD.
     include_weekends: When True, logs Saturday and Sunday entries as well.
     weekend_hours: Specific hours for Saturday/Sunday (defaults to daily_hours if omitted).
+
+    Undocumented route: `POST /time_entries` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Each entry is created there. Documented route: `POST /users/{user_id}/time_entries`.
     """
     date_error: str | None = None
     try:
@@ -282,7 +299,10 @@ async def rm_confirm_suggested_hours(
     from_date: str,
     to_date: str,
 ) -> str:
-    """Auto-confirm all unconfirmed scheduled suggestions for a user within a date range."""
+    """Auto-confirm all unconfirmed scheduled suggestions for a user within a date range.
+
+    Undocumented route: `PUT /time_entries/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Each suggestion is confirmed there. Documented route: `PUT /users/{user_id}/time_entries/{id}`.
+    """
     client = await get_client()
     data = await client.list_user_time_entries(
         user_id, params={"from": from_date, "to": to_date, "with_suggestions": "true"}
@@ -345,7 +365,10 @@ async def rm_reconcile_and_submit_week(
     target_hours: float = 40.0,
     auto_submit: bool = False,
 ) -> str:
-    """Audit weekly logged hours against a target (40h) and optionally submit/approve timesheet."""
+    """Audit weekly logged hours against a target (40h) and optionally submit/approve timesheet.
+
+    Undocumented route: `PUT /users/{user_id}/time_entries/approval_status` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Only auto_submit=True calls it. No documented equivalent was found.
+    """
     date_error: str | None = None
     try:
         start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
@@ -392,7 +415,10 @@ async def rm_bulk_delete_time_entries(
     entry_ids: list[int | str],
     confirm: bool = False,
 ) -> str:
-    """Bulk delete multiple time entries (Destructive: gated by SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1 and confirm=True)."""
+    """Bulk delete multiple time entries (Destructive: gated by SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1 and confirm=True).
+
+    Undocumented route: `DELETE /time_entries/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented route: `DELETE /users/{user_id}/time_entries/{id}`.
+    """
     gate = _destructive_gate(confirm, f"time_bulk_delete_time_entries(count={len(entry_ids)})")
     if gate:
         return gate

@@ -1,6 +1,7 @@
 """Smartsheet Resource Management (10,000ft) REST API Client (async).
 
-Covers the full API v1 surface for Resource Management by Smartsheet:
+Covers part of the Resource Management API v1 for these areas (not every documented
+operation; see scripts/check_openapi_drift.py):
 - Time Tracking & Timesheet Reconciliation
 - Projects, Phases & Milestones
 - Resource Scheduling & Allocations
@@ -9,6 +10,11 @@ Covers the full API v1 surface for Resource Management by Smartsheet:
 - Leaves, Holidays & PTO
 - Expenses & Expense Categories
 - Tags & Custom Fields
+
+46 of the routes called here are in neither Smartsheet's Resource Management API reference
+(https://developers.smartsheet.com/api/resource_management/openapi) nor the archived 10,000ft
+API docs (https://github.com/10Kft/10kft-api). Their methods say so in their docstrings, and
+README.md lists them with the documented equivalents where one exists.
 """
 
 from __future__ import annotations
@@ -444,17 +450,26 @@ class SmartsheetRMClient:
         return r.json()
 
     async def create_time_entry(self, data: dict[str, Any]) -> Any:
-        """Create a new time entry."""
+        """Create a new time entry.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", "/time_entries", json_data=data)
         return r.json()
 
     async def update_time_entry(self, entry_id: int | str, data: dict[str, Any]) -> Any:
-        """Update an existing time entry."""
+        """Update an existing time entry.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("PUT", f"/time_entries/{entry_id}", json_data=data)
         return r.json()
 
     async def delete_time_entry(self, entry_id: int | str) -> Any:
-        """Delete a time entry."""
+        """Delete a time entry.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("DELETE", f"/time_entries/{entry_id}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": entry_id}
 
@@ -479,12 +494,18 @@ class SmartsheetRMClient:
         return r.json()
 
     async def update_user_approval_status(self, user_id: int | str, data: dict[str, Any]) -> Any:
-        """Approve or reject time entries for a user."""
+        """Approve or reject time entries for a user.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("PUT", f"/users/{user_id}/time_entries/approval_status", json_data=data)
         return r.json() if r.content else {"status": "updated", "user_id": user_id}
 
     async def lock_user_timesheet(self, user_id: int | str, data: dict[str, Any]) -> Any:
-        """Lock or unlock timesheet records for a user up to a given date."""
+        """Lock or unlock timesheet records for a user up to a given date.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", f"/users/{user_id}/time_entries/lock", json_data=data)
         return r.json() if r.content else {"status": "locked", "user_id": user_id}
 
@@ -528,7 +549,10 @@ class SmartsheetRMClient:
         return r.json()
 
     async def get_project_phase(self, project_id: int | str, phase_id: int | str) -> Any:
-        """Get details of a specific project phase."""
+        """Get details of a specific project phase.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/projects/{project_id}/phases/{phase_id}")
         return r.json()
 
@@ -628,22 +652,34 @@ class SmartsheetRMClient:
         return r.json() if r.content else {"status": "deleted", "id": user_id}
 
     async def list_user_bill_rates(self, user_id: int | str) -> Any:
-        """List bill rate tiers for a user."""
+        """List bill rate tiers for a user.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/users/{user_id}/bill_rates")
         return r.json()
 
     async def create_user_bill_rate(self, user_id: int | str, data: dict[str, Any]) -> Any:
-        """Add a bill rate tier for a user."""
+        """Add a bill rate tier for a user.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", f"/users/{user_id}/bill_rates", json_data=data)
         return r.json()
 
     async def get_user_availability(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
-        """Get user availability and scheduled capacity."""
+        """Get user availability and scheduled capacity.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/users/{user_id}/availability", params=params)
         return r.json()
 
     async def get_user_utilization(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
-        """Get user utilization metrics."""
+        """Get user utilization metrics.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/users/{user_id}/utilization", params=params)
         return r.json()
 
@@ -653,17 +689,26 @@ class SmartsheetRMClient:
         return r.json()
 
     async def create_role(self, data: dict[str, Any]) -> Any:
-        """Create a new role."""
+        """Create a new role.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", "/roles", json_data=data)
         return r.json()
 
     async def update_role(self, role_id: int | str, data: dict[str, Any]) -> Any:
-        """Update a role."""
+        """Update a role.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("PUT", f"/roles/{role_id}", json_data=data)
         return r.json()
 
     async def delete_role(self, role_id: int | str) -> Any:
-        """Delete a role."""
+        """Delete a role.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("DELETE", f"/roles/{role_id}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": role_id}
 
@@ -673,17 +718,26 @@ class SmartsheetRMClient:
         return r.json()
 
     async def create_discipline(self, data: dict[str, Any]) -> Any:
-        """Create a new discipline."""
+        """Create a new discipline.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", "/disciplines", json_data=data)
         return r.json()
 
     async def update_discipline(self, discipline_id: int | str, data: dict[str, Any]) -> Any:
-        """Update a discipline."""
+        """Update a discipline.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("PUT", f"/disciplines/{discipline_id}", json_data=data)
         return r.json()
 
     async def delete_discipline(self, discipline_id: int | str) -> Any:
-        """Delete a discipline."""
+        """Delete a discipline.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("DELETE", f"/disciplines/{discipline_id}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": discipline_id}
 
@@ -692,42 +746,66 @@ class SmartsheetRMClient:
     # ═══════════════════════════════════════════════════════════════════════════
 
     async def list_clients(self, params: dict[str, Any] | None = None) -> Any:
-        """List clients."""
+        """List clients.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", "/clients", params=params)
         return r.json()
 
     async def get_client(self, client_id: int | str) -> Any:
-        """Get details for a client."""
+        """Get details for a client.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/clients/{client_id}")
         return r.json()
 
     async def create_client(self, data: dict[str, Any]) -> Any:
-        """Create a new client."""
+        """Create a new client.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", "/clients", json_data=data)
         return r.json()
 
     async def update_client(self, client_id: int | str, data: dict[str, Any]) -> Any:
-        """Update client details."""
+        """Update client details.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("PUT", f"/clients/{client_id}", json_data=data)
         return r.json()
 
     async def delete_client(self, client_id: int | str) -> Any:
-        """Delete a client."""
+        """Delete a client.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("DELETE", f"/clients/{client_id}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": client_id}
 
     async def list_client_contacts(self, client_id: int | str) -> Any:
-        """List contacts for a client."""
+        """List contacts for a client.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/clients/{client_id}/contacts")
         return r.json()
 
     async def create_client_contact(self, client_id: int | str, data: dict[str, Any]) -> Any:
-        """Add a contact for a client."""
+        """Add a contact for a client.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", f"/clients/{client_id}/contacts", json_data=data)
         return r.json()
 
     async def delete_client_contact(self, client_id: int | str, contact_id: int | str) -> Any:
-        """Delete a client contact."""
+        """Delete a client contact.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request(
             "DELETE", f"/clients/{client_id}/contacts/{contact_id}", allow_statuses=frozenset({200, 204})
         )
@@ -748,17 +826,26 @@ class SmartsheetRMClient:
         return r.json()
 
     async def create_leave_type(self, data: dict[str, Any]) -> Any:
-        """Create a new leave type."""
+        """Create a new leave type.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", "/leave_types", json_data=data)
         return r.json()
 
     async def update_leave_type(self, leave_type_id: int | str, data: dict[str, Any]) -> Any:
-        """Update a leave type."""
+        """Update a leave type.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("PUT", f"/leave_types/{leave_type_id}", json_data=data)
         return r.json()
 
     async def delete_leave_type(self, leave_type_id: int | str) -> Any:
-        """Delete a leave type."""
+        """Delete a leave type.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("DELETE", f"/leave_types/{leave_type_id}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": leave_type_id}
 
@@ -768,22 +855,34 @@ class SmartsheetRMClient:
         return r.json()
 
     async def get_holiday(self, holiday_id: int | str) -> Any:
-        """Get holiday details."""
+        """Get holiday details.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/holidays/{holiday_id}")
         return r.json()
 
     async def create_holiday(self, data: dict[str, Any]) -> Any:
-        """Create a new holiday."""
+        """Create a new holiday.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", "/holidays", json_data=data)
         return r.json()
 
     async def update_holiday(self, holiday_id: int | str, data: dict[str, Any]) -> Any:
-        """Update a holiday."""
+        """Update a holiday.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("PUT", f"/holidays/{holiday_id}", json_data=data)
         return r.json()
 
     async def delete_holiday(self, holiday_id: int | str) -> Any:
-        """Delete a holiday."""
+        """Delete a holiday.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("DELETE", f"/holidays/{holiday_id}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": holiday_id}
 
@@ -792,52 +891,82 @@ class SmartsheetRMClient:
     # ═══════════════════════════════════════════════════════════════════════════
 
     async def list_expenses(self, params: dict[str, Any] | None = None) -> Any:
-        """List logged expenses."""
+        """List logged expenses.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", "/expenses", params=params)
         return r.json()
 
     async def get_expense(self, expense_id: int | str) -> Any:
-        """Get details for an expense."""
+        """Get details for an expense.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/expenses/{expense_id}")
         return r.json()
 
     async def create_expense(self, data: dict[str, Any]) -> Any:
-        """Log a new expense."""
+        """Log a new expense.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", "/expenses", json_data=data)
         return r.json()
 
     async def update_expense(self, expense_id: int | str, data: dict[str, Any]) -> Any:
-        """Update an expense."""
+        """Update an expense.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("PUT", f"/expenses/{expense_id}", json_data=data)
         return r.json()
 
     async def delete_expense(self, expense_id: int | str) -> Any:
-        """Delete an expense."""
+        """Delete an expense.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("DELETE", f"/expenses/{expense_id}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": expense_id}
 
     async def list_project_expenses(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
-        """List expenses for a project."""
+        """List expenses for a project.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/projects/{project_id}/expenses", params=params)
         return r.json()
 
     async def list_user_expenses(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
-        """List expenses submitted by a user."""
+        """List expenses submitted by a user.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", f"/users/{user_id}/expenses", params=params)
         return r.json()
 
     async def list_expense_categories(self, params: dict[str, Any] | None = None) -> Any:
-        """List expense categories."""
+        """List expense categories.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", "/expense_categories", params=params)
         return r.json()
 
     async def create_expense_category(self, data: dict[str, Any]) -> Any:
-        """Create an expense category."""
+        """Create an expense category.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", "/expense_categories", json_data=data)
         return r.json()
 
     async def delete_expense_category(self, category_id: int | str) -> Any:
-        """Delete an expense category."""
+        """Delete an expense category.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("DELETE", f"/expense_categories/{category_id}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": category_id}
 
@@ -846,17 +975,26 @@ class SmartsheetRMClient:
     # ═══════════════════════════════════════════════════════════════════════════
 
     async def list_tags(self, params: dict[str, Any] | None = None) -> Any:
-        """List tags."""
+        """List tags.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", "/tags", params=params)
         return r.json()
 
     async def create_tag(self, data: dict[str, Any]) -> Any:
-        """Create a tag."""
+        """Create a tag.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("POST", "/tags", json_data=data)
         return r.json()
 
     async def delete_tag(self, tag_id: int | str) -> Any:
-        """Delete a tag."""
+        """Delete a tag.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("DELETE", f"/tags/{tag_id}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": tag_id}
 
@@ -886,12 +1024,18 @@ class SmartsheetRMClient:
         return r.json() if r.content else {"status": "deleted", "id": custom_field_id}
 
     async def list_custom_field_values(self, params: dict[str, Any] | None = None) -> Any:
-        """List custom field values."""
+        """List custom field values.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("GET", "/custom_field_values", params=params)
         return r.json()
 
     async def set_custom_field_values(self, data: dict[str, Any]) -> Any:
-        """Set or update custom field values."""
+        """Set or update custom field values.
+
+        Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
+        """
         r = await self._request("PUT", "/custom_field_values", json_data=data)
         return r.json()
 

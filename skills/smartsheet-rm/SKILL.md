@@ -67,10 +67,13 @@ This skill provides expert instructions, architectural workflows, and safety pro
    - `readonly` (39 tools): every tool annotated `readOnlyHint=true`, across all domains.
    - `full` (100 tools): the complete catalog. Seven tools are only here (or in their domain profile): the two bulk deletes, `admin_delete_client`, `admin_delete_client_contact`, `admin_create_expense_category`, `admin_delete_expense_category` and `admin_delete_tag`.
 
-5. **Read-Only Mode**:
+5. **Undocumented Routes**:
+   Some tools call routes that Smartsheet's Resource Management API reference does not document (for example clients, `/expenses`, top-level `/tags`, and create, update or delete on roles, disciplines, leave types and holidays). Each one's description carries an "Undocumented route" note that names the documented route when there is one. Prefer the documented tool when one fits, and expect an undocumented route to fail if Smartsheet removes it. The README lists all of them.
+
+6. **Read-Only Mode**:
    `SMARTSHEET_RM_READONLY=1` keeps only the read-only tools of the active profile. Any other call is refused with `isError: true`. An unknown name returns `Unknown tool`, so check the spelling rather than assuming the tool is blocked.
 
-6. **Tool Search and Code Mode (`full` only)**:
+7. **Tool Search and Code Mode (`full` only)**:
    On `full`, `--enable-tool-search` / `SMARTSHEET_RM_ENABLE_TOOL_SEARCH=1` replaces the list with `search_tools` and `call_tool` (`regex` or `bm25` backend). `--enable-code-mode` / `SMARTSHEET_RM_ENABLE_CODE_MODE=1` attaches experimental Code Mode instead; the two cannot be combined. Code Mode needs the `fastmcp[code-mode]` extra on the server (for example `uvx --with "fastmcp[code-mode]" mcp-server-smartsheet-rm --enable-code-mode`); without it the server logs a warning, skips Code Mode, and keeps the flat list, so `execute` is not listed. Under read-only, writes through `call_tool` and Code Mode `execute` are refused. On other profiles both flags are ignored with a warning.
 
 ---

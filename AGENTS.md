@@ -22,7 +22,7 @@ Before designing, implementing, or updating any MCP tool, always consult the off
 | :--- | :--- | :--- |
 | **FastMCP 4 Framework** | [`https://gofastmcp.com/llms.txt`](https://gofastmcp.com/llms.txt) | Server composition (`mount`), hierarchical middleware, transforms, lifespans, in-memory testing |
 | **Model Context Protocol (Official)** | [`https://modelcontextprotocol.io/llms.txt`](https://modelcontextprotocol.io/llms.txt) | Wire protocol spec, Streamable HTTP framing, tool annotations, elicitation |
-| **Smartsheet RM Developer Portal** | [`https://developer.smartsheet.com/10000ft-api/`](https://developer.smartsheet.com/10000ft-api/) | Smartsheet RM (10,000ft) REST API reference, endpoints, schemas, authentication |
+| **Smartsheet Developer Portal** | [`https://developers.smartsheet.com/llms.txt`](https://developers.smartsheet.com/llms.txt) | Resource Management API reference ([`/api/resource_management/openapi`](https://developers.smartsheet.com/api/resource_management/openapi), OpenAPI JSON at [`/_spec/api/resource_management/openapi.json`](https://developers.smartsheet.com/_spec/api/resource_management/openapi.json)), authentication and base URLs, changelog |
 
 ### Live Documentation MCP Servers
 Both ecosystems publish live, queryable Documentation MCP servers exposing full search and doc navigation tools:
@@ -38,7 +38,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 ## 🎯 Project Overview
 
-This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server for **Resource Management by Smartsheet** (formerly 10,000ft API), built on its public REST API. What is covered is defined by the tool catalog and checked by `scripts/check_openapi_drift.py` (the client against the endpoint list in `ENDPOINT_TO_METHOD`, and against an OpenAPI spec when given `--spec-file` or `--spec-url`); do not claim complete API coverage. The default `full` profile lists every tool; the two bulk-destructive tools are listed but refused at call time unless enabled. Expected per-profile counts live in `scripts/check_tool_contract.py`.
+This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server for **Resource Management by Smartsheet** (formerly 10,000ft API), built on its public REST API. 46 method and path pairs the client calls are in neither the current API reference nor the archived 10,000ft docs; they stay (never drop or re-point a tool on this public repo), each says "Undocumented route" in its client and tool docstrings, and `README.md` lists them. What is covered is defined by the tool catalog and checked by `scripts/check_openapi_drift.py` (the client against the endpoint list in `ENDPOINT_TO_METHOD`, and against an OpenAPI spec when given `--spec-file` or `--spec-url`); do not claim complete API coverage. The default `full` profile lists every tool; the two bulk-destructive tools are listed but refused at call time unless enabled. Expected per-profile counts live in `scripts/check_tool_contract.py`.
 
 **Primary Purpose**:
 Expose deep resource planning, allocation, time-tracking, project management, and budget telemetry to AI agents with strict enterprise safety gates, offline testing, and multi-tenant token isolation.

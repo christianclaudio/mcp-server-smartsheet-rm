@@ -180,7 +180,10 @@ async def rm_list_project_phases(project_id: int | str) -> str:
 
 @rm_tool
 async def rm_get_project_phase(project_id: int | str, phase_id: int | str) -> str:
-    """Get details for a specific project phase."""
+    """Get details for a specific project phase.
+
+    Undocumented route: `GET /projects/{project_id}/phases/{phase_id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only PUT and DELETE on that path; `GET /projects/{project_id}/phases` lists phases.
+    """
     client = await get_client()
     data = await client.get_project_phase(project_id, phase_id)
     return json.dumps(data, indent=2)
