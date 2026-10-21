@@ -110,7 +110,7 @@ Agents call these `tools/list` names. Counts for time and projects include the b
 
 ### Undocumented routes
 
-The tools below call routes that are in neither Smartsheet's [Resource Management API reference](https://developers.smartsheet.com/api/resource_management/openapi) ([OpenAPI JSON](https://developers.smartsheet.com/_spec/api/resource_management/openapi.json)) nor the archived [10,000ft API docs](https://github.com/10Kft/10kft-api). There are 46 such method and path pairs. They are kept, and not re-pointed, because some documented equivalents take different request shapes, so moving a tool would change what it sends. Smartsheet may change or remove an undocumented route without notice, and each of these tools says so in its description. Prefer a tool on a documented route when one fits: for example, `time_create_user_time_entry` or `time_create_project_time_entry` instead of `time_create_time_entry`.
+The tools below call routes that are in neither Smartsheet's [Resource Management API reference](https://developers.smartsheet.com/api/resource_management/openapi) ([OpenAPI JSON](https://developers.smartsheet.com/_spec/api/resource_management/openapi.json)) nor the archived [10,000ft API docs](https://github.com/10Kft/10kft-api). There are 46 such method and path pairs. They are kept, and not re-pointed, because some documented equivalents take different request shapes, so moving a tool would change what it sends. Smartsheet may change or remove an undocumented route without notice, and each of these tools says so in its description. Prefer a tool on a documented route when one fits: for example, `time_create_user_time_entry` or `time_create_project_time_entry` instead of `time_create_time_entry`. Each of these client calls carries `# drift-ignore: undocumented route`, and `scripts/check_openapi_drift.py` fails on any other call that is not in the published spec.
 
 | Tool | Undocumented route | Documented equivalent |
 | :--- | :--- | :--- |
@@ -317,8 +317,8 @@ pytest --cov=src/smartsheet_rm_mcp --cov-fail-under=100 -v
 # Run Tool Contract verification
 python scripts/check_tool_contract.py
 
-# Run OpenAPI Drift check
-python scripts/check_openapi_drift.py
+# Run OpenAPI Drift check against Smartsheet's published spec (or --spec-file for a local copy)
+python scripts/check_openapi_drift.py --spec-url https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
 ```
 
 <!-- mcp-name: io.github.christianclaudio/smartsheet-rm -->

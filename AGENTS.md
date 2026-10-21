@@ -38,7 +38,7 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 ## 🎯 Project Overview
 
-This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server for **Resource Management by Smartsheet** (formerly 10,000ft API), built on its public REST API. 46 method and path pairs the client calls are in neither the current API reference nor the archived 10,000ft docs; they stay (never drop or re-point a tool on this public repo), each says "Undocumented route" in its client and tool docstrings, and `README.md` lists them. What is covered is defined by the tool catalog and checked by `scripts/check_openapi_drift.py` (the client against the endpoint list in `ENDPOINT_TO_METHOD`, and against an OpenAPI spec when given `--spec-file` or `--spec-url`); do not claim complete API coverage. The default `full` profile lists every tool; the two bulk-destructive tools are listed but refused at call time unless enabled. Expected per-profile counts live in `scripts/check_tool_contract.py`.
+This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server for **Resource Management by Smartsheet** (formerly 10,000ft API), built on its public REST API. 46 method and path pairs the client calls are in neither the current API reference nor the archived 10,000ft docs; they stay (never drop or re-point a tool on this public repo), each says "Undocumented route" in its client and tool docstrings, and `README.md` lists them. What is covered is defined by the tool catalog and checked by `scripts/check_openapi_drift.py`: every method in `ENDPOINT_TO_METHOD` must exist, and every `self._request(...)` call must match a route in Smartsheet's published OpenAPI spec (`--spec-url` or `--spec-file`, required) unless it carries `# drift-ignore: <reason>`, as the 46 undocumented routes do. A new client call on an undocumented route needs that marker and a README row. Do not claim complete API coverage. The default `full` profile lists every tool; the two bulk-destructive tools are listed but refused at call time unless enabled. Expected per-profile counts live in `scripts/check_tool_contract.py`.
 
 Smartsheet Gov (`GOV_BASE_URL` in `client.py`, from the RM API Introduction and Authentication pages) is opt-in: never make it a default or add it to `DEFAULT_ALLOWED_HOSTS`. Its extra Smartsheet token goes out as `Authorization: Bearer` only when the base URL host is `GOV_HOST`, and a per-request RM token is never paired with the environment Gov token.
 
@@ -144,8 +144,10 @@ uv run pytest --cov=src/smartsheet_rm_mcp --cov-fail-under=100 -v
 # Tool contract verification
 uv run python scripts/check_tool_contract.py
 
-# Upstream OpenAPI / route drift check
-uv run python scripts/check_openapi_drift.py
+# Upstream OpenAPI / route drift check (a spec is required; exit 1 = drift, 2 = any other failure)
+uv run python scripts/check_openapi_drift.py --spec-url https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
+# Offline, against the paths-only fixture the tests use
+uv run python scripts/check_openapi_drift.py --spec-file tests/fixtures/rm-openapi-paths.json
 
 # Protocol integration tests (stdio handshake & stateless streamable HTTP)
 uv run pytest tests/test_protocol.py

@@ -213,24 +213,17 @@ def _pin_request(request: httpx.Request, hostname: str, validated_ip: str) -> No
 def fetch_pinned_https(url: str, *, timeout: float = 30.0) -> httpx.Response:
     """GET ``url`` over HTTPS with redirects disabled and TCP pinned to a checked IP.
 
-    DNS is resolved once. The socket connects to an address that passed the
-    public-IP checks. The Host header, TLS SNI, and certificate verification
-    stay on the original hostname.
+    The request goes through ``SSRFSafeTransport``, so DNS is resolved once, the socket
+    connects to an address that passed the public-IP checks, and the Host header, TLS SNI,
+    and certificate verification stay on the original hostname. A 3xx is returned, not
+    followed.
     """
-    candidate, hostname = _parse_outbound_https(url)
-    validated_ip = _validate_hostname_dns(hostname)
-    original = httpx.URL(candidate)
-    pinned = original.copy_with(host=validated_ip)
-    headers = {"Host": _host_header(hostname, original.port)}
-    extensions: dict[str, str] = {"sni_hostname": hostname}
-    with httpx.Client(verify=True, follow_redirects=False, timeout=timeout) as client:
+    candidate, _hostname = _parse_outbound_https(url)
+    transport = SSRFSafeTransport(verify=True)
+    with httpx.Client(transport=transport, verify=True, follow_redirects=False, timeout=timeout) as client:
         response = client.get(
-            pinned,
-            headers=headers,
-            extensions=extensions,
-            follow_redirects=False,
-            timeout=timeout,
-        )
+            candidate, follow_redirects=False, timeout=timeout
+        )  # drift-ignore: maintainer spec fetch, not an RM API route
         response.read()
     return response
 
@@ -294,6 +287,19 @@ class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
                 ) from exc
             _pin_request(request, hostname, validated_ip)
         return await super().handle_async_request(request)
+
+
+class SSRFSafeTransport(httpx.HTTPTransport):
+    """Sync twin of ``SSRFSafeAsyncTransport`` for maintainer fetches such as the drift spec."""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        """Resolve once, refuse non-global answers, and pin TCP to the checked IP."""
+        hostname = request.url.host
+        if (request.url.scheme or "").lower() != "https":
+            raise ValueError(f"Only HTTPS is permitted for outbound requests to {hostname}.")
+        if hostname:
+            _pin_request(request, hostname, _validate_hostname_dns(hostname))
+        return super().handle_request(request)
 
 
 class SmartsheetRMClient:
@@ -480,7 +486,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", "/time_entries", json_data=data)
+        r = await self._request(
+            "POST", "/time_entries", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def update_time_entry(self, entry_id: int | str, data: dict[str, Any]) -> Any:
@@ -488,7 +496,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("PUT", f"/time_entries/{entry_id}", json_data=data)
+        r = await self._request(
+            "PUT", f"/time_entries/{entry_id}", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_time_entry(self, entry_id: int | str) -> Any:
@@ -496,7 +506,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("DELETE", f"/time_entries/{entry_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/time_entries/{entry_id}", allow_statuses=frozenset({200, 204})
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": entry_id}
 
     async def list_project_time_entries(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
@@ -524,7 +536,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("PUT", f"/users/{user_id}/time_entries/approval_status", json_data=data)
+        r = await self._request(
+            "PUT", f"/users/{user_id}/time_entries/approval_status", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "updated", "user_id": user_id}
 
     async def lock_user_timesheet(self, user_id: int | str, data: dict[str, Any]) -> Any:
@@ -532,7 +546,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", f"/users/{user_id}/time_entries/lock", json_data=data)
+        r = await self._request(
+            "POST", f"/users/{user_id}/time_entries/lock", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "locked", "user_id": user_id}
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -579,7 +595,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/projects/{project_id}/phases/{phase_id}")
+        r = await self._request(
+            "GET", f"/projects/{project_id}/phases/{phase_id}"
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def create_project_phase(self, project_id: int | str, data: dict[str, Any]) -> Any:
@@ -682,7 +700,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/users/{user_id}/bill_rates")
+        r = await self._request(
+            "GET", f"/users/{user_id}/bill_rates"
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def create_user_bill_rate(self, user_id: int | str, data: dict[str, Any]) -> Any:
@@ -690,7 +710,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", f"/users/{user_id}/bill_rates", json_data=data)
+        r = await self._request(
+            "POST", f"/users/{user_id}/bill_rates", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def get_user_availability(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
@@ -698,7 +720,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/users/{user_id}/availability", params=params)
+        r = await self._request(
+            "GET", f"/users/{user_id}/availability", params=params
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def get_user_utilization(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
@@ -706,7 +730,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/users/{user_id}/utilization", params=params)
+        r = await self._request(
+            "GET", f"/users/{user_id}/utilization", params=params
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def list_roles(self, params: dict[str, Any] | None = None) -> Any:
@@ -719,7 +745,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", "/roles", json_data=data)
+        r = await self._request(
+            "POST", "/roles", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def update_role(self, role_id: int | str, data: dict[str, Any]) -> Any:
@@ -727,7 +755,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("PUT", f"/roles/{role_id}", json_data=data)
+        r = await self._request(
+            "PUT", f"/roles/{role_id}", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_role(self, role_id: int | str) -> Any:
@@ -735,7 +765,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("DELETE", f"/roles/{role_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/roles/{role_id}", allow_statuses=frozenset({200, 204})
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": role_id}
 
     async def list_disciplines(self, params: dict[str, Any] | None = None) -> Any:
@@ -748,7 +780,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", "/disciplines", json_data=data)
+        r = await self._request(
+            "POST", "/disciplines", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def update_discipline(self, discipline_id: int | str, data: dict[str, Any]) -> Any:
@@ -756,7 +790,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("PUT", f"/disciplines/{discipline_id}", json_data=data)
+        r = await self._request(
+            "PUT", f"/disciplines/{discipline_id}", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_discipline(self, discipline_id: int | str) -> Any:
@@ -764,7 +800,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("DELETE", f"/disciplines/{discipline_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/disciplines/{discipline_id}", allow_statuses=frozenset({200, 204})
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": discipline_id}
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -776,7 +814,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", "/clients", params=params)
+        r = await self._request(
+            "GET", "/clients", params=params
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def get_client(self, client_id: int | str) -> Any:
@@ -784,7 +824,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/clients/{client_id}")
+        r = await self._request(
+            "GET", f"/clients/{client_id}"
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def create_client(self, data: dict[str, Any]) -> Any:
@@ -792,7 +834,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", "/clients", json_data=data)
+        r = await self._request(
+            "POST", "/clients", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def update_client(self, client_id: int | str, data: dict[str, Any]) -> Any:
@@ -800,7 +844,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("PUT", f"/clients/{client_id}", json_data=data)
+        r = await self._request(
+            "PUT", f"/clients/{client_id}", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_client(self, client_id: int | str) -> Any:
@@ -808,7 +854,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("DELETE", f"/clients/{client_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/clients/{client_id}", allow_statuses=frozenset({200, 204})
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": client_id}
 
     async def list_client_contacts(self, client_id: int | str) -> Any:
@@ -816,7 +864,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/clients/{client_id}/contacts")
+        r = await self._request(
+            "GET", f"/clients/{client_id}/contacts"
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def create_client_contact(self, client_id: int | str, data: dict[str, Any]) -> Any:
@@ -824,7 +874,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", f"/clients/{client_id}/contacts", json_data=data)
+        r = await self._request(
+            "POST", f"/clients/{client_id}/contacts", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_client_contact(self, client_id: int | str, contact_id: int | str) -> Any:
@@ -834,7 +886,7 @@ class SmartsheetRMClient:
         """
         r = await self._request(
             "DELETE", f"/clients/{client_id}/contacts/{contact_id}", allow_statuses=frozenset({200, 204})
-        )
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "contact_id": contact_id}
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -856,7 +908,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", "/leave_types", json_data=data)
+        r = await self._request(
+            "POST", "/leave_types", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def update_leave_type(self, leave_type_id: int | str, data: dict[str, Any]) -> Any:
@@ -864,7 +918,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("PUT", f"/leave_types/{leave_type_id}", json_data=data)
+        r = await self._request(
+            "PUT", f"/leave_types/{leave_type_id}", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_leave_type(self, leave_type_id: int | str) -> Any:
@@ -872,7 +928,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("DELETE", f"/leave_types/{leave_type_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/leave_types/{leave_type_id}", allow_statuses=frozenset({200, 204})
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": leave_type_id}
 
     async def list_holidays(self, params: dict[str, Any] | None = None) -> Any:
@@ -885,7 +943,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/holidays/{holiday_id}")
+        r = await self._request(
+            "GET", f"/holidays/{holiday_id}"
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def create_holiday(self, data: dict[str, Any]) -> Any:
@@ -893,7 +953,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", "/holidays", json_data=data)
+        r = await self._request(
+            "POST", "/holidays", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def update_holiday(self, holiday_id: int | str, data: dict[str, Any]) -> Any:
@@ -901,7 +963,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("PUT", f"/holidays/{holiday_id}", json_data=data)
+        r = await self._request(
+            "PUT", f"/holidays/{holiday_id}", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_holiday(self, holiday_id: int | str) -> Any:
@@ -909,7 +973,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("DELETE", f"/holidays/{holiday_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/holidays/{holiday_id}", allow_statuses=frozenset({200, 204})
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": holiday_id}
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -921,7 +987,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", "/expenses", params=params)
+        r = await self._request(
+            "GET", "/expenses", params=params
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def get_expense(self, expense_id: int | str) -> Any:
@@ -929,7 +997,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/expenses/{expense_id}")
+        r = await self._request(
+            "GET", f"/expenses/{expense_id}"
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def create_expense(self, data: dict[str, Any]) -> Any:
@@ -937,7 +1007,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", "/expenses", json_data=data)
+        r = await self._request(
+            "POST", "/expenses", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def update_expense(self, expense_id: int | str, data: dict[str, Any]) -> Any:
@@ -945,7 +1017,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("PUT", f"/expenses/{expense_id}", json_data=data)
+        r = await self._request(
+            "PUT", f"/expenses/{expense_id}", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_expense(self, expense_id: int | str) -> Any:
@@ -953,7 +1027,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("DELETE", f"/expenses/{expense_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/expenses/{expense_id}", allow_statuses=frozenset({200, 204})
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": expense_id}
 
     async def list_project_expenses(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
@@ -961,7 +1037,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/projects/{project_id}/expenses", params=params)
+        r = await self._request(
+            "GET", f"/projects/{project_id}/expenses", params=params
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def list_user_expenses(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
@@ -969,7 +1047,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", f"/users/{user_id}/expenses", params=params)
+        r = await self._request(
+            "GET", f"/users/{user_id}/expenses", params=params
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def list_expense_categories(self, params: dict[str, Any] | None = None) -> Any:
@@ -977,7 +1057,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", "/expense_categories", params=params)
+        r = await self._request(
+            "GET", "/expense_categories", params=params
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def create_expense_category(self, data: dict[str, Any]) -> Any:
@@ -985,7 +1067,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", "/expense_categories", json_data=data)
+        r = await self._request(
+            "POST", "/expense_categories", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_expense_category(self, category_id: int | str) -> Any:
@@ -993,7 +1077,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("DELETE", f"/expense_categories/{category_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/expense_categories/{category_id}", allow_statuses=frozenset({200, 204})
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": category_id}
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1005,7 +1091,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", "/tags", params=params)
+        r = await self._request(
+            "GET", "/tags", params=params
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def create_tag(self, data: dict[str, Any]) -> Any:
@@ -1013,7 +1101,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("POST", "/tags", json_data=data)
+        r = await self._request(
+            "POST", "/tags", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def delete_tag(self, tag_id: int | str) -> Any:
@@ -1021,7 +1111,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("DELETE", f"/tags/{tag_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/tags/{tag_id}", allow_statuses=frozenset({200, 204})
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": tag_id}
 
     async def list_custom_fields(self, params: dict[str, Any] | None = None) -> Any:
@@ -1054,7 +1146,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("GET", "/custom_field_values", params=params)
+        r = await self._request(
+            "GET", "/custom_field_values", params=params
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def set_custom_field_values(self, data: dict[str, Any]) -> Any:
@@ -1062,7 +1156,9 @@ class SmartsheetRMClient:
 
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
-        r = await self._request("PUT", "/custom_field_values", json_data=data)
+        r = await self._request(
+            "PUT", "/custom_field_values", json_data=data
+        )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     # ═══════════════════════════════════════════════════════════════════════════

@@ -51,6 +51,7 @@ When running in multi-tenant environments where callers may provide per-request 
 - Credentialed API requests do not follow redirects.
 - Smartsheet Gov (`app.smartsheetgov.com`) is opt-in and is not in the default allowlist. Its extra Smartsheet API token (`SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN` or the per-request `x-smartsheet-gov-api-token` header) is sent as `Authorization: Bearer` only when the base URL host is `app.smartsheetgov.com`. A per-request RM token is never paired with the environment Gov token.
 - At connect time the client resolves the hostname once and opens TCP to an address that passed those checks. The `Host` header, TLS SNI, and certificate verification stay on the original hostname, so a later DNS answer cannot move the connection onto a private or metadata address.
+- The maintainer drift check (`scripts/check_openapi_drift.py --spec-url`) fetches the spec through `fetch_pinned_https`, which uses the synchronous twin of that transport: one lookup, TCP to the checked address, Host/SNI/certificate on the name, and no redirects.
 
 ### 6. Release Provenance
 Each release's wheel, sdist and GHCR image carry a GitHub build provenance attestation, created by a separate `attest` job that holds only `contents: read`, `id-token: write` and `attestations: write` (no PyPI, Release or GHCR credentials). Verify before installing:

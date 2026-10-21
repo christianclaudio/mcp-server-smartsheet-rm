@@ -15,6 +15,7 @@ from smartsheet_rm_mcp.client import (
     DEFAULT_BASE_URL,
     SmartsheetRMClient,
     SSRFSafeAsyncTransport,
+    SSRFSafeTransport,
     _validate_base_url,
     _validate_hostname_dns,
     fetch_pinned_https,
@@ -502,28 +503,19 @@ def test_validate_outbound_url() -> None:
 
 
 def test_fetch_pinned_https_connects_to_validated_ip() -> None:
-    """Spec fetches connect to the checked IP and keep Host plus SNI on the name."""
-    response = httpx.Response(
-        200,
-        json={"ok": True},
-        request=httpx.Request("GET", "https://93.184.216.34/spec.json"),
-    )
-    client = MagicMock()
-    client.__enter__.return_value = client
-    client.get.return_value = response
+    """Spec fetches go through SSRFSafeTransport: one lookup, TCP to the checked IP, Host and SNI on the name."""
+    sent: list[httpx.Request] = []
 
-    with patch("httpx.Client", return_value=client) as client_cls:
+    def handle(_self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, json={"ok": True}, request=request)
+
+    with patch.object(httpx.HTTPTransport, "handle_request", handle):
         fetched = fetch_pinned_https("https://api.example.com/spec.json?x=1", timeout=30.0)
-
     assert fetched.status_code == 200
-    client_cls.assert_called_once()
-    assert client_cls.call_args.kwargs["follow_redirects"] is False
-    client.get.assert_called_once()
-    target = client.get.call_args.args[0]
-    assert str(target) == "https://93.184.216.34/spec.json?x=1"
-    assert client.get.call_args.kwargs["headers"]["Host"] == "api.example.com"
-    assert client.get.call_args.kwargs["extensions"]["sni_hostname"] == "api.example.com"
-    assert client.get.call_args.kwargs["follow_redirects"] is False
+    assert str(sent[0].url) == "https://93.184.216.34/spec.json?x=1"
+    assert sent[0].headers["Host"] == "api.example.com"
+    assert sent[0].extensions["sni_hostname"] == "api.example.com"
 
     calls = {"n": 0}
 
@@ -533,19 +525,38 @@ def test_fetch_pinned_https_connects_to_validated_ip() -> None:
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
 
-    with patch("socket.getaddrinfo", side_effect=once):
-        with patch("httpx.Client", return_value=client):
-            fetch_pinned_https("https://developer.smartsheet.com:8443/openapi.json")
+    with patch("socket.getaddrinfo", side_effect=once), patch.object(httpx.HTTPTransport, "handle_request", handle):
+        fetch_pinned_https("https://developer.smartsheet.com:8443/openapi.json")
     assert calls["n"] == 1
-    pinned = client.get.call_args.args[0]
-    assert str(pinned) == "https://93.184.216.34:8443/openapi.json"
-    assert client.get.call_args.kwargs["headers"]["Host"] == "developer.smartsheet.com:8443"
-    assert client.get.call_args.kwargs["extensions"]["sni_hostname"] == "developer.smartsheet.com"
+    assert str(sent[1].url) == "https://93.184.216.34:8443/openapi.json"
+    assert sent[1].headers["Host"] == "developer.smartsheet.com:8443"
+    assert sent[1].extensions["sni_hostname"] == "developer.smartsheet.com"
+
+    def redirect(_self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(302, headers={"location": "https://elsewhere.example.com/"}, request=request)
+
+    with patch.object(httpx.HTTPTransport, "handle_request", redirect):
+        moved = fetch_pinned_https("https://api.example.com/spec.json")
+    assert moved.is_redirect
+    assert len(sent) == 3
 
     with patch("httpx.Client") as blocked_client:
         with pytest.raises(ValueError, match="Blocked private/reserved"):
             fetch_pinned_https("https://169.254.169.254/latest/meta-data")
         blocked_client.assert_not_called()
+
+
+def test_ssrf_safe_sync_transport() -> None:
+    """SSRFSafeTransport refuses plain HTTP and private DNS answers before connecting."""
+    transport = SSRFSafeTransport()
+    with patch.object(httpx.HTTPTransport, "handle_request") as base:
+        with pytest.raises(ValueError, match="Only HTTPS"):
+            transport.handle_request(httpx.Request("GET", "http://api.example.com/x"))
+        private = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]
+        with patch("socket.getaddrinfo", return_value=private), pytest.raises(ValueError, match="private/reserved"):
+            transport.handle_request(httpx.Request("GET", "https://api.customdomain.org/x"))
+        base.assert_not_called()
 
 
 @pytest.mark.asyncio
