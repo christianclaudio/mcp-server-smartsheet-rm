@@ -22,6 +22,9 @@ Environment variables controlling the gateway:
   SMARTSHEET_RM_ENABLE_CODE_MODE=1       - Opt-in experimental Code Mode (profile=full only; not with Tool Search).
   SMARTSHEET_RM_MCP_AUTH_TOKEN           - Shared bearer token required on HTTP transports (stdio ignores it).
   SMARTSHEET_RM_MCP_ALLOW_UNAUTHENTICATED_BIND=1 - Accept a tokenless HTTP bind to a non-localhost host.
+  SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN - Smartsheet API token sent as Bearer only to app.smartsheetgov.com
+                                           (Smartsheet Gov, opt-in via SMARTSHEET_RM_BASE_URL and
+                                           SMARTSHEET_RM_ALLOWED_HOSTS).
 
 Build order: domain mounts -> job allowlist -> read-only filter -> discovery (full only).
 """

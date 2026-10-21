@@ -50,7 +50,7 @@ ANNOTATION_WRITE_SAFE = ToolAnnotations(
 logger = logging.getLogger("smartsheet_rm_mcp")
 
 _client: SmartsheetRMClient | None = None
-_HEADER_CLIENT_CACHE: dict[tuple[str, str], SmartsheetRMClient] = {}
+_HEADER_CLIENT_CACHE: dict[tuple[str, str, str | None], SmartsheetRMClient] = {}
 _CACHE_LOCK: asyncio.Lock = asyncio.Lock()
 
 
@@ -137,9 +137,13 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
     """Retrieve or construct the SmartsheetRMClient instance.
 
     Checks request context for per-request credentials (headers:
-    auth or x-smartsheet-rm-token, x-smartsheet-rm-base-url), falling back to
-    SMARTSHEET_RM_API_TOKEN and SMARTSHEET_RM_BASE_URL. Base URL overrides must
-    name a host in SMARTSHEET_RM_ALLOWED_HOSTS (default api.rm.smartsheet.com).
+    auth or x-smartsheet-rm-token, x-smartsheet-rm-base-url, and
+    x-smartsheet-gov-api-token for Smartsheet Gov), falling back to
+    SMARTSHEET_RM_API_TOKEN, SMARTSHEET_RM_BASE_URL and
+    SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN. Base URL overrides must name a host
+    in SMARTSHEET_RM_ALLOWED_HOSTS (default api.rm.smartsheet.com). A request
+    that brings its own RM token must bring its own Gov token too; the
+    environment Gov token is never paired with a caller's RM token.
     Dynamically inspects server module for mock client injection during tests.
     """
     global _client
@@ -170,16 +174,19 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
             "SMARTSHEET_RM_BASE_URL", DEFAULT_BASE_URL
         )
         req_base_url = _validate_base_url(raw_base_url, check_dns=False)
+        req_gov_token = headers.get("x-smartsheet-gov-api-token") or None
 
         if req_token:
-            cache_key = (req_token, req_base_url)
+            cache_key = (req_token, req_base_url, req_gov_token)
             async with _CACHE_LOCK:
                 if cache_key not in _HEADER_CLIENT_CACHE:
                     if len(_HEADER_CLIENT_CACHE) >= 100:
                         oldest_key = next(iter(_HEADER_CLIENT_CACHE))
                         old_c = _HEADER_CLIENT_CACHE.pop(oldest_key)
                         await old_c.aclose()
-                    _HEADER_CLIENT_CACHE[cache_key] = SmartsheetRMClient(req_token, req_base_url)
+                    _HEADER_CLIENT_CACHE[cache_key] = SmartsheetRMClient(
+                        req_token, req_base_url, smartsheet_api_token=req_gov_token
+                    )
                 return _HEADER_CLIENT_CACHE[cache_key]
 
     if _client is None:
@@ -191,7 +198,8 @@ async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
 
         if not token:
             raise ValueError("SMARTSHEET_RM_API_TOKEN environment variable or request 'auth' header must be set")
-        _client = SmartsheetRMClient(token, base_url)
+        gov_token = os.environ.get("SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN", "").strip() or None
+        _client = SmartsheetRMClient(token, base_url, smartsheet_api_token=gov_token)
         if srv is not None and hasattr(srv, "_client"):
             setattr(srv, "_client", _client)
     return _client

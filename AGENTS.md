@@ -40,6 +40,8 @@ Both ecosystems publish live, queryable Documentation MCP servers exposing full 
 
 This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server for **Resource Management by Smartsheet** (formerly 10,000ft API), built on its public REST API. 46 method and path pairs the client calls are in neither the current API reference nor the archived 10,000ft docs; they stay (never drop or re-point a tool on this public repo), each says "Undocumented route" in its client and tool docstrings, and `README.md` lists them. What is covered is defined by the tool catalog and checked by `scripts/check_openapi_drift.py` (the client against the endpoint list in `ENDPOINT_TO_METHOD`, and against an OpenAPI spec when given `--spec-file` or `--spec-url`); do not claim complete API coverage. The default `full` profile lists every tool; the two bulk-destructive tools are listed but refused at call time unless enabled. Expected per-profile counts live in `scripts/check_tool_contract.py`.
 
+Smartsheet Gov (`GOV_BASE_URL` in `client.py`, from the RM API Introduction and Authentication pages) is opt-in: never make it a default or add it to `DEFAULT_ALLOWED_HOSTS`. Its extra Smartsheet token goes out as `Authorization: Bearer` only when the base URL host is `GOV_HOST`, and a per-request RM token is never paired with the environment Gov token.
+
 **Primary Purpose**:
 Expose deep resource planning, allocation, time-tracking, project management, and budget telemetry to AI agents with strict enterprise safety gates, offline testing, and multi-tenant token isolation.
 

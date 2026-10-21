@@ -31,6 +31,13 @@
           "isRequired": false,
           "format": "string",
           "isSecret": false
+        },
+        {
+          "name": "SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN",
+          "description": "Smartsheet Gov only: Smartsheet API token sent as Authorization: Bearer to app.smartsheetgov.com.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true
         }
       ]
     }

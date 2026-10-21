@@ -203,6 +203,20 @@ pip install mcp-server-smartsheet-rm
 | `SMARTSHEET_RM_MCP_ALLOW_UNAUTHENTICATED_BIND` | Set to `1` to accept a tokenless HTTP bind to a non-localhost host | unset |
 | `SMARTSHEET_RM_LOG_FORMAT` | Set to `json` for Datadog/CloudWatch structured logs | `text` |
 | `SMARTSHEET_RM_ALLOWED_HOSTS` | Comma-separated hostnames allowed for base URL overrides. A non-blank value replaces the default. Loopback and private targets stay blocked. | `api.rm.smartsheet.com` |
+| `SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN` | Smartsheet API token for Smartsheet Gov only; sent as `Authorization: Bearer` and only to `app.smartsheetgov.com` (see [Smartsheet Gov](#smartsheet-gov)) | unset |
+
+#### Smartsheet Gov
+
+Smartsheet Gov is opt-in; the default base URL and allowlist do not change. Per Smartsheet's RM API [Introduction](https://developers.smartsheet.com/api/resource_management/introduction) and [Authentication](https://developers.smartsheet.com/api/resource_management/getting-started/authentication) pages, the Gov base URL is `https://app.smartsheetgov.com/2.0/rm/api/v1` and every request needs both the RM token in `auth` and a Smartsheet API token as `Authorization: Bearer`. To use it:
+
+```bash
+export SMARTSHEET_RM_BASE_URL='https://app.smartsheetgov.com/2.0/rm/api/v1'
+export SMARTSHEET_RM_ALLOWED_HOSTS='app.smartsheetgov.com'
+export SMARTSHEET_RM_API_TOKEN='your_rm_api_token'
+export SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN='your_smartsheet_api_token'
+```
+
+The Gov host goes through the same HTTPS, SSRF, allowlist and DNS-pinning checks as any other base URL. The client refuses to start against the Gov host without the Smartsheet token, and sends that token to no other host. On HTTP transports, a caller that sends its own `auth` or `x-smartsheet-rm-token` header must also send its own `x-smartsheet-gov-api-token` header; the environment Gov token is never paired with a caller's RM token.
 
 ---
 

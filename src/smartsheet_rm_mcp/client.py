@@ -39,6 +39,14 @@ JSONValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 DEFAULT_BASE_URL = "https://api.rm.smartsheet.com/api/v1"
 # Credentialed calls stay on this host unless SMARTSHEET_RM_ALLOWED_HOSTS replaces it.
 DEFAULT_ALLOWED_HOSTS = "api.rm.smartsheet.com"
+# Smartsheet Gov Resource Management endpoint. Opt-in only: it is not the default and is
+# not in the default allowlist. Source: "Smartsheet Gov" in the RM API Introduction
+# (https://developers.smartsheet.com/api/resource_management/introduction) and the
+# Authentication article
+# (https://developers.smartsheet.com/api/resource_management/getting-started/authentication),
+# which also require a Smartsheet API token as ``Authorization: Bearer`` next to ``auth``.
+GOV_BASE_URL = "https://app.smartsheetgov.com/2.0/rm/api/v1"
+GOV_HOST = "app.smartsheetgov.com"
 # RFC 2606 names are not resolved, so tests stay offline. Pin them to example.com's
 # public address instead of connecting by hostname after a separate lookup.
 _EXAMPLE_PINNED_IP = "93.184.216.34"
@@ -300,9 +308,24 @@ class SmartsheetRMClient:
         base_delay: float = 1.0,
         max_retry_delay: float = 60.0,
         http_client: httpx.AsyncClient | None = None,
+        smartsheet_api_token: str | None = None,
     ) -> None:
+        """Build a client for ``base_url``, which must pass the HTTPS, SSRF and allowlist checks.
+
+        ``smartsheet_api_token`` is used only when the base URL host is ``GOV_HOST``: Smartsheet
+        Gov requires it as ``Authorization: Bearer`` in addition to the RM ``auth`` token. It
+        is required there and never sent to any other host.
+        """
         self.api_token = api_token.strip()
         self.base_url = _validate_base_url(base_url or DEFAULT_BASE_URL, check_dns=False)
+        self.is_gov = (urlparse(self.base_url).hostname or "").lower() == GOV_HOST
+        gov_token = (smartsheet_api_token or "").strip()
+        if self.is_gov and not gov_token:
+            raise ValueError(
+                "The Smartsheet Gov endpoint needs a Smartsheet API token as well as the RM token: "
+                "set SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN or send the x-smartsheet-gov-api-token header."
+            )
+        self._gov_token = gov_token if self.is_gov else None
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.max_retry_delay = max_retry_delay
@@ -347,13 +370,16 @@ class SmartsheetRMClient:
         return target if isinstance(target, dict) else {}
 
     def _headers(self) -> dict[str, str]:
-        """Headers required by Smartsheet RM (10,000ft) API."""
-        return {
+        """Headers required by Smartsheet RM (10,000ft) API, plus the Bearer token on Smartsheet Gov."""
+        headers = {
             "auth": self.api_token,
             "Accept": "application/json",
             "Content-Type": "application/json",
             "User-Agent": f"mcp-server-smartsheet-rm/{__version__}",
         }
+        if self._gov_token:
+            headers["Authorization"] = f"Bearer {self._gov_token}"
+        return headers
 
     async def _request(
         self,
