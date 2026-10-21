@@ -20,13 +20,17 @@ README.md lists them with the documented equivalents where one exists.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import ipaddress
 import os
 import random
 import socket
+import ssl
+from collections.abc import Iterable
 from typing import Any
 from urllib.parse import quote, urlparse
 
+import httpcore
 import httpx
 from httpx import Response
 
@@ -47,9 +51,6 @@ DEFAULT_ALLOWED_HOSTS = "api.rm.smartsheet.com"
 # which also require a Smartsheet API token as ``Authorization: Bearer`` next to ``auth``.
 GOV_BASE_URL = "https://app.smartsheetgov.com/2.0/rm/api/v1"
 GOV_HOST = "app.smartsheetgov.com"
-# RFC 2606 names are not resolved, so tests stay offline. Pin them to example.com's
-# public address instead of connecting by hostname after a separate lookup.
-_EXAMPLE_PINNED_IP = "93.184.216.34"
 
 
 def _resolve_allowed_hosts(allowed_hosts_str: str | None) -> set[str]:
@@ -189,85 +190,164 @@ def validate_outbound_url(url: str) -> str:
     Enforces HTTPS and the same fail-closed loopback, private, and metadata
     blocks as credentialed base URLs. Does not apply the API host allowlist,
     because this fetch does not send the Resource Management token. Connecting
-    must go through ``fetch_pinned_https`` so TCP uses the validated IP.
+    must go through ``fetch_pinned_https`` so TCP uses a checked address.
     """
     candidate, hostname = _parse_outbound_https(url)
     _validate_hostname_dns(hostname)
     return candidate
 
 
-def _host_header(hostname: str, port: int | None) -> str:
-    """Host header value preserving a non-default port and the original name."""
-    if port is not None and port != 443:
-        return f"{hostname}:{port}"
-    return hostname
+def _validate_hostname_dns(hostname: str) -> tuple[str, ...]:
+    """Reject a hostname that is, or resolves to, a non-global address.
 
-
-def _pin_request(request: httpx.Request, hostname: str, validated_ip: str) -> None:
-    """Point TCP at ``validated_ip`` while Host and SNI stay on ``hostname``."""
-    request.headers["Host"] = _host_header(hostname, request.url.port)
-    request.extensions["sni_hostname"] = hostname
-    request.url = request.url.copy_with(host=validated_ip)
-
-
-def fetch_pinned_https(url: str, *, timeout: float = 30.0) -> httpx.Response:
-    """GET ``url`` over HTTPS with redirects disabled and TCP pinned to a checked IP.
-
-    The request goes through ``SSRFSafeTransport``, so DNS is resolved once, the socket
-    connects to an address that passed the public-IP checks, and the Host header, TLS SNI,
-    and certificate verification stay on the original hostname. A 3xx is returned, not
-    followed.
-    """
-    candidate, _hostname = _parse_outbound_https(url)
-    transport = SSRFSafeTransport(verify=True)
-    with httpx.Client(transport=transport, verify=True, follow_redirects=False, timeout=timeout) as client:
-        response = client.get(
-            candidate, follow_redirects=False, timeout=timeout
-        )  # drift-ignore: maintainer spec fetch, not an RM API route
-        response.read()
-    return response
-
-
-def _validate_hostname_dns(hostname: str) -> str:
-    """Resolve ``hostname`` once and return a public IP safe to connect to.
-
-    Every returned address must be global. IPv4-mapped IPv6 and alternative
-    integer spellings of private addresses are rejected. RFC 2606 names return
-    ``_EXAMPLE_PINNED_IP`` without a network lookup.
+    Returns the checked addresses in resolver order: the address itself for an IP
+    literal, and an empty tuple for ``example.com`` and names under it, which skip
+    DNS so placeholder URLs stay usable offline (the transport refuses to connect to
+    them). Every resolved address must be global; IPv4-mapped IPv6 and alternative
+    integer spellings of private addresses are rejected. Run this in a worker thread
+    when calling from an event loop.
     """
     if hostname == "example.com" or hostname.endswith(".example.com"):
-        return _EXAMPLE_PINNED_IP
+        return ()
 
     literal = _literal_ip(hostname)
     if literal is not None:
         if _is_blocked_ip(literal):
             raise ValueError(f"Blocked private/reserved IP address: {hostname}")
-        return str(literal)
+        return (str(literal),)
 
     try:
         resolved_addrs = socket.getaddrinfo(hostname, None)
     except socket.gaierror as exc:
         raise ValueError(f"Could not resolve hostname in base URL: {hostname}") from exc
 
-    validated_ip: str | None = None
+    checked: list[str] = []
     for _, _, _, _, sockaddr in resolved_addrs:
         resolved_ip = ipaddress.ip_address(sockaddr[0])
         if _is_blocked_ip(resolved_ip):
             msg = f"Blocked hostname '{hostname}' resolving to private/reserved IP: {sockaddr[0]}"
             raise ValueError(msg)
-        if validated_ip is None:
-            validated_ip = str(resolved_ip)
-    if validated_ip is None:
+        if str(resolved_ip) not in checked:
+            checked.append(str(resolved_ip))
+    if not checked:
         raise ValueError(f"No IP addresses resolved for hostname: {hostname}")
-    return validated_ip
+    return tuple(checked)
+
+
+# ---- Connect to the checked IP --------------------------------------------------------
+# The transport checks the host once per request and hands httpcore the addresses that
+# passed; the network backend dials one of them, so httpcore never resolves the name
+# again. The URL keeps the hostname, so the Host header, SNI and certificate
+# verification all use the original name, and httpcore pools connections per hostname.
+
+_PINNED_IPS: contextvars.ContextVar[dict[str, tuple[str, ...]] | None] = contextvars.ContextVar(
+    "smartsheet_rm_pinned_ips", default=None
+)
+
+
+class _PinnedNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Dial only an address that passed ``_validate_hostname_dns`` for the requested host."""
+
+    def __init__(self, inner: httpcore.AsyncNetworkBackend | None = None) -> None:
+        self._inner = inner or httpcore.AnyIOBackend()
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        pins = _PINNED_IPS.get() or {}
+        ips = pins.get(host.lower())
+        if not ips:
+            raise SmartsheetRMAPIError(
+                status_code=400,
+                path=f"{host}:{port}",
+                method="CONNECT",
+                detail=f"SSRF validation blocked request to {host}: no checked address",
+            )
+        last: Exception | None = None
+        for ip in ips:
+            try:
+                return await self._inner.connect_tcp(
+                    ip,
+                    port,
+                    timeout=timeout,
+                    local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except (httpcore.ConnectError, httpcore.ConnectTimeout, OSError) as exc:
+                last = exc
+        assert last is not None
+        raise last
+
+    async def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.AsyncNetworkStream:
+        raise SmartsheetRMAPIError(
+            status_code=400,
+            path=path,
+            method="CONNECT",
+            detail="SSRF validation blocked request: unix sockets are not allowed",
+        )
+
+    async def sleep(self, seconds: float) -> None:
+        await self._inner.sleep(seconds)
 
 
 class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
-    """Async HTTP transport that connects to the IP validated at request time."""
+    """Async transport that connects only to an address checked for the request's host.
+
+    The hostname is resolved once per request, in a worker thread, and every address is
+    checked. The connection pool is built with a network backend that dials only those
+    addresses, in resolver order, so a second DNS answer cannot send the request
+    somewhere unchecked. A host with no checked address (an ``example.com`` placeholder)
+    is refused at connect. Proxies and Unix sockets are not supported: both would bypass
+    the pin.
+    """
+
+    def __init__(
+        self,
+        verify: ssl.SSLContext | str | bool = True,
+        cert: Any = None,
+        trust_env: bool = True,
+        http1: bool = True,
+        http2: bool = False,
+        limits: httpx.Limits | None = None,
+        retries: int = 0,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> None:
+        limits = limits or httpx.Limits(max_connections=100, max_keepalive_connections=20)
+        ssl_context = httpx.create_ssl_context(verify=verify, cert=cert, trust_env=trust_env)
+        super().__init__(verify=ssl_context, limits=limits)
+        # httpcore documents ``network_backend`` as a public AsyncConnectionPool argument
+        # (https://www.encode.io/httpcore/network-backends/). httpx.AsyncHTTPTransport does
+        # not take one, so the pool it serves requests through is rebuilt here with the
+        # same settings plus the pinned backend.
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=ssl_context,
+            max_connections=limits.max_connections,
+            max_keepalive_connections=limits.max_keepalive_connections,
+            keepalive_expiry=limits.keepalive_expiry,
+            http1=http1,
+            http2=http2,
+            retries=retries,
+            local_address=local_address,
+            socket_options=socket_options,
+            network_backend=_PinnedNetworkBackend(),
+        )
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        """Pin TCP to a public IP while Host and SNI stay on the original hostname."""
-        hostname = request.url.host
+        """Check the destination off the event loop, then connect only to a checked address."""
+        # httpcore dials, and TLS checks, the ASCII (IDNA) form of the host, so the check
+        # resolves that same name and the pin is keyed by it.
+        hostname = request.url.raw_host.decode("ascii")
         if (request.url.scheme or "").lower() != "https":
             raise SmartsheetRMAPIError(
                 status_code=400,
@@ -275,31 +355,47 @@ class SSRFSafeAsyncTransport(httpx.AsyncHTTPTransport):
                 method=request.method,
                 detail=f"Only HTTPS is permitted for outbound requests to {hostname}.",
             )
-        if hostname:
-            try:
-                validated_ip = await asyncio.to_thread(_validate_hostname_dns, hostname)
-            except ValueError as exc:
-                raise SmartsheetRMAPIError(
-                    status_code=400,
-                    path=str(request.url),
-                    method=request.method,
-                    detail=f"SSRF validation blocked request to {hostname}: {exc}",
-                ) from exc
-            _pin_request(request, hostname, validated_ip)
-        return await super().handle_async_request(request)
+        if not hostname:
+            return await super().handle_async_request(request)
+        try:
+            ips = await asyncio.to_thread(_validate_hostname_dns, hostname)
+        except ValueError as exc:
+            raise SmartsheetRMAPIError(
+                status_code=400,
+                path=str(request.url),
+                method=request.method,
+                detail=f"SSRF validation blocked request to {hostname}: {exc}",
+            ) from exc
+        token = _PINNED_IPS.set({hostname.lower(): ips})
+        try:
+            return await super().handle_async_request(request)
+        finally:
+            _PINNED_IPS.reset(token)
 
 
-class SSRFSafeTransport(httpx.HTTPTransport):
-    """Sync twin of ``SSRFSafeAsyncTransport`` for maintainer fetches such as the drift spec."""
+async def fetch_pinned_https(url: str, *, timeout: float = 30.0) -> httpx.Response:
+    """GET ``url`` over HTTPS through ``SSRFSafeAsyncTransport``, without following redirects.
 
-    def handle_request(self, request: httpx.Request) -> httpx.Response:
-        """Resolve once, refuse non-global answers, and pin TCP to the checked IP."""
-        hostname = request.url.host
-        if (request.url.scheme or "").lower() != "https":
-            raise ValueError(f"Only HTTPS is permitted for outbound requests to {hostname}.")
-        if hostname:
-            _pin_request(request, hostname, _validate_hostname_dns(hostname))
-        return super().handle_request(request)
+    The transport checks every address the host resolves to and connects only to a
+    checked one, keeping the hostname for the Host header, TLS SNI and certificate
+    verification. A 3xx is returned, not followed: its target would skip the check.
+    httpx ignores ``HTTP(S)_PROXY`` / ``ALL_PROXY`` whenever a transport is passed in,
+    so the fetch always connects directly, through the pin, and an environment proxy is
+    never used. ``trust_env=False`` is belt-and-braces. A refusal raises ``ValueError``.
+    """
+    candidate, _hostname = _parse_outbound_https(url)
+    try:
+        async with httpx.AsyncClient(
+            transport=SSRFSafeAsyncTransport(verify=True),
+            timeout=timeout,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            response = await client.get(candidate)  # drift-ignore: maintainer spec fetch, not an RM API route
+            await response.aread()
+    except SmartsheetRMAPIError as exc:
+        raise ValueError(str(exc.detail)) from exc
+    return response
 
 
 class SmartsheetRMClient:

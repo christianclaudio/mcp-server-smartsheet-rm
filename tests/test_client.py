@@ -7,15 +7,17 @@ import socket
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpcore
 import httpx
 import pytest
+from tests.fake_network import FakeNetwork, answer
 
 from smartsheet_rm_mcp.client import (
     DEFAULT_ALLOWED_HOSTS,
     DEFAULT_BASE_URL,
     SmartsheetRMClient,
     SSRFSafeAsyncTransport,
-    SSRFSafeTransport,
+    _PinnedNetworkBackend,
     _validate_base_url,
     _validate_hostname_dns,
     fetch_pinned_https,
@@ -414,10 +416,10 @@ def test_validate_base_url_ssrf_protections() -> None:
     with pytest.raises(ValueError, match="Blocked private/reserved"):
         _validate_hostname_dns("10.0.0.1")
 
-    # Example.com and global public IP in _validate_hostname_dns
-    assert _validate_hostname_dns("example.com") == "93.184.216.34"
-    assert _validate_hostname_dns("api.example.com") == "93.184.216.34"
-    assert _validate_hostname_dns("93.184.216.34") == "93.184.216.34"
+    # example.com placeholders skip DNS and have no checked address; a public literal is its own
+    assert _validate_hostname_dns("example.com") == ()
+    assert _validate_hostname_dns("api.example.com") == ()
+    assert _validate_hostname_dns("93.184.216.34") == ("93.184.216.34",)
 
     # Alternative spellings and IPv4-mapped addresses stay fail-closed
     for literal in ("2130706433", "0x7f000001", "0177.0.0.1", "127.1", "127.0.1", "[::ffff:127.0.0.1]"):
@@ -431,7 +433,7 @@ def test_validate_base_url_ssrf_protections() -> None:
             "https://[::ffff:93.184.216.34]/",
             allowed_hosts_str="::ffff:93.184.216.34",
         )
-    assert _validate_hostname_dns("0x5d581622") == "93.88.22.34"
+    assert _validate_hostname_dns("0x5d581622") == ("93.88.22.34",)
     assert _validate_base_url("https://0x5d581622/api", allowed_hosts_str="0x5d581622") == "https://0x5d581622/api"
 
     # Non-addresses that resemble literals fall through to DNS and still fail closed
@@ -440,7 +442,7 @@ def test_validate_base_url_ssrf_protections() -> None:
             with pytest.raises(ValueError, match="Could not resolve hostname"):
                 _validate_hostname_dns(host)
 
-    # Every resolved address must be global; the first good answer is the connect target
+    # Every resolved address must be global; all of them are returned, in resolver order, once each
     with patch(
         "socket.getaddrinfo",
         return_value=[
@@ -455,9 +457,10 @@ def test_validate_base_url_ssrf_protections() -> None:
         return_value=[
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("1.1.1.1", 443)),
             (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001:4860:4860::8888", 443, 0, 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 17, "", ("1.1.1.1", 443)),
         ],
     ):
-        assert _validate_hostname_dns("dual.example.net") == "1.1.1.1"
+        assert _validate_hostname_dns("dual.example.net") == ("1.1.1.1", "2001:4860:4860::8888")
     with patch("socket.getaddrinfo", return_value=[]):
         with pytest.raises(ValueError, match="No IP addresses resolved"):
             _validate_hostname_dns("empty.example.net")
@@ -502,61 +505,45 @@ def test_validate_outbound_url() -> None:
             validate_outbound_url("https://unresolvable-spec.example.net/spec.json")
 
 
-def test_fetch_pinned_https_connects_to_validated_ip() -> None:
-    """Spec fetches go through SSRFSafeTransport: one lookup, TCP to the checked IP, Host and SNI on the name."""
-    sent: list[httpx.Request] = []
+V6 = "2606:2800:21f:cb07:6820:80da:af6b:8b2c"
+V4 = "93.184.216.34"
 
-    def handle(_self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
-        sent.append(request)
-        return httpx.Response(200, json={"ok": True}, request=request)
 
-    with patch.object(httpx.HTTPTransport, "handle_request", handle):
-        fetched = fetch_pinned_https("https://api.example.com/spec.json?x=1", timeout=30.0)
+@pytest.mark.asyncio
+async def test_fetch_pinned_https_goes_through_the_pinned_transport(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Spec fetches use SSRFSafeAsyncTransport: one lookup, TCP to a checked address, no proxy, no redirect."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.vendor.test:3128")
+    monkeypatch.setenv("ALL_PROXY", "http://proxy.vendor.test:3128")
+    net = FakeNetwork()
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer(V4)) as dns:
+        fetched = await fetch_pinned_https("https://developer.smartsheet.com:8443/openapi.json?x=1")
     assert fetched.status_code == 200
-    assert str(sent[0].url) == "https://93.184.216.34/spec.json?x=1"
-    assert sent[0].headers["Host"] == "api.example.com"
-    assert sent[0].extensions["sni_hostname"] == "api.example.com"
+    assert fetched.json() == {"ok": True}
+    dns.assert_called_once()
+    assert dns.call_args.args[0] == "developer.smartsheet.com"
+    assert net.connects == [(V4, 8443)]
+    assert net.tls_server_names == ["developer.smartsheet.com"]
+    assert net.sent.startswith(b"GET /openapi.json?x=1 HTTP/1.1\r\n")
+    assert b"\r\nHost: developer.smartsheet.com:8443\r\n" in net.sent
+    assert b"CONNECT " not in net.sent
 
-    calls = {"n": 0}
+    # A 3xx is returned, not followed.
+    net = FakeNetwork(status=302)
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer(V4)):
+        moved = await fetch_pinned_https("https://developer.smartsheet.com/openapi.json")
+    assert moved.status_code == 302
+    assert len(net.connects) == 1
 
-    def once(*_args: Any, **_kwargs: Any) -> list[Any]:
-        calls["n"] += 1
-        if calls["n"] > 1:
-            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
-
-    with patch("socket.getaddrinfo", side_effect=once), patch.object(httpx.HTTPTransport, "handle_request", handle):
-        fetch_pinned_https("https://developer.smartsheet.com:8443/openapi.json")
-    assert calls["n"] == 1
-    assert str(sent[1].url) == "https://93.184.216.34:8443/openapi.json"
-    assert sent[1].headers["Host"] == "developer.smartsheet.com:8443"
-    assert sent[1].extensions["sni_hostname"] == "developer.smartsheet.com"
-
-    def redirect(_self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
-        sent.append(request)
-        return httpx.Response(302, headers={"location": "https://elsewhere.example.com/"}, request=request)
-
-    with patch.object(httpx.HTTPTransport, "handle_request", redirect):
-        moved = fetch_pinned_https("https://api.example.com/spec.json")
-    assert moved.is_redirect
-    assert len(sent) == 3
-
-    with patch("httpx.Client") as blocked_client:
+    # Refusals are ValueErrors: a literal before any client is built, a DNS answer at request time.
+    with patch("httpx.AsyncClient") as blocked_client:
         with pytest.raises(ValueError, match="Blocked private/reserved"):
-            fetch_pinned_https("https://169.254.169.254/latest/meta-data")
+            await fetch_pinned_https("https://169.254.169.254/latest/meta-data")
         blocked_client.assert_not_called()
-
-
-def test_ssrf_safe_sync_transport() -> None:
-    """SSRFSafeTransport refuses plain HTTP and private DNS answers before connecting."""
-    transport = SSRFSafeTransport()
-    with patch.object(httpx.HTTPTransport, "handle_request") as base:
-        with pytest.raises(ValueError, match="Only HTTPS"):
-            transport.handle_request(httpx.Request("GET", "http://api.example.com/x"))
-        private = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]
-        with patch("socket.getaddrinfo", return_value=private), pytest.raises(ValueError, match="private/reserved"):
-            transport.handle_request(httpx.Request("GET", "https://api.customdomain.org/x"))
-        base.assert_not_called()
+    net = FakeNetwork()
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer("10.0.0.5")):
+        with pytest.raises(ValueError, match="SSRF validation blocked request to developer.smartsheet.com"):
+            await fetch_pinned_https("https://developer.smartsheet.com/openapi.json")
+    assert net.attempts == []
 
 
 @pytest.mark.asyncio
@@ -586,31 +573,11 @@ async def test_ssrf_safe_async_transport() -> None:
             assert resp.status_code == 200
             assert dns_thread is not None
             assert dns_thread != loop_thread
-            assert req.url.host == "93.184.216.34"
-            assert req.headers["Host"] == "api.customdomain.org"
-            assert req.extensions["sni_hostname"] == "api.customdomain.org"
 
     # Non-HTTPS never reaches DNS
     with pytest.raises(SmartsheetRMAPIError) as scheme_exc:
         await transport.handle_async_request(httpx.Request("GET", "http://api.customdomain.org/data"))
     assert "Only HTTPS is permitted" in str(scheme_exc.value.detail)
-
-    # Explicit port stays on the Host header; SNI stays the bare hostname
-    with patch(
-        "socket.getaddrinfo",
-        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
-    ):
-        with patch.object(
-            httpx.AsyncHTTPTransport,
-            "handle_async_request",
-            return_value=httpx.Response(200),
-        ):
-            port_req = httpx.Request("GET", "https://api.customdomain.org:8443/data")
-            await transport.handle_async_request(port_req)
-            assert port_req.url.host == "93.184.216.34"
-            assert port_req.url.port == 8443
-            assert port_req.headers["Host"] == "api.customdomain.org:8443"
-            assert port_req.extensions["sni_hostname"] == "api.customdomain.org"
 
     # Private IP resolution raises SmartsheetRMAPIError at request time
     with patch(
@@ -622,6 +589,184 @@ async def test_ssrf_safe_async_transport() -> None:
             await transport.handle_async_request(req)
         assert exc_info.value.status_code == 400
         assert "SSRF validation blocked request" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport_connects_to_the_checked_address() -> None:
+    """One lookup; the connect goes to a checked address; the URL keeps the hostname.
+
+    The Host header and the TLS server name (SNI and certificate verification) are the
+    hostname, and the caller's request is left as it was.
+    """
+    net = FakeNetwork()
+    request = httpx.Request("POST", "https://api.customdomain.org:8443/data?q=1", json={"a": 1})
+    async with SSRFSafeAsyncTransport() as transport:
+        with net.patches(), patch("socket.getaddrinfo", return_value=answer(V6, V4)) as dns:
+            response = await transport.handle_async_request(request)
+            await response.aread()
+    assert response.status_code == 200
+    dns.assert_called_once()
+    assert dns.call_args.args[0] == "api.customdomain.org"
+    assert net.connects == [(V6, 8443)]
+    assert net.tls_server_names == ["api.customdomain.org"]
+    assert net.sent.startswith(b"POST /data?q=1 HTTP/1.1\r\n")
+    assert b"\r\nHost: api.customdomain.org:8443\r\n" in net.sent
+    assert net.sent.endswith(b'{"a":1}')
+    assert str(request.url) == "https://api.customdomain.org:8443/data?q=1"
+    assert "sni_hostname" not in request.extensions
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport_falls_back_to_the_next_checked_address() -> None:
+    """A failed connect moves to the next checked address in resolver order, never further."""
+    url = "https://api.customdomain.org/data"
+    net = FakeNetwork(fail={V6})
+    async with SSRFSafeAsyncTransport() as transport:
+        with net.patches(), patch("socket.getaddrinfo", return_value=answer(V6, V4)) as dns:
+            response = await transport.handle_async_request(httpx.Request("GET", url))
+            await response.aread()
+    assert response.status_code == 200
+    dns.assert_called_once()
+    assert net.attempts == [(V6, 443), (V4, 443)]
+    assert net.connects == [(V4, 443)]
+    assert net.tls_server_names == ["api.customdomain.org"]
+
+    # Every checked address failing is a connect error; nothing unchecked is tried.
+    net = FakeNetwork(fail={V6, V4})
+    async with SSRFSafeAsyncTransport() as transport:
+        with net.patches(), patch("socket.getaddrinfo", return_value=answer(V6, V4)) as dns:
+            with pytest.raises(httpx.ConnectError, match=f"connect to {V4} failed"):
+                await transport.handle_async_request(httpx.Request("GET", url))
+    dns.assert_called_once()
+    assert net.attempts == [(V6, 443), (V4, 443)]
+    assert net.connects == []
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport_pools_connections_per_hostname() -> None:
+    """Two hostnames on one IP never share a TLS connection; one hostname reuses its own."""
+    net = FakeNetwork()
+    async with SSRFSafeAsyncTransport() as transport:
+        with net.patches(), patch("socket.getaddrinfo", return_value=answer(V4)) as dns:
+            for host in ("a.customdomain.org", "b.customdomain.org", "a.customdomain.org"):
+                request = httpx.Request("GET", f"https://{host}/{host[0]}")
+                response = await transport.handle_async_request(request)
+                await response.aread()
+                await response.aclose()
+    # The address is checked for every request, pooled or not.
+    assert [c.args[0] for c in dns.call_args_list] == [
+        "a.customdomain.org",
+        "b.customdomain.org",
+        "a.customdomain.org",
+    ]
+    assert net.connects == [(V4, 443), (V4, 443)]
+    assert net.tls_server_names == ["a.customdomain.org", "b.customdomain.org"]
+    assert net.requests_by_connection() == [
+        [b"GET /a HTTP/1.1", b"GET /a HTTP/1.1"],
+        [b"GET /b HTTP/1.1"],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport_refuses_a_host_with_no_checked_address() -> None:
+    """Placeholders have no checked address and are refused; IP literals need no lookup."""
+    net = FakeNetwork()
+    async with SSRFSafeAsyncTransport() as transport:
+        with net.patches(), patch("socket.getaddrinfo") as dns:
+            # example.com placeholders skip DNS, so there is nothing checked to dial.
+            with pytest.raises(SmartsheetRMAPIError) as refused:
+                await transport.handle_async_request(httpx.Request("GET", "https://api.example.com/x"))
+            assert refused.value.status_code == 400
+            assert "api.example.com: no checked address" in refused.value.detail
+            assert net.attempts == []
+            # An IP literal is its own checked address.
+            response = await transport.handle_async_request(httpx.Request("GET", f"https://{V4}/x"))
+            await response.aread()
+    dns.assert_not_called()
+    assert net.connects == [(V4, 443)]
+    assert net.tls_server_names == [V4]
+
+    # A request with no host skips the lookup and has no checked address, so it is refused too.
+    net = FakeNetwork()
+    with net.patches(), pytest.raises(SmartsheetRMAPIError) as hostless:
+        await SSRFSafeAsyncTransport().handle_async_request(
+            httpx.Request("GET", httpx.URL(scheme="https", path="/relative"))
+        )
+    assert "no checked address" in hostless.value.detail
+    assert net.attempts == []
+
+    # Outside a transport request nothing is pinned, so the backend dials nothing.
+    backend = _PinnedNetworkBackend(httpcore.AsyncMockBackend([]))
+    with pytest.raises(SmartsheetRMAPIError) as unpinned:
+        await backend.connect_tcp("api.customdomain.org", 443)
+    assert "no checked address" in unpinned.value.detail
+    await backend.sleep(0)
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport_checks_the_name_it_dials() -> None:
+    """An internationalized host is checked under the ASCII (IDNA) name used to connect.
+
+    The check, the pin and the TLS server name all use ``raw_host``, so they cannot
+    disagree on which name was resolved.
+    """
+    ascii_host = "xn--fa-hia.customdomain.org"
+    net = FakeNetwork()
+    async with SSRFSafeAsyncTransport() as transport:
+        with net.patches(), patch("socket.getaddrinfo", return_value=answer(V4)) as dns:
+            response = await transport.handle_async_request(httpx.Request("GET", "https://fa\u00df.customdomain.org/x"))
+            await response.aread()
+    dns.assert_called_once()
+    assert dns.call_args.args[0] == ascii_host
+    assert net.connects == [(V4, 443)]
+    assert net.tls_server_names == [ascii_host]
+    assert f"\r\nHost: {ascii_host}\r\n".encode() in net.sent
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport_refuses_unix_sockets() -> None:
+    """The pinned backend never dials a Unix socket."""
+    backend = _PinnedNetworkBackend(httpcore.AsyncMockBackend([]))
+    with pytest.raises(SmartsheetRMAPIError) as refused:
+        await backend.connect_unix_socket("/var/run/docker.sock")
+    assert "unix sockets are not allowed" in refused.value.detail
+
+
+@pytest.mark.asyncio
+async def test_ssrf_safe_async_transport_refuses_benchmarking_range() -> None:
+    """198.18.0.0/15 (RFC 2544 benchmarking) is not global: refused as a literal and as a DNS answer."""
+    net = FakeNetwork()
+    async with SSRFSafeAsyncTransport() as transport:
+        with net.patches():
+            with pytest.raises(SmartsheetRMAPIError, match="returned 400") as literal:
+                await transport.handle_async_request(httpx.Request("GET", "https://198.18.0.1/x"))
+            with patch("socket.getaddrinfo", return_value=answer("198.18.0.1")):
+                with pytest.raises(SmartsheetRMAPIError) as answered:
+                    await transport.handle_async_request(httpx.Request("GET", "https://api.customdomain.org/x"))
+    assert "Blocked private/reserved IP address: 198.18.0.1" in literal.value.detail
+    assert "resolving to private/reserved IP: 198.18.0.1" in answered.value.detail
+    assert net.attempts == []
+
+
+def test_ssrf_safe_async_transport_builds_its_pool_through_public_httpcore_api() -> None:
+    """Guard for dependency bumps: fail loudly if the pinned pool stops being used.
+
+    ``network_backend`` is a documented ``httpcore.AsyncConnectionPool`` argument; httpx
+    serves requests through the transport's ``_pool``. The connect tests above fail too if
+    httpx stops doing that, but this names the cause.
+    """
+    import inspect
+
+    assert "network_backend" in inspect.signature(httpcore.AsyncConnectionPool).parameters
+    transport = SSRFSafeAsyncTransport(limits=httpx.Limits(max_connections=7))
+    pool = vars(transport).get("_pool")
+    assert isinstance(pool, httpcore.AsyncConnectionPool), (
+        "httpx.AsyncHTTPTransport no longer serves requests through self._pool; "
+        "SSRFSafeAsyncTransport must be rebuilt for this httpx version"
+    )
+    assert "_pool" in inspect.getsource(httpx.AsyncHTTPTransport.handle_async_request)
+    backends = [v for v in vars(pool).values() if isinstance(v, _PinnedNetworkBackend)]
+    assert len(backends) == 1
 
 
 @pytest.mark.asyncio

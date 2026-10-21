@@ -3,8 +3,8 @@
 
 Ported from the MCP Forge template drift check and adapted to this repo: the client's
 ``self._request(...)`` calls are scanned, and the spec is fetched with this repo's
-``fetch_pinned_https`` (one DNS lookup, TCP pinned to the checked IP, Host/SNI/certificate
-on the original name, redirects refused).
+``fetch_pinned_https`` (one DNS lookup per request through the client's SSRF transport, TCP
+only to a checked address, Host/SNI/certificate on the original name, redirects refused).
 
 Before the spec is read, two repo checks run (exit 2 on failure, since neither is drift): every
 method named in ``ENDPOINT_TO_METHOD`` exists on ``SmartsheetRMClient``, and the default server
@@ -631,9 +631,10 @@ def load_spec(spec_file: str | None, spec_url: str | None) -> dict[str, Any]:
         )
     print(f"[*] Fetching OpenAPI spec from: {spec_url}")
     try:
-        # fetch_pinned_https checks the URL, resolves the host once, connects to that checked
-        # IP with Host/SNI/certificate on the name, and never follows a redirect.
-        resp = fetch_pinned_https(spec_url, timeout=30.0)
+        # fetch_pinned_https checks the URL, then goes through SSRFSafeAsyncTransport with
+        # follow_redirects=False and trust_env=False: one lookup per request, TCP only to a
+        # checked address, Host/SNI/certificate on the name, and no redirect is followed.
+        resp = asyncio.run(fetch_pinned_https(spec_url, timeout=30.0))
     except ValueError as exc:
         raise SpecError(f"refused to fetch spec URL: {exc}") from exc
     except Exception as exc:

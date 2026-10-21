@@ -31,6 +31,7 @@ from scripts.check_openapi_drift import (
     scan_source,
     validate_spec,
 )
+from tests.fake_network import FakeNetwork
 
 ROOT = Path(__file__).resolve().parent.parent
 RM_SPEC_FILE = ROOT / "tests" / "fixtures" / "rm-openapi-paths.json"
@@ -61,10 +62,6 @@ def _src(tmp_path: Path, code: str) -> Path:
     src.mkdir(parents=True, exist_ok=True)
     (src / "mock_client.py").write_text(code, encoding="utf-8")
     return src
-
-
-def _response(status: int, request: httpx.Request, **kwargs: Any) -> httpx.Response:
-    return httpx.Response(status, request=request, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -364,84 +361,122 @@ class _Lookups:
         return self.answer
 
 
+def _spec_network(**kwargs: Any) -> FakeNetwork:
+    return FakeNetwork(body=kwargs.pop("body", RM_SPEC), **kwargs)
+
+
 def test_spec_url_resolves_once_and_connects_to_checked_ip() -> None:
-    """One lookup; TCP to the checked IP; Host, SNI and certificate checks stay on the name."""
+    """One lookup; TCP to the checked IP; the URL keeps the name for Host, SNI and the certificate."""
     lookups = _Lookups(PUBLIC)
-    sent: list[httpx.Request] = []
-
-    def transport(_self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
-        sent.append(request)
-        return _response(200, request, json=RM_SPEC)
-
-    with (
-        patch("socket.getaddrinfo", side_effect=lookups),
-        patch.object(httpx.HTTPTransport, "handle_request", transport),
-    ):
+    net = _spec_network()
+    with net.patches(), patch("socket.getaddrinfo", side_effect=lookups):
         assert main(["--spec-url", SPEC_URL]) == 0
     assert lookups.hosts == ["specs.vendor.test"]
-    (req,) = sent
-    assert req.url.host == "93.184.216.34"
-    assert req.headers["Host"] == "specs.vendor.test"
-    assert req.extensions["sni_hostname"] == "specs.vendor.test"
+    assert net.connects == [("93.184.216.34", 443)]
+    assert net.tls_server_names == ["specs.vendor.test"]
+    assert net.sent.startswith(b"GET /openapi.json HTTP/1.1\r\n")
+    assert b"\r\nHost: specs.vendor.test\r\n" in net.sent
+
+
+def test_spec_url_ignores_environment_proxies(monkeypatch: pytest.MonkeyPatch) -> None:
+    """httpx ignores env proxies when a transport is passed: the fetch connects directly, through the pin."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.vendor.test:3128")
+    monkeypatch.setenv("ALL_PROXY", "http://proxy.vendor.test:3128")
+    lookups = _Lookups(PUBLIC)
+    net = _spec_network()
+    with net.patches(), patch("socket.getaddrinfo", side_effect=lookups):
+        assert main(["--spec-url", SPEC_URL]) == 0
+    assert lookups.hosts == ["specs.vendor.test"]
+    assert net.connects == [("93.184.216.34", 443)]
+    assert b"CONNECT " not in net.sent
+
+
+def test_spec_url_fetch_uses_the_async_ssrf_transport_without_env_or_redirects() -> None:
+    """The fetch goes through SSRFSafeAsyncTransport on an AsyncClient with trust_env and redirects off."""
+    from smartsheet_rm_mcp.client import SSRFSafeAsyncTransport
+
+    built: list[dict[str, Any]] = []
+    original_init = httpx.AsyncClient.__init__
+    original_handle = SSRFSafeAsyncTransport.handle_async_request
+    handled: list[str] = []
+
+    def record_init(self: httpx.AsyncClient, *args: Any, **kwargs: Any) -> None:
+        built.append(kwargs)
+        original_init(self, *args, **kwargs)
+
+    async def record_handle(self: SSRFSafeAsyncTransport, request: httpx.Request) -> httpx.Response:
+        handled.append(str(request.url))
+        return await original_handle(self, request)
+
+    net = _spec_network()
+    with (
+        net.patches(),
+        patch("socket.getaddrinfo", side_effect=_Lookups(PUBLIC)),
+        patch.object(httpx.AsyncClient, "__init__", record_init),
+        patch.object(SSRFSafeAsyncTransport, "handle_async_request", record_handle),
+    ):
+        assert main(["--spec-url", SPEC_URL]) == 0
+    assert handled == [SPEC_URL]
+    (kwargs,) = built
+    assert isinstance(kwargs["transport"], SSRFSafeAsyncTransport)
+    assert kwargs["trust_env"] is False
+    assert kwargs["follow_redirects"] is False
+    assert net.connects == [("93.184.216.34", 443)]
 
 
 def test_spec_url_refuses_redirects_without_resolving_the_target(capsys: pytest.CaptureFixture[str]) -> None:
     """A 3xx is reported, never followed, and its Location is not looked up."""
     lookups = _Lookups(PUBLIC)
-    sent: list[httpx.Request] = []
-
-    def transport(_self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
-        sent.append(request)
-        return _response(302, request, headers={"location": "https://evil.vendor.test/x.json"})
-
-    with (
-        patch("socket.getaddrinfo", side_effect=lookups),
-        patch.object(httpx.HTTPTransport, "handle_request", transport),
-    ):
+    net = _spec_network(status=302, headers={"Location": "https://evil.vendor.test/x.json"})
+    with net.patches(), patch("socket.getaddrinfo", side_effect=lookups):
         assert main(["--spec-url", SPEC_URL]) == 2
-    assert len(sent) == 1
+    assert len(net.connects) == 1
     assert lookups.hosts == ["specs.vendor.test"]
     assert "refused to follow redirect for spec URL (HTTP 302 -> https://evil.vendor.test/x.json)" in (
         capsys.readouterr().err
     )
 
 
+def test_spec_url_refuses_placeholder_host_without_connecting(capsys: pytest.CaptureFixture[str]) -> None:
+    """An example.com placeholder skips DNS, so it has no checked address and is refused."""
+    net = _spec_network()
+    with net.patches(), patch("socket.getaddrinfo") as dns:
+        assert main(["--spec-url", "https://api.example.com/openapi.json"]) == 2
+    dns.assert_not_called()
+    assert net.attempts == []
+    err = capsys.readouterr().err
+    assert "refused to fetch spec URL" in err
+    assert "no checked address" in err
+
+
 def test_spec_url_refuses_private_answers_and_bad_urls(capsys: pytest.CaptureFixture[str]) -> None:
     """Private DNS answers, metadata literals and plain HTTP are refused before any connection."""
-    with (
-        patch("socket.getaddrinfo", side_effect=_Lookups(PRIVATE)),
-        patch.object(httpx.HTTPTransport, "handle_request") as transport,
-    ):
+    net = _spec_network()
+    with net.patches(), patch("socket.getaddrinfo", side_effect=_Lookups(PRIVATE)):
         assert main(["--spec-url", SPEC_URL]) == 2
         assert main(["--spec-url", "https://169.254.169.254/latest/meta-data"]) == 2
         assert main(["--spec-url", "http://specs.vendor.test/openapi.json"]) == 2
-        transport.assert_not_called()
+    assert net.attempts == []
     err = capsys.readouterr().err
     assert err.count("refused to fetch spec URL") == 3
     assert "private/reserved" in err
+    assert "10.0.0.5" in err
     assert "Only HTTPS" in err
 
 
 def test_spec_url_fetch_and_body_errors(capsys: pytest.CaptureFixture[str]) -> None:
     """Transport failures, HTTP errors and non-OpenAPI bodies exit 2 with the reason."""
-
-    def boom(_self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("boom", request=request)
-
-    def not_found(_self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
-        return _response(404, request, text="nope")
-
-    def empty(_self: httpx.HTTPTransport, request: httpx.Request) -> httpx.Response:
-        return _response(200, request, json={"openapi": "3.1.0", "paths": {}})
-
-    for handler, message in (
-        (boom, "cannot fetch spec from URL: boom"),
-        (not_found, "cannot fetch spec from URL: Client error '404"),
-        (empty, "no 'paths'"),
+    with (
+        _spec_network(fail={"93.184.216.34"}).patches(),
+        patch("socket.getaddrinfo", side_effect=_Lookups(PUBLIC)),
     ):
-        with (
-            patch("socket.getaddrinfo", side_effect=_Lookups(PUBLIC)),
-            patch.object(httpx.HTTPTransport, "handle_request", handler),
-        ):
+        assert main(["--spec-url", SPEC_URL]) == 2
+    assert "cannot fetch spec from URL: connect to 93.184.216.34 failed" in capsys.readouterr().err
+
+    for net, message in (
+        (_spec_network(status=404, body="nope"), "cannot fetch spec from URL: Client error '404"),
+        (_spec_network(body={"openapi": "3.1.0", "paths": {}}), "no 'paths'"),
+    ):
+        with net.patches(), patch("socket.getaddrinfo", side_effect=_Lookups(PUBLIC)):
             assert main(["--spec-url", SPEC_URL]) == 2
         assert message in capsys.readouterr().err

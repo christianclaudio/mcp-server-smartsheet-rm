@@ -888,9 +888,9 @@ async def test_clone_project_schedule_transport_respx(respx_mock: Any) -> None:
     real_client = SmartsheetRMClient("test-token", "https://api.rm.smartsheet.com/api/v1")
     old_client = srv._client
     srv._client = real_client
-    pinned = "https://93.184.216.34/api/v1"
+    pinned = "https://api.rm.smartsheet.com/api/v1"
     try:
-        # TCP is pinned to the validated IP. Host stays the original API name.
+        # The URL keeps the API name; only the network backend dials the validated IP.
         with patch(
             "socket.getaddrinfo",
             return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))],
@@ -935,7 +935,8 @@ async def test_clone_project_schedule_transport_respx(respx_mock: Any) -> None:
             assert create_proj_route.called
             proj_call = create_proj_route.calls.last.request
             assert proj_call.headers["host"] == "api.rm.smartsheet.com"
-            assert proj_call.extensions["sni_hostname"] == "api.rm.smartsheet.com"
+            assert proj_call.url.host == "api.rm.smartsheet.com"
+            assert "sni_hostname" not in proj_call.extensions
             proj_req = json.loads(proj_call.content)
             assert proj_req["starts_at"] == "2026-09-01"
             assert proj_req["ends_at"] == "2026-10-01"

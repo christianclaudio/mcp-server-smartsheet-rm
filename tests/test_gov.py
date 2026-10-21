@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Iterator
-from typing import Any
 from unittest.mock import patch
 
 import httpx
 import pytest
+from tests.fake_network import FakeNetwork, answer
 
 from smartsheet_rm_mcp import common
 from smartsheet_rm_mcp import server as srv
@@ -123,23 +123,20 @@ async def test_gov_transport_pins_and_blocks_private(clean: None, monkeypatch: p
 
 
 @pytest.mark.asyncio
-async def test_gov_transport_connects_to_checked_ip(
-    clean: None, monkeypatch: pytest.MonkeyPatch, respx_mock: Any
-) -> None:
-    """TCP goes to the validated IP; Host and SNI stay on app.smartsheetgov.com."""
+async def test_gov_transport_connects_to_checked_ip(clean: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """TCP goes to the validated IP; the URL, Host and SNI stay on app.smartsheetgov.com."""
     monkeypatch.setenv("SMARTSHEET_RM_ALLOWED_HOSTS", GOV_HOST)
     client = SmartsheetRMClient("rm", GOV_BASE_URL, smartsheet_api_token="ss")
-    public = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
-    route = respx_mock.get("https://93.184.216.34/2.0/rm/api/v1/projects").mock(
-        return_value=httpx.Response(200, json={"data": []})
-    )
-    with patch("socket.getaddrinfo", return_value=public) as lookup:
+    net = FakeNetwork(body={"data": []})
+    with net.patches(), patch("socket.getaddrinfo", return_value=answer("93.184.216.34")) as lookup:
         await client.list_projects()
-    req = route.calls.last.request
-    assert req.headers["Host"] == GOV_HOST
-    assert req.extensions["sni_hostname"] == GOV_HOST
-    assert req.headers["Authorization"] == "Bearer ss"
     assert lookup.call_count == 1
+    assert lookup.call_args.args[0] == GOV_HOST
+    assert net.connects == [("93.184.216.34", 443)]
+    assert net.tls_server_names == [GOV_HOST]
+    assert net.sent.startswith(b"GET /2.0/rm/api/v1/projects")
+    assert f"\r\nHost: {GOV_HOST}\r\n".encode() in net.sent
+    assert b"\r\nAuthorization: Bearer ss\r\n" in net.sent
     await client.aclose()
 
 
