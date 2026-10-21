@@ -59,13 +59,13 @@ This skill provides expert instructions, architectural workflows, and safety pro
 4. **Profile Selection**:
    Load only the tools the job needs by setting `SMARTSHEET_RM_PROFILE` or `--profile`. Prompts and resources stay available on every job profile and on `readonly`; the domain-mount profiles `time`, `projects` and `admin` carry only their own domain's prompts and resources.
    - Job profiles (tools across domains):
-     - `timesheets` (22 tools): log, correct, submit, lock and approve weekly time against assignments.
-     - `staffing` (25 tools): check availability and utilization; create or adjust assignments, placeholders and subtasks.
+     - `timesheets` (24 tools): log, correct, submit, lock and approve weekly time against assignments.
+     - `staffing` (27 tools): check availability and utilization; create or adjust assignments, placeholders and subtasks.
      - `org_setup` (35 tools): onboard people; maintain bill rates, roles, disciplines, leave types, holidays, custom-field definitions, user statuses and webhooks.
      - `portfolio` (33 tools): set up and maintain projects, phases, clients and expenses; read budget and report totals.
-   - Domain profiles: `time` (15 tools), `projects` (25 tools), `admin` (60 tools).
+   - Domain profiles: `time` (17 tools), `projects` (27 tools), `admin` (60 tools).
    - `readonly` (39 tools): every tool annotated `readOnlyHint=true`, across all domains.
-   - `full` (100 tools): the complete catalog. Seven tools are only here (or in their domain profile): the two bulk deletes, `admin_delete_client`, `admin_delete_client_contact`, `admin_create_expense_category`, `admin_delete_expense_category` and `admin_delete_tag`.
+   - `full` (104 tools): the complete catalog. Seven tools are only here (or in their domain profile): the two bulk deletes, `admin_delete_client`, `admin_delete_client_contact`, `admin_create_expense_category`, `admin_delete_expense_category` and `admin_delete_tag`.
 
 5. **Undocumented Routes**:
    Some tools call routes that Smartsheet's Resource Management API reference does not document (for example clients, `/expenses`, top-level `/tags`, and create, update or delete on roles, disciplines, leave types and holidays). Each one's description carries an "Undocumented route" note that names the documented route when there is one. Prefer the documented tool when one fits, and expect an undocumented route to fail if Smartsheet removes it. The README lists all of them.
@@ -100,9 +100,9 @@ FastMCP Gateway (create_server)
 │   ├── ParentAuditMiddleware (timing, structured JSON logging, secret scrubbing)
 │   └── ReadOnlyGateMiddleware (readOnlyHint-only gate; refuses writes, fails closed)
 ├── Mounted Domain Sub-Servers (Selective Namespace Mounting)
-│   ├── Time Sub-Server (tools/time.py, namespace="time", 15 tools + time_timesheet_reconciliation prompt)
+│   ├── Time Sub-Server (tools/time.py, namespace="time", 17 tools + time_timesheet_reconciliation prompt)
 │   │   └── TimeDomainGuardMiddleware (hours range validation, bulk gate)
-│   ├── Projects Sub-Server (tools/projects.py, namespace="projects", 25 tools + projects_project_staffing_plan prompt)
+│   ├── Projects Sub-Server (tools/projects.py, namespace="projects", 27 tools + projects_project_staffing_plan prompt)
 │   │   └── ProjectsDomainGuardMiddleware (non-empty naming validation, bulk gate)
 │   └── Admin Sub-Server (tools/admin.py, namespace="admin", 60 tools + rm://admin/* resources)
 │       └── AdminDomainGuardMiddleware (pagination batch cap validation)

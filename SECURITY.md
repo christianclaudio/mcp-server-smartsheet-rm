@@ -66,6 +66,6 @@ gh attestation verify oci://ghcr.io/christianclaudio/mcp-server-smartsheet-rm:<v
 | Use Case | Recommended Configuration |
 |----------|---------------------------|
 | **Autonomous AI Assistants & Chatbots** | `SMARTSHEET_RM_READONLY=1` |
-| **Interactive Developer Workstation** | Default `full` profile (100 tools, single-delete confirmation gates; the two bulk-destructive tools are listed but refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) |
+| **Interactive Developer Workstation** | Default `full` profile (104 tools, single-delete confirmation gates; the two bulk-destructive tools are listed but refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) |
 | **Enterprise Administrative Scripts** | `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1` (with `confirm=True`) |
 | **Focused Context (weekly timesheets)** | `SMARTSHEET_RM_PROFILE=timesheets` (job profile) or `SMARTSHEET_RM_PROFILE=time` (time domain only) |

@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date, timedelta
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
+from pydantic import Field
 
 from smartsheet_rm_mcp.common import (
     ANNOTATION_DESTRUCTIVE,
@@ -23,6 +24,18 @@ from smartsheet_rm_mcp.errors import SmartsheetRMAPIError, redact_secrets
 from smartsheet_rm_mcp.middleware import ProjectsDomainGuardMiddleware
 
 logger = logging.getLogger("smartsheet_rm_mcp")
+
+# The RM reference names the fixed allocation mode `fixed` in its description and `fixed_hours` in its
+# enum, so the documented assignment creates send allocation_mode exactly as the caller gives it.
+_ALLOCATION_MODE_DESCRIPTION = (
+    "Allocation mode, sent unchanged: `percent` (the default; `percent` is then required), "
+    "`hours_per_day`, or the fixed mode, which the API reference names `fixed` in its description and "
+    "`fixed_hours` in its enum."
+)
+_PERCENT_DESCRIPTION = (
+    "Share of the user's time as a fraction from 0 to 1. Required when allocation_mode is `percent`, "
+    "which is the default; without it the call is refused before any request is sent."
+)
 
 
 @rm_tool
@@ -326,6 +339,114 @@ async def rm_create_assignment(
 
     client = await get_client()
     data = await client.create_assignment(payload)
+    return json.dumps(data, indent=2)
+
+
+def _assignment_payload(
+    start_date: str,
+    end_date: str,
+    allocation_mode: str,
+    percent: float | None,
+    hours_per_day: float | None,
+    fixed_hours: float | None,
+    description: str | None,
+    status_option_id: int | str | None,
+    bill_rate_id: int | str | None,
+) -> dict[str, Any]:
+    """Build the shared body for the documented project and user assignment creates.
+
+    Percent mode (the default) needs a percent value, so a call without one is refused here,
+    before any request is sent.
+    """
+    if allocation_mode == "percent" and percent is None:
+        _invalid_request("percent is required when allocation_mode is percent (the default)")
+    payload: dict[str, Any] = {"starts_at": start_date, "ends_at": end_date, "allocation_mode": allocation_mode}
+    optional: dict[str, Any] = {
+        "percent": percent,
+        "hours_per_day": hours_per_day,
+        "fixed_hours": fixed_hours,
+        "description": description,
+        "status_option_id": status_option_id,
+        "bill_rate_id": bill_rate_id,
+    }
+    payload.update({key: value for key, value in optional.items() if value is not None})
+    return payload
+
+
+@rm_tool
+async def rm_create_project_assignment(
+    project_id: int | str,
+    user_id: int | str,
+    start_date: str,
+    end_date: str,
+    allocation_mode: Annotated[str, Field(description=_ALLOCATION_MODE_DESCRIPTION)] = "percent",
+    percent: Annotated[float | None, Field(description=_PERCENT_DESCRIPTION)] = None,
+    hours_per_day: float | None = None,
+    fixed_hours: float | None = None,
+    description: str | None = None,
+    status_option_id: int | str | None = None,
+    bill_rate_id: int | str | None = None,
+) -> str:
+    """Assign a user to a project on the documented route `POST /projects/{project_id}/assignments` (dates: YYYY-MM-DD).
+
+    Set allocation_mode and the matching value: percent (the reference documents it as a fraction from
+    0 to 1), hours_per_day, or fixed_hours for the fixed mode. allocation_mode is sent as given, because
+    the reference names the fixed mode `fixed` in its description and `fixed_hours` in its schema.
+    Percent mode is the default and requires percent; without it the call is refused before any request.
+    """
+    payload = _assignment_payload(
+        start_date,
+        end_date,
+        allocation_mode,
+        percent,
+        hours_per_day,
+        fixed_hours,
+        description,
+        status_option_id,
+        bill_rate_id,
+    )
+    payload["user_id"] = user_id
+    client = await get_client()
+    data = await client.create_project_assignment(project_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_create_user_assignment(
+    user_id: int | str,
+    assignable_id: int | str,
+    start_date: str,
+    end_date: str,
+    allocation_mode: Annotated[str, Field(description=_ALLOCATION_MODE_DESCRIPTION)] = "percent",
+    percent: Annotated[float | None, Field(description=_PERCENT_DESCRIPTION)] = None,
+    hours_per_day: float | None = None,
+    fixed_hours: float | None = None,
+    description: str | None = None,
+    status_option_id: int | str | None = None,
+    bill_rate_id: int | str | None = None,
+) -> str:
+    """Assign a user to a project, phase or leave type on the documented route `POST /users/{user_id}/assignments` (dates: YYYY-MM-DD).
+
+    assignable_id is the project, phase or leave type ID. Set allocation_mode and the matching value:
+    percent (the reference documents it as a fraction from 0 to 1), hours_per_day, or fixed_hours for the
+    fixed mode. allocation_mode is sent as given, because the reference names the fixed mode `fixed` in
+    its description and `fixed_hours` in its schema. Percent mode is the default and requires percent;
+    without it the call is refused before any request.
+    """
+    payload = _assignment_payload(
+        start_date,
+        end_date,
+        allocation_mode,
+        percent,
+        hours_per_day,
+        fixed_hours,
+        description,
+        status_option_id,
+        bill_rate_id,
+    )
+    payload["assignable_id"] = assignable_id
+    client = await get_client()
+    data = await client.create_user_assignment(user_id, payload)
     return json.dumps(data, indent=2)
 
 
@@ -635,6 +756,8 @@ delete_project_phase = rm_delete_project_phase
 list_assignments = rm_list_assignments
 get_assignment = rm_get_assignment
 create_assignment = rm_create_assignment
+create_project_assignment = rm_create_project_assignment
+create_user_assignment = rm_create_user_assignment
 update_assignment = rm_update_assignment
 delete_assignment = rm_delete_assignment
 clone_project_schedule = rm_clone_project_schedule
@@ -662,6 +785,8 @@ _PROJECTS_TOOLS_CONFIG = [
     ("list_assignments", rm_list_assignments, ANNOTATION_READ_ONLY),
     ("get_assignment", rm_get_assignment, ANNOTATION_READ_ONLY),
     ("create_assignment", rm_create_assignment, ANNOTATION_WRITE_SAFE),
+    ("create_project_assignment", rm_create_project_assignment, ANNOTATION_WRITE_SAFE),
+    ("create_user_assignment", rm_create_user_assignment, ANNOTATION_WRITE_SAFE),
     ("update_assignment", rm_update_assignment, ANNOTATION_WRITE_SAFE),
     ("delete_assignment", rm_delete_assignment, ANNOTATION_DESTRUCTIVE),
     ("clone_project_schedule", rm_clone_project_schedule, ANNOTATION_WRITE_SAFE),

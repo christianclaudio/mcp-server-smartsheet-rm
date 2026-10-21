@@ -17,14 +17,14 @@ REPO = Path(__file__).resolve().parent.parent
 # the two bulk tools are listed and refused at call time unless SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1.
 EXPECTED_PROFILE_COUNTS: dict[str, tuple[int, int]] = {
     # Domain-mount profiles
-    "full": (100, 39),
-    "time": (15, 4),
-    "projects": (25, 10),
+    "full": (104, 39),
+    "time": (17, 4),
+    "projects": (27, 10),
     "admin": (60, 25),
     "readonly": (39, 39),
     # Job (allowlist) profiles
-    "timesheets": (22, 12),
-    "staffing": (25, 18),
+    "timesheets": (24, 12),
+    "staffing": (27, 18),
     "org_setup": (35, 13),
     "portfolio": (33, 18),
 }

@@ -76,7 +76,7 @@ async def rm_create_time_entry(
 ) -> str:
     """Create a new time entry for a user on a project (date format: YYYY-MM-DD).
 
-    Undocumented route: `POST /time_entries` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `POST /users/{user_id}/time_entries` and `POST /projects/{project_id}/time_entries`.
+    Undocumented route: `POST /time_entries` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `POST /users/{user_id}/time_entries` (time_create_user_time_entry) and `POST /projects/{project_id}/time_entries` (time_create_project_time_entry).
     """
     payload: dict[str, Any] = {
         "user_id": user_id,
@@ -92,6 +92,64 @@ async def rm_create_time_entry(
 
     client = await get_client()
     data = await client.create_time_entry(payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_create_user_time_entry(
+    user_id: int | str,
+    assignable_id: int | str,
+    date: str,
+    hours: float,
+    task: str | None = None,
+    notes: str | None = None,
+    bill_rate_id: int | str | None = None,
+) -> str:
+    """Create a time entry for a user on the documented route `POST /users/{user_id}/time_entries`.
+
+    assignable_id is the project, phase or leave type ID; date is YYYY-MM-DD. task, notes and
+    bill_rate_id are optional; the reference limits task and notes to 256 characters. The body repeats
+    user_id, which the reference says must match the URL.
+    """
+    payload: dict[str, Any] = {"user_id": user_id, "assignable_id": assignable_id, "date": date, "hours": hours}
+    if task is not None:
+        payload["task"] = task
+    if notes is not None:
+        payload["notes"] = notes
+    if bill_rate_id is not None:
+        payload["bill_rate_id"] = bill_rate_id
+
+    client = await get_client()
+    data = await client.create_user_time_entry(user_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_create_project_time_entry(
+    project_id: int | str,
+    user_id: int | str,
+    date: str,
+    hours: float,
+    task: str | None = None,
+    notes: str | None = None,
+    bill_rate_id: int | str | None = None,
+) -> str:
+    """Create a time entry on a project on the documented route `POST /projects/{project_id}/time_entries`.
+
+    date is YYYY-MM-DD. The body's assignable_id is project_id, which the reference says must match the
+    URL; to log time to a phase or leave type, use time_create_user_time_entry. task, notes and
+    bill_rate_id are optional; the reference limits task and notes to 256 characters.
+    """
+    payload: dict[str, Any] = {"user_id": user_id, "assignable_id": project_id, "date": date, "hours": hours}
+    if task is not None:
+        payload["task"] = task
+    if notes is not None:
+        payload["notes"] = notes
+    if bill_rate_id is not None:
+        payload["bill_rate_id"] = bill_rate_id
+
+    client = await get_client()
+    data = await client.create_project_time_entry(project_id, payload)
     return json.dumps(data, indent=2)
 
 
@@ -506,6 +564,8 @@ def timesheet_reconciliation(user_id: str, week_start_date: str) -> str:
 list_time_entries = rm_list_time_entries
 get_time_entry = rm_get_time_entry
 create_time_entry = rm_create_time_entry
+create_user_time_entry = rm_create_user_time_entry
+create_project_time_entry = rm_create_project_time_entry
 update_time_entry = rm_update_time_entry
 delete_time_entry = rm_delete_time_entry
 list_user_suggestions = rm_list_user_suggestions
@@ -523,6 +583,8 @@ _TIME_TOOLS_CONFIG = [
     ("list_time_entries", rm_list_time_entries, ANNOTATION_READ_ONLY),
     ("get_time_entry", rm_get_time_entry, ANNOTATION_READ_ONLY),
     ("create_time_entry", rm_create_time_entry, ANNOTATION_WRITE_SAFE),
+    ("create_user_time_entry", rm_create_user_time_entry, ANNOTATION_WRITE_SAFE),
+    ("create_project_time_entry", rm_create_project_time_entry, ANNOTATION_WRITE_SAFE),
     ("update_time_entry", rm_update_time_entry, ANNOTATION_WRITE_SAFE),
     ("delete_time_entry", rm_delete_time_entry, ANNOTATION_DESTRUCTIVE),
     ("list_user_suggestions", rm_list_user_suggestions, ANNOTATION_READ_ONLY),
