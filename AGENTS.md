@@ -106,6 +106,7 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
    - Error messages, logs, and tracebacks must pass through regex redaction (`_redact_secrets`) stripping Bearer tokens, passwords, and API keys. A PEM block runs from `-----BEGIN <label>-----` to the `-----END <label>-----` with the same label (any case; an END with another label does not end it, and a `-----BEGIN` with no matching END is masked to the end of the text). A `{...}`/`[...]`/`(...)` value after a credential key or a token key, quoted or not (a Python `repr` such as `{'api_key': ['x']}` or `{'api_key': ('a', 'x')}`), is masked to its balanced bracket, with brackets inside double- or single-quoted strings skipped (or the end of the line when it never balances), with bracket scans cached so many unbalanced values cost one pass. A bare number, `True` or word under a quoted key (`{'password': 12345}`) is masked; `None`/`null` stays. In `redact_message`, once 64 brackets have failed to parse (abusive input), the rest of the message is masked. A flood of `(` right after `:` or `=` costs about 25 times more per byte than plain text, because each one checks the 256 characters before it for a key; it stays linear and nothing leaks, but hundreds of KB of it take seconds (a known limit). A value on the line after `password=` (or any credential key) is not masked (a known limit).
 3. **Multi-Stage Non-Root Containers**:
    - The `Dockerfile` must use a multi-stage build creating and executing under non-root `USER mcp` with virtual environment `/opt/venv`.
+   - Trust stores follow FastMCP's [certificate authority incident notice (October 2026)](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026): the Docker builder and the release and drift-monitor workflows install with `pip>=26.2.2`, the runtime stage upgrades the OS `ca-certificates` package and fails the build below the patched Debian version ([DSA-6572-1](https://security-tracker.debian.org/tracker/DSA-6572-1)), and `certifi>=2026.10.19` is a direct dependency.
 4. **Registry Metadata Constraint**:
    - In `server.json`, the root `description` must be **strictly $\le$ 100 characters** to pass MCP Registry schema validation (longer strings trigger HTTP 422).
    - Default package transport is `stdio`, and packages must specify `"runtimeHint": "uvx"`.
@@ -122,6 +123,8 @@ When translating an API documentation page or endpoint into an MCP tool, follow 
 ---
 
 ## 🛠️ Development & Verification Commands
+
+uv 0.13.4 or later is required (`[tool.uv] required-version` in `pyproject.toml`, from FastMCP's certificate authority incident notice); older uv refuses to run, and CI's `setup-uv` installs from that setting.
 
 ```bash
 # Install editable with dev dependencies
