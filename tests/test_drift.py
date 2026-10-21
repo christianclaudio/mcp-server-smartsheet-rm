@@ -12,6 +12,8 @@ import json
 import re
 import shutil
 import socket
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -480,3 +482,26 @@ def test_spec_url_fetch_and_body_errors(capsys: pytest.CaptureFixture[str]) -> N
         with net.patches(), patch("socket.getaddrinfo", side_effect=_Lookups(PUBLIC)):
             assert main(["--spec-url", SPEC_URL]) == 2
         assert message in capsys.readouterr().err
+
+
+def test_main_exits_2_when_a_repo_import_fails(capsys: pytest.CaptureFixture[str]) -> None:
+    """A failed import of the repo's modules is a broken run (exit 2), never drift (exit 1)."""
+    with patch.dict(sys.modules, {"smartsheet_rm_mcp.server": None}):
+        assert main(["--spec-file", str(RM_SPEC_FILE)]) == 2
+    err = capsys.readouterr().err
+    assert "drift check failed unexpectedly: ModuleNotFoundError" in err
+    assert "smartsheet_rm_mcp.server" in err
+
+
+def test_script_exits_2_when_a_repo_import_fails() -> None:
+    """Run as a script, an import failure exits 2 instead of a traceback (exit 1)."""
+    script = ROOT / "scripts" / "check_openapi_drift.py"
+    code = (
+        "import runpy, sys\n"
+        "sys.modules['smartsheet_rm_mcp.client'] = None\n"
+        f"sys.argv = ['check_openapi_drift.py', '--spec-file', {str(RM_SPEC_FILE)!r}]\n"
+        f"runpy.run_path({str(script)!r}, run_name='__main__')\n"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, check=False)
+    assert proc.returncode == 2, proc.stderr
+    assert "drift check failed unexpectedly: ModuleNotFoundError" in proc.stderr

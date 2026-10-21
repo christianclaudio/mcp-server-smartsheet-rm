@@ -223,6 +223,38 @@ async def test_assignment_percent_mode_requires_percent(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["projects_create_project_assignment", "projects_create_user_assignment"])
+@pytest.mark.parametrize(
+    ("mode", "message"),
+    [
+        ("hours_per_day", "hours_per_day is required when allocation_mode is hours_per_day"),
+        ("fixed", "fixed_hours is required when allocation_mode is fixed"),
+        ("fixed_hours", "fixed_hours is required when allocation_mode is fixed_hours"),
+    ],
+)
+async def test_assignment_mode_requires_its_value(
+    sent: list[httpx.Request], name: str, mode: str, message: str
+) -> None:
+    """hours_per_day and the fixed mode without their value are an isError result and send nothing.
+
+    A value for another mode does not count: percent alone does not satisfy hours_per_day or fixed.
+    """
+    args: dict[str, Any] = {"user_id": 5, "start_date": "2026-11-02", "end_date": "2026-11-27", "percent": 0.5}
+    args |= {"project_id": 42} if name == "projects_create_project_assignment" else {"assignable_id": 77}
+    async with Client(create_server(profile="full")) as client:
+        res = await client.call_tool(name, args | {"allocation_mode": mode}, raise_on_error=False)
+    assert res.is_error is True
+    assert json.loads(res.content[0].text) == {  # type: ignore[union-attr]
+        "error": {"type": "invalid_request", "message": message}
+    }
+    assert sent == []
+    tools = {t.name: t for t in await create_server(profile="full").list_tools()}
+    description = tools[name].parameters["properties"]["allocation_mode"]["description"]
+    assert "`hours_per_day` is then required" in description
+    assert "`fixed_hours` is then required" in description
+
+
+@pytest.mark.asyncio
 async def test_new_tools_are_safe_writes_in_job_profiles(sent: list[httpx.Request]) -> None:
     """Each new tool is a non-destructive, non-idempotent write listed in its job profile."""
     tools = {t.name: t for t in await create_server(profile="full").list_tools()}

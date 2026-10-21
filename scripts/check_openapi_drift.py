@@ -22,8 +22,11 @@ Broken scan (exit 2, not drift; the spec is not compared, since the scan is inco
 - NO CLIENT CALLS: nothing under the source directory was recognized as a client call.
 
 Warnings (exit 1 only with ``--strict``):
-- DEPRECATED ROUTE or DEPRECATED PARAMETER: the spec marks the route or a query parameter the
-  client passes as deprecated (``deprecated: true`` or a deprecation note in its description).
+- DEPRECATED ROUTE: the spec marks the route ``deprecated: true``. A deprecation note in a route's
+  description is not detected.
+- DEPRECATED PARAMETER: the spec marks a query parameter the client passes as deprecated
+  (``deprecated: true``, ``[deprecated]`` or "end of support" in its description, or "deprecated"
+  in its title).
 - UNDOCUMENTED PARAMETER: the client passes a query parameter the spec does not declare.
 
 Spec endpoints no client call covers are listed for information.
@@ -56,8 +59,8 @@ from typing import Any
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
-from smartsheet_rm_mcp.client import SmartsheetRMClient, fetch_pinned_https  # noqa: E402
-from smartsheet_rm_mcp.server import mcp  # noqa: E402
+# The repo's own modules are imported inside the functions that use them, so a failed import
+# happens under main()'s try and exits 2 (a broken run), never 1 (drift) or a bare traceback.
 
 # Smartsheet's published Resource Management OpenAPI document (linked from
 # https://developers.smartsheet.com/api/resource_management/openapi).
@@ -634,6 +637,8 @@ def load_spec(spec_file: str | None, spec_url: str | None) -> dict[str, Any]:
         # fetch_pinned_https checks the URL, then goes through SSRFSafeAsyncTransport with
         # follow_redirects=False and trust_env=False: one lookup per request, TCP only to a
         # checked address, Host/SNI/certificate on the name, and no redirect is followed.
+        from smartsheet_rm_mcp.client import fetch_pinned_https
+
         resp = asyncio.run(fetch_pinned_https(spec_url, timeout=30.0))
     except ValueError as exc:
         raise SpecError(f"refused to fetch spec URL: {exc}") from exc
@@ -654,6 +659,8 @@ def load_spec(spec_file: str | None, spec_url: str | None) -> dict[str, Any]:
 
 def check_client_surface() -> list[str]:
     """Return errors for missing ``ENDPOINT_TO_METHOD`` methods or too few registered tools."""
+    from smartsheet_rm_mcp.client import SmartsheetRMClient
+
     client_methods = {
         name
         for name, _ in inspect.getmembers(SmartsheetRMClient, predicate=inspect.isfunction)
@@ -676,6 +683,8 @@ def check_client_surface() -> list[str]:
 
 def registered_tool_names() -> list[str]:
     """Return the client-visible tool names of the default gateway via public ``list_tools()``."""
+    from smartsheet_rm_mcp.server import mcp
+
     return [tool.name for tool in asyncio.run(mcp.list_tools())]
 
 

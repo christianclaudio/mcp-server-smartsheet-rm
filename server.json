@@ -38,6 +38,13 @@
           "isRequired": false,
           "format": "string",
           "isSecret": true
+        },
+        {
+          "name": "SMARTSHEET_RM_ALLOWED_HOSTS",
+          "description": "Comma-separated hostnames allowed for base URL overrides. A non-blank value replaces the default (api.rm.smartsheet.com).",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
         }
       ]
     }

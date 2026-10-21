@@ -29,8 +29,8 @@ logger = logging.getLogger("smartsheet_rm_mcp")
 # enum, so the documented assignment creates send allocation_mode exactly as the caller gives it.
 _ALLOCATION_MODE_DESCRIPTION = (
     "Allocation mode, sent unchanged: `percent` (the default; `percent` is then required), "
-    "`hours_per_day`, or the fixed mode, which the API reference names `fixed` in its description and "
-    "`fixed_hours` in its enum."
+    "`hours_per_day` (`hours_per_day` is then required), or the fixed mode, which the API reference "
+    "names `fixed` in its description and `fixed_hours` in its enum (`fixed_hours` is then required)."
 )
 _PERCENT_DESCRIPTION = (
     "Share of the user's time as a fraction from 0 to 1. Required when allocation_mode is `percent`, "
@@ -355,11 +355,16 @@ def _assignment_payload(
 ) -> dict[str, Any]:
     """Build the shared body for the documented project and user assignment creates.
 
-    Percent mode (the default) needs a percent value, so a call without one is refused here,
-    before any request is sent.
+    Each mode needs its value: percent mode (the default) needs percent, hours_per_day mode needs
+    hours_per_day, and the fixed mode (``fixed`` or ``fixed_hours``) needs fixed_hours. A call
+    without it is refused here, before any request is sent.
     """
     if allocation_mode == "percent" and percent is None:
         _invalid_request("percent is required when allocation_mode is percent (the default)")
+    if allocation_mode == "hours_per_day" and hours_per_day is None:
+        _invalid_request("hours_per_day is required when allocation_mode is hours_per_day")
+    if allocation_mode in ("fixed", "fixed_hours") and fixed_hours is None:
+        _invalid_request(f"fixed_hours is required when allocation_mode is {allocation_mode}")
     payload: dict[str, Any] = {"starts_at": start_date, "ends_at": end_date, "allocation_mode": allocation_mode}
     optional: dict[str, Any] = {
         "percent": percent,
@@ -392,7 +397,8 @@ async def rm_create_project_assignment(
     Set allocation_mode and the matching value: percent (the reference documents it as a fraction from
     0 to 1), hours_per_day, or fixed_hours for the fixed mode. allocation_mode is sent as given, because
     the reference names the fixed mode `fixed` in its description and `fixed_hours` in its schema.
-    Percent mode is the default and requires percent; without it the call is refused before any request.
+    Percent mode is the default and requires percent; hours_per_day and the fixed mode require
+    hours_per_day and fixed_hours. Without the matching value the call is refused before any request.
     """
     payload = _assignment_payload(
         start_date,
@@ -431,7 +437,8 @@ async def rm_create_user_assignment(
     percent (the reference documents it as a fraction from 0 to 1), hours_per_day, or fixed_hours for the
     fixed mode. allocation_mode is sent as given, because the reference names the fixed mode `fixed` in
     its description and `fixed_hours` in its schema. Percent mode is the default and requires percent;
-    without it the call is refused before any request.
+    hours_per_day and the fixed mode require hours_per_day and fixed_hours. Without the matching value
+    the call is refused before any request.
     """
     payload = _assignment_payload(
         start_date,
