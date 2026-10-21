@@ -867,6 +867,13 @@ async def rm_list_custom_field_values(
     """List custom field values, optionally filtered to one entity by target_id and target_type.
 
     Undocumented route: `GET /custom_field_values` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `GET /projects/{project_id}/custom_field_values` and `GET /users/{user_id}/custom_field_values`.
+
+    Args:
+        target_id: Optional ID of the entity whose values to list; use with target_type.
+        target_type: Optional entity type for target_id, such as `Project`, `User` or `Phase`.
+
+    Returns:
+        The API's JSON response with the matching custom field values, as a string.
     """
     params: dict[str, Any] = {}
     if target_id is not None:
