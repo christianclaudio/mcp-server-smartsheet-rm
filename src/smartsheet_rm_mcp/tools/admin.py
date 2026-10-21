@@ -149,7 +149,10 @@ async def rm_delete_user(user_id: int | str, confirm: bool = False) -> str:
 
 @rm_tool
 async def rm_list_user_bill_rates(user_id: int | str) -> str:
-    """List bill rate tiers for a user."""
+    """List bill rate tiers for a user.
+
+    Undocumented route: `GET /users/{user_id}/bill_rates` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `GET /bill_rates` and `GET /projects/{project_id}/bill_rates`.
+    """
     client = await get_rm_client()
     data = await client.list_user_bill_rates(user_id)
     return json.dumps(data, indent=2)
@@ -162,7 +165,10 @@ async def rm_create_user_bill_rate(
     start_date: str,
     end_date: str | None = None,
 ) -> str:
-    """Add a bill rate tier with an effective date range for a user."""
+    """Add a bill rate tier with an effective date range for a user.
+
+    Undocumented route: `POST /users/{user_id}/bill_rates` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents bill rates only under `/bill_rates` and `/projects/{project_id}/bill_rates`, with no create.
+    """
     payload: dict[str, Any] = {"rate": rate, "starts_at": start_date}
     if end_date:
         payload["ends_at"] = end_date
@@ -177,7 +183,10 @@ async def rm_get_user_availability(
     from_date: str | None = None,
     to_date: str | None = None,
 ) -> str:
-    """Query scheduled hours vs available capacity for a user."""
+    """Query scheduled hours vs available capacity for a user.
+
+    Undocumented route: `GET /users/{user_id}/availability` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented route: `GET /users/{user_id}/availabilities`.
+    """
     params: dict[str, Any] = {}
     if from_date:
         params["from"] = from_date
@@ -194,7 +203,10 @@ async def rm_get_user_utilization(
     from_date: str | None = None,
     to_date: str | None = None,
 ) -> str:
-    """Get billable utilization metrics for a user."""
+    """Get billable utilization metrics for a user.
+
+    Undocumented route: `GET /users/{user_id}/utilization` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     params: dict[str, Any] = {}
     if from_date:
         params["from"] = from_date
@@ -215,7 +227,10 @@ async def rm_list_roles() -> str:
 
 @rm_tool
 async def rm_create_role(name: str) -> str:
-    """Create a new role."""
+    """Create a new role.
+
+    Undocumented route: `POST /roles` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only GET for roles.
+    """
     client = await get_rm_client()
     data = await client.create_role({"name": name})
     return json.dumps(data, indent=2)
@@ -223,7 +238,10 @@ async def rm_create_role(name: str) -> str:
 
 @rm_tool
 async def rm_update_role(role_id: int | str, name: str) -> str:
-    """Update an existing role."""
+    """Update an existing role.
+
+    Undocumented route: `PUT /roles/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only GET for roles.
+    """
     client = await get_rm_client()
     data = await client.update_role(role_id, {"name": name})
     return json.dumps(data, indent=2)
@@ -231,7 +249,10 @@ async def rm_update_role(role_id: int | str, name: str) -> str:
 
 @rm_tool
 async def rm_delete_role(role_id: int | str, confirm: bool = False) -> str:
-    """Delete a role (Destructive: requires confirm=True)."""
+    """Delete a role (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /roles/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only GET for roles.
+    """
     gate = _destructive_gate(confirm, f"admin_delete_role({role_id})")
     if gate:
         return gate
@@ -250,7 +271,10 @@ async def rm_list_disciplines() -> str:
 
 @rm_tool
 async def rm_create_discipline(name: str) -> str:
-    """Create a new discipline."""
+    """Create a new discipline.
+
+    Undocumented route: `POST /disciplines` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only GET for disciplines.
+    """
     client = await get_rm_client()
     data = await client.create_discipline({"name": name})
     return json.dumps(data, indent=2)
@@ -258,7 +282,10 @@ async def rm_create_discipline(name: str) -> str:
 
 @rm_tool
 async def rm_update_discipline(discipline_id: int | str, name: str) -> str:
-    """Update an existing discipline."""
+    """Update an existing discipline.
+
+    Undocumented route: `PUT /disciplines/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only GET for disciplines.
+    """
     client = await get_rm_client()
     data = await client.update_discipline(discipline_id, {"name": name})
     return json.dumps(data, indent=2)
@@ -266,7 +293,10 @@ async def rm_update_discipline(discipline_id: int | str, name: str) -> str:
 
 @rm_tool
 async def rm_delete_discipline(discipline_id: int | str, confirm: bool = False) -> str:
-    """Delete a discipline (Destructive: requires confirm=True)."""
+    """Delete a discipline (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /disciplines/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only GET for disciplines.
+    """
     gate = _destructive_gate(confirm, f"admin_delete_discipline({discipline_id})")
     if gate:
         return gate
@@ -281,7 +311,10 @@ async def rm_list_clients(
     per_page: int = 50,
     archived: bool | None = None,
 ) -> str:
-    """List clients."""
+    """List clients.
+
+    Undocumented route: `GET /clients` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if archived is not None:
         params["archived"] = "true" if archived else "false"
@@ -292,7 +325,10 @@ async def rm_list_clients(
 
 @rm_tool
 async def rm_get_client(client_id: int | str) -> str:
-    """Get details for a specific client."""
+    """Get details for a specific client.
+
+    Undocumented route: `GET /clients/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     client = await get_rm_client()
     data = await client.get_client(client_id)
     return json.dumps(data, indent=2)
@@ -307,7 +343,10 @@ async def rm_create_client(
     zipcode: str | None = None,
     country: str | None = None,
 ) -> str:
-    """Create a new client record."""
+    """Create a new client record.
+
+    Undocumented route: `POST /clients` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     payload: dict[str, Any] = {"name": name}
     if address:
         payload["address"] = address
@@ -336,7 +375,10 @@ async def rm_update_client(
     country: str | None = None,
     archived: bool | None = None,
 ) -> str:
-    """Update a client record."""
+    """Update a client record.
+
+    Undocumented route: `PUT /clients/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     payload: dict[str, Any] = {}
     if name is not None:
         payload["name"] = name
@@ -363,7 +405,10 @@ async def rm_update_client(
 
 @rm_tool
 async def rm_delete_client(client_id: int | str, confirm: bool = False) -> str:
-    """Delete a client record (Destructive: requires confirm=True)."""
+    """Delete a client record (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /clients/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     gate = _destructive_gate(confirm, f"admin_delete_client({client_id})")
     if gate:
         return gate
@@ -374,7 +419,10 @@ async def rm_delete_client(client_id: int | str, confirm: bool = False) -> str:
 
 @rm_tool
 async def rm_list_client_contacts(client_id: int | str) -> str:
-    """List contacts associated with a client."""
+    """List contacts associated with a client.
+
+    Undocumented route: `GET /clients/{id}/contacts` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     client = await get_rm_client()
     data = await client.list_client_contacts(client_id)
     return json.dumps(data, indent=2)
@@ -389,7 +437,10 @@ async def rm_create_client_contact(
     phone: str | None = None,
     title: str | None = None,
 ) -> str:
-    """Add a contact for a client."""
+    """Add a contact for a client.
+
+    Undocumented route: `POST /clients/{id}/contacts` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     payload: dict[str, Any] = {"first_name": first_name, "last_name": last_name}
     if email:
         payload["email"] = email
@@ -409,7 +460,10 @@ async def rm_delete_client_contact(
     contact_id: int | str,
     confirm: bool = False,
 ) -> str:
-    """Delete a client contact (Destructive: requires confirm=True)."""
+    """Delete a client contact (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /clients/{id}/contacts/{contact_id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. No documented equivalent was found.
+    """
     gate = _destructive_gate(confirm, f"admin_delete_client_contact({client_id}, {contact_id})")
     if gate:
         return gate
@@ -436,7 +490,10 @@ async def rm_get_leave_type(leave_type_id: int | str) -> str:
 
 @rm_tool
 async def rm_create_leave_type(name: str) -> str:
-    """Create a new leave type."""
+    """Create a new leave type.
+
+    Undocumented route: `POST /leave_types` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only GET for leave types.
+    """
     client = await get_rm_client()
     data = await client.create_leave_type({"name": name})
     return json.dumps(data, indent=2)
@@ -444,7 +501,10 @@ async def rm_create_leave_type(name: str) -> str:
 
 @rm_tool
 async def rm_update_leave_type(leave_type_id: int | str, name: str) -> str:
-    """Update a leave type name."""
+    """Update a leave type name.
+
+    Undocumented route: `PUT /leave_types/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only GET for leave types.
+    """
     client = await get_rm_client()
     data = await client.update_leave_type(leave_type_id, {"name": name})
     return json.dumps(data, indent=2)
@@ -452,7 +512,10 @@ async def rm_update_leave_type(leave_type_id: int | str, name: str) -> str:
 
 @rm_tool
 async def rm_delete_leave_type(leave_type_id: int | str, confirm: bool = False) -> str:
-    """Delete a leave type (Destructive: requires confirm=True)."""
+    """Delete a leave type (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /leave_types/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only GET for leave types.
+    """
     gate = _destructive_gate(confirm, f"admin_delete_leave_type({leave_type_id})")
     if gate:
         return gate
@@ -479,7 +542,10 @@ async def rm_list_holidays(
 
 @rm_tool
 async def rm_get_holiday(holiday_id: int | str) -> str:
-    """Get details for a specific holiday."""
+    """Get details for a specific holiday.
+
+    Undocumented route: `GET /holidays/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only `GET /holidays`.
+    """
     client = await get_rm_client()
     data = await client.get_holiday(holiday_id)
     return json.dumps(data, indent=2)
@@ -487,7 +553,10 @@ async def rm_get_holiday(holiday_id: int | str) -> str:
 
 @rm_tool
 async def rm_create_holiday(name: str, date: str, end_date: str | None = None) -> str:
-    """Create a new company holiday or non-working day."""
+    """Create a new company holiday or non-working day.
+
+    Undocumented route: `POST /holidays` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only `GET /holidays`.
+    """
     payload: dict[str, Any] = {"name": name, "date": date}
     if end_date:
         payload["ends_at"] = end_date
@@ -503,7 +572,10 @@ async def rm_update_holiday(
     date: str | None = None,
     end_date: str | None = None,
 ) -> str:
-    """Update a holiday."""
+    """Update a holiday.
+
+    Undocumented route: `PUT /holidays/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only `GET /holidays`.
+    """
     payload: dict[str, Any] = {}
     if name is not None:
         payload["name"] = name
@@ -522,7 +594,10 @@ async def rm_update_holiday(
 
 @rm_tool
 async def rm_delete_holiday(holiday_id: int | str, confirm: bool = False) -> str:
-    """Delete a holiday (Destructive: requires confirm=True)."""
+    """Delete a holiday (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /holidays/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only `GET /holidays`.
+    """
     gate = _destructive_gate(confirm, f"admin_delete_holiday({holiday_id})")
     if gate:
         return gate
@@ -540,7 +615,10 @@ async def rm_list_expenses(
     page: int = 1,
     per_page: int = 50,
 ) -> str:
-    """List logged expenses across projects or filtered by project/user."""
+    """List logged expenses across projects or filtered by project/user.
+
+    Undocumented route: `GET /expenses`, `GET /projects/{project_id}/expenses`, `GET /users/{user_id}/expenses` are not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove them without notice. Documented routes: `GET /users/{user_id}/expense_items` and `GET /projects/{project_id}/expense_items`.
+    """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if from_date:
         params["from"] = from_date
@@ -559,7 +637,10 @@ async def rm_list_expenses(
 
 @rm_tool
 async def rm_get_expense(expense_id: int | str) -> str:
-    """Get details for a specific logged expense."""
+    """Get details for a specific logged expense.
+
+    Undocumented route: `GET /expenses/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `GET /users/{user_id}/expense_items/{expense_item_id}` and `GET /projects/{project_id}/expense_items/{expense_item_id}`.
+    """
     client = await get_rm_client()
     data = await client.get_expense(expense_id)
     return json.dumps(data, indent=2)
@@ -575,7 +656,10 @@ async def rm_create_expense(
     notes: str | None = None,
     is_billable: bool = True,
 ) -> str:
-    """Log a project expense item."""
+    """Log a project expense item.
+
+    Undocumented route: `POST /expenses` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented route: `POST /users/{user_id}/expense_items`.
+    """
     payload: dict[str, Any] = {
         "project_id": project_id,
         "user_id": user_id,
@@ -599,7 +683,10 @@ async def rm_update_expense(
     is_billable: bool | None = None,
     date: str | None = None,
 ) -> str:
-    """Update a logged expense item."""
+    """Update a logged expense item.
+
+    Undocumented route: `PUT /expenses/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented route: `PUT /users/{user_id}/expense_items/{expense_item_id}`.
+    """
     payload: dict[str, Any] = {}
     if amount is not None:
         payload["amount"] = amount
@@ -620,7 +707,10 @@ async def rm_update_expense(
 
 @rm_tool
 async def rm_delete_expense(expense_id: int | str, confirm: bool = False) -> str:
-    """Delete an expense item (Destructive: requires confirm=True)."""
+    """Delete an expense item (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /expenses/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented route: `DELETE /users/{user_id}/expense_items/{expense_item_id}`.
+    """
     gate = _destructive_gate(confirm, f"admin_delete_expense({expense_id})")
     if gate:
         return gate
@@ -631,7 +721,10 @@ async def rm_delete_expense(expense_id: int | str, confirm: bool = False) -> str
 
 @rm_tool
 async def rm_list_expense_categories() -> str:
-    """List configured expense categories."""
+    """List configured expense categories.
+
+    Undocumented route: `GET /expense_categories` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented route: `GET /expense_item_categories`.
+    """
     client = await get_rm_client()
     data = await client.list_expense_categories()
     return json.dumps(data, indent=2)
@@ -639,7 +732,10 @@ async def rm_list_expense_categories() -> str:
 
 @rm_tool
 async def rm_create_expense_category(name: str) -> str:
-    """Create an expense category."""
+    """Create an expense category.
+
+    Undocumented route: `POST /expense_categories` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only `GET /expense_item_categories`.
+    """
     client = await get_rm_client()
     data = await client.create_expense_category({"name": name})
     return json.dumps(data, indent=2)
@@ -647,7 +743,10 @@ async def rm_create_expense_category(name: str) -> str:
 
 @rm_tool
 async def rm_delete_expense_category(category_id: int | str, confirm: bool = False) -> str:
-    """Delete an expense category (Destructive: requires confirm=True)."""
+    """Delete an expense category (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /expense_categories/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. The reference documents only `GET /expense_item_categories`.
+    """
     gate = _destructive_gate(confirm, f"admin_delete_expense_category({category_id})")
     if gate:
         return gate
@@ -658,7 +757,10 @@ async def rm_delete_expense_category(category_id: int | str, confirm: bool = Fal
 
 @rm_tool
 async def rm_list_tags(page: int = 1, per_page: int = 50) -> str:
-    """List tags."""
+    """List tags.
+
+    Undocumented route: `GET /tags` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `GET /projects/{project_id}/tags` and `GET /users/{user_id}/tags`.
+    """
     client = await get_rm_client()
     data = await client.list_tags(params={"page": page, "per_page": per_page})
     return json.dumps(data, indent=2)
@@ -666,7 +768,10 @@ async def rm_list_tags(page: int = 1, per_page: int = 50) -> str:
 
 @rm_tool
 async def rm_create_tag(name: str) -> str:
-    """Create a tag."""
+    """Create a tag.
+
+    Undocumented route: `POST /tags` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `POST /projects/{project_id}/tags` and `POST /users/{user_id}/tags`.
+    """
     client = await get_rm_client()
     data = await client.create_tag({"name": name})
     return json.dumps(data, indent=2)
@@ -674,7 +779,10 @@ async def rm_create_tag(name: str) -> str:
 
 @rm_tool
 async def rm_delete_tag(tag_id: int | str, confirm: bool = False) -> str:
-    """Delete a tag (Destructive: requires confirm=True)."""
+    """Delete a tag (Destructive: requires confirm=True).
+
+    Undocumented route: `DELETE /tags/{id}` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `DELETE /projects/{project_id}/tags/{tag_id}` and `DELETE /users/{user_id}/tags/{tag_id}`.
+    """
     gate = _destructive_gate(confirm, f"admin_delete_tag({tag_id})")
     if gate:
         return gate
@@ -756,7 +864,17 @@ async def rm_list_custom_field_values(
     target_id: int | str | None = None,
     target_type: str | None = None,
 ) -> str:
-    """List custom field values for a specific entity."""
+    """List custom field values, optionally filtered to one entity by target_id and target_type.
+
+    Undocumented route: `GET /custom_field_values` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `GET /projects/{project_id}/custom_field_values` and `GET /users/{user_id}/custom_field_values`.
+
+    Args:
+        target_id: Optional ID of the entity whose values to list; use with target_type.
+        target_type: Optional entity type for target_id, such as `Project`, `User` or `Phase`.
+
+    Returns:
+        The API's JSON response with the matching custom field values, as a string.
+    """
     params: dict[str, Any] = {}
     if target_id is not None:
         params["target_id"] = target_id
@@ -773,7 +891,10 @@ async def rm_set_custom_field_values(
     target_type: str,
     values: dict[str, Any],
 ) -> str:
-    """Set custom field values for an entity."""
+    """Set custom field values for an entity.
+
+    Undocumented route: `PUT /custom_field_values` is not in Smartsheet's Resource Management API reference or the archived 10,000ft API docs, so Smartsheet may change or remove it without notice. Documented routes: `PUT /projects/{project_id}/custom_field_values/{custom_field_value_id}` and `PUT /users/{user_id}/custom_field_values/{custom_field_value_id}`.
+    """
     payload = {
         "target_id": target_id,
         "target_type": target_type,

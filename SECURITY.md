@@ -49,7 +49,10 @@ When running in multi-tenant environments where callers may provide per-request 
 - By default only `api.rm.smartsheet.com` is allowed (the client path prefix remains `https://api.rm.smartsheet.com/api/v1`). Set `SMARTSHEET_RM_ALLOWED_HOSTS` to a comma-separated hostname list to replace that default. Include `api.rm.smartsheet.com` in the list if the official API should remain reachable.
 - Loopback addresses (`localhost`, `127.0.0.0/8`, `::1`), `.local` / `.internal` names, link-local (`169.254.0.0/16`, including the cloud metadata address), private RFC1918 subnets, and hostnames resolving to non-global IP addresses are blocked fail-closed, including when they appear in the allowlist.
 - Credentialed API requests do not follow redirects.
-- At connect time the client resolves the hostname once and opens TCP to an address that passed those checks. The `Host` header, TLS SNI, and certificate verification stay on the original hostname, so a later DNS answer cannot move the connection onto a private or metadata address.
+- Smartsheet Gov (`app.smartsheetgov.com`) is opt-in and is not in the default allowlist. Its extra Smartsheet API token (`SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN` or the per-request `x-smartsheet-gov-api-token` header) is sent as `Authorization: Bearer` only when the base URL host is `app.smartsheetgov.com`. A per-request RM token is never paired with the environment Gov token.
+- For every request the client resolves the hostname once, checks every address, and opens TCP only to one of those checked addresses, in resolver order, trying the next if a connect fails. The request URL keeps the hostname, so the `Host` header, TLS SNI, certificate verification and connection pooling all stay on the original name, and a later DNS answer cannot move the connection onto a private or metadata address. A host with no checked address is refused, and Unix sockets are never dialed.
+- The maintainer drift check (`scripts/check_openapi_drift.py --spec-url`) fetches the spec through `fetch_pinned_https`, which uses that same transport with `follow_redirects=False`: one lookup, TCP to a checked address, Host/SNI/certificate on the name, and no redirects.
+- httpx ignores `HTTP(S)_PROXY` / `ALL_PROXY` whenever a transport is passed in (httpx `AsyncClient`: `allow_env_proxies = trust_env and transport is None`), so the client and the drift fetch always connect directly, through the checked-address pin; an environment proxy is never used. Deployments that require an egress proxy need a proxy-aware transport, which this server does not provide. `trust_env=False` on the drift fetch is belt-and-braces.
 
 ### 6. Release Provenance
 Each release's wheel, sdist and GHCR image carry a GitHub build provenance attestation, created by a separate `attest` job that holds only `contents: read`, `id-token: write` and `attestations: write` (no PyPI, Release or GHCR credentials). Verify before installing:
@@ -66,6 +69,6 @@ gh attestation verify oci://ghcr.io/christianclaudio/mcp-server-smartsheet-rm:<v
 | Use Case | Recommended Configuration |
 |----------|---------------------------|
 | **Autonomous AI Assistants & Chatbots** | `SMARTSHEET_RM_READONLY=1` |
-| **Interactive Developer Workstation** | Default `full` profile (100 tools, single-delete confirmation gates; the two bulk-destructive tools are listed but refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) |
+| **Interactive Developer Workstation** | Default `full` profile (104 tools, single-delete confirmation gates; the two bulk-destructive tools are listed but refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`) |
 | **Enterprise Administrative Scripts** | `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1` (with `confirm=True`) |
 | **Focused Context (weekly timesheets)** | `SMARTSHEET_RM_PROFILE=timesheets` (job profile) or `SMARTSHEET_RM_PROFILE=time` (time domain only) |

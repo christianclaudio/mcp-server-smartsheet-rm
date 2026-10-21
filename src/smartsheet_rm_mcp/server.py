@@ -22,6 +22,9 @@ Environment variables controlling the gateway:
   SMARTSHEET_RM_ENABLE_CODE_MODE=1       - Opt-in experimental Code Mode (profile=full only; not with Tool Search).
   SMARTSHEET_RM_MCP_AUTH_TOKEN           - Shared bearer token required on HTTP transports (stdio ignores it).
   SMARTSHEET_RM_MCP_ALLOW_UNAUTHENTICATED_BIND=1 - Accept a tokenless HTTP bind to a non-localhost host.
+  SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN - Smartsheet API token sent as Bearer only to app.smartsheetgov.com
+                                           (Smartsheet Gov, opt-in via SMARTSHEET_RM_BASE_URL and
+                                           SMARTSHEET_RM_ALLOWED_HOSTS).
 
 Build order: domain mounts -> job allowlist -> read-only filter -> discovery (full only).
 """
@@ -102,12 +105,16 @@ from smartsheet_rm_mcp.tools import (
     rm_create_leave_type,
     rm_create_placeholder_resource,
     rm_create_project,
+    rm_create_project_assignment,
     rm_create_project_phase,
+    rm_create_project_time_entry,
     rm_create_role,
     rm_create_tag,
     rm_create_time_entry,
     rm_create_user,
+    rm_create_user_assignment,
     rm_create_user_bill_rate,
+    rm_create_user_time_entry,
     rm_create_webhook,
     rm_delete_approval,
     rm_delete_assignment,
@@ -676,6 +683,8 @@ __all__ = [
     "rm_list_time_entries",
     "rm_get_time_entry",
     "rm_create_time_entry",
+    "rm_create_user_time_entry",
+    "rm_create_project_time_entry",
     "rm_update_time_entry",
     "rm_delete_time_entry",
     "rm_list_user_suggestions",
@@ -702,6 +711,8 @@ __all__ = [
     "rm_list_assignments",
     "rm_get_assignment",
     "rm_create_assignment",
+    "rm_create_project_assignment",
+    "rm_create_user_assignment",
     "rm_update_assignment",
     "rm_delete_assignment",
     "rm_clone_project_schedule",

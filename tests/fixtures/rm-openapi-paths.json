@@ -1,0 +1,2149 @@
+{
+ "_source": {
+  "url": "https://developers.smartsheet.com/_spec/api/resource_management/openapi.json",
+  "fetched": "2026-10-21",
+  "note": "Only endpoint paths, methods, operation IDs and parameter names are kept; no descriptions."
+ },
+ "openapi": "3.0.3",
+ "info": {
+  "title": "Smartsheet Resource Management API (paths, methods and parameter names only)",
+  "x-source": "https://developers.smartsheet.com/_spec/api/resource_management/openapi.json",
+  "x-retrieved": "2026-10-21"
+ },
+ "servers": [
+  {
+   "url": "https://api.rm.smartsheet.com/api/v1"
+  }
+ ],
+ "paths": {
+  "/api_tokens": {
+   "get": {
+    "operationId": "ListAPITokens"
+   },
+   "post": {
+    "operationId": "CreateAPIToken",
+    "parameters": [
+     {
+      "name": "title",
+      "in": "query",
+      "required": false
+     }
+    ]
+   }
+  },
+  "/api_tokens/{id}": {
+   "put": {
+    "operationId": "UpdateAPIToken",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "title",
+      "in": "query",
+      "required": true
+     }
+    ]
+   },
+   "delete": {
+    "operationId": "DeleteAPIToken",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/api_tokens/renew/{id}": {
+   "post": {
+    "operationId": "RenewAPIToken",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/approvals": {
+   "get": {
+    "operationId": "ListApprovals",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "fields",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "CreateApprovals"
+   }
+  },
+  "/approvals/{approval_id}": {
+   "delete": {
+    "operationId": "DeleteApproval",
+    "parameters": [
+     {
+      "name": "approval_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/assignables": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getAssignables",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/assignables/{assignable_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "assignable_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getAssignablesId"
+   }
+  },
+  "/assignments": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getAssignments",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "with_phases",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postAssignments"
+   }
+  },
+  "/assignments/{assignment_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "assignment_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getAssignmentsId"
+   },
+   "put": {
+    "operationId": "putAssignmentsAssignmentId"
+   },
+   "delete": {
+    "operationId": "deletetAssignmentsAssignmentId"
+   }
+  },
+  "/bill_rates": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getBillRates",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/bill_rates/{bill_rate_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "bill_rate_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getBillRatesId"
+   }
+  },
+  "/budget_items/{budget_item_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "budget_item_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getBudgetItem"
+   },
+   "put": {
+    "operationId": "putBudgetItem"
+   },
+   "delete": {
+    "operationId": "deleteBudgetItem"
+   }
+  },
+  "/custom_fields": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getCustomFields",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "namespace",
+      "in": "query",
+      "required": true
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postCustomFields"
+   }
+  },
+  "/custom_fields/{custom_field_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "custom_field_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getCustomFieldsId"
+   },
+   "put": {
+    "operationId": "putCustomFieldsCustomFieldId"
+   },
+   "delete": {
+    "operationId": "deletetCustomFieldsCustomFieldId"
+   }
+  },
+  "/disciplines": {
+   "get": {
+    "operationId": "ListDisciplines",
+    "parameters": [
+     {
+      "name": "filter",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/disciplines/{discipline_id}": {
+   "get": {
+    "operationId": "FetchDiscipline",
+    "parameters": [
+     {
+      "name": "discipline_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/expense_item_categories": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getExpenseBudgetItemCategories",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/holidays": {
+   "get": {
+    "operationId": "getHolidays",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query",
+      "required": false
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "required": false
+     }
+    ]
+   }
+  },
+  "/leave_types": {
+   "get": {
+    "operationId": "getLeaveTypes"
+   }
+  },
+  "/leave_types/{leave_type_id}": {
+   "get": {
+    "operationId": "getLeaveTypeId",
+    "parameters": [
+     {
+      "name": "leave_type_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/placeholder_resources": {
+   "get": {
+    "operationId": "ListPlaceholderResources",
+    "parameters": [
+     {
+      "name": "fields",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "with_deleted",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "CreatePlaceholderResource"
+   }
+  },
+  "/placeholder_resources/{placeholder_resource_id}": {
+   "get": {
+    "operationId": "FetchPlaceholderResource",
+    "parameters": [
+     {
+      "name": "placeholder_resource_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "fields",
+      "in": "query"
+     }
+    ]
+   },
+   "put": {
+    "operationId": "UpdatePlaceholderResource",
+    "parameters": [
+     {
+      "name": "placeholder_resource_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "delete": {
+    "operationId": "DeletePlaceholderResource",
+    "parameters": [
+     {
+      "name": "placeholder_resource_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/placeholder_resources/{placeholder_resource_id}/assignments": {
+   "get": {
+    "operationId": "ListPlaceholderResourceAssignments",
+    "parameters": [
+     {
+      "name": "placeholder_resource_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/projects": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjects",
+    "parameters": [
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "strict",
+      "in": "query"
+     },
+     {
+      "name": "fields",
+      "in": "query"
+     },
+     {
+      "name": "filter_field",
+      "in": "query"
+     },
+     {
+      "name": "filter_list",
+      "in": "query"
+     },
+     {
+      "name": "sort_field",
+      "in": "query"
+     },
+     {
+      "name": "sort_order",
+      "in": "query"
+     },
+     {
+      "name": "project_code",
+      "in": "query"
+     },
+     {
+      "name": "phase_name",
+      "in": "query"
+     },
+     {
+      "name": "with_archived",
+      "in": "query"
+     },
+     {
+      "name": "with_phases",
+      "in": "query"
+     },
+     {
+      "name": "archived",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postProjects"
+   }
+  },
+  "/projects/{project_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectsId",
+    "parameters": [
+     {
+      "name": "fields",
+      "in": "query"
+     }
+    ]
+   },
+   "put": {
+    "operationId": "putProjectsId"
+   },
+   "delete": {
+    "operationId": "deleteProjectsId"
+   }
+  },
+  "/projects/{project_id}/assignments": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectsProjectIdAssignments",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "with_phases",
+      "in": "query"
+     },
+     {
+      "name": "fields",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postProjectsProjectIdAssignments"
+   }
+  },
+  "/projects/{project_id}/assignments/{assignment_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "assignment_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectsProjectIdAssignmentsId"
+   },
+   "put": {
+    "operationId": "putProjectsProjectIdAssignmentsAssignmentId"
+   },
+   "delete": {
+    "operationId": "deletetProjectsProjectIdAssignmentsAssignmentId"
+   }
+  },
+  "/projects/{project_id}/assignments/{assignment_id}/subtasks": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "assignment_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectsProjectIdAssignmentsAssignmentIdSubtasks",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postProjectsProjectIdAssignmentsAssignmentIdSubtasks"
+   }
+  },
+  "/projects/{project_id}/assignments/{assignment_id}/subtasks/{subtask_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "assignment_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "subtask_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectsProjectIdAssignmentsAssignmentsIdSubtasksSubtaskId"
+   },
+   "put": {
+    "operationId": "putProjectsProjectIdAssignmentsAssignmentsIdSubtasksSubtaskId"
+   },
+   "delete": {
+    "operationId": "deletetProjectsProjectIdAssignmentsAssignmentsIdSubtasksSubtaskId"
+   }
+  },
+  "/projects/{project_id}/bill_rates": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "listProjectBillRates",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/bill_rates/{bill_rate_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "bill_rate_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getBillRate"
+   },
+   "put": {
+    "operationId": "putProjectBillRate"
+   }
+  },
+  "/projects/{project_id}/custom_field_values": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectsProjectIdCustomFieldValues",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postProjectsProjectIdCustomFieldValues"
+   }
+  },
+  "/projects/{project_id}/custom_field_values/{custom_field_value_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "custom_field_value_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectsProjectIdCustomFieldValuesCustomFieldValuesId"
+   },
+   "put": {
+    "operationId": "putProjectsProjectIdCustomFieldValuesCustomFieldValueId"
+   }
+  },
+  "/projects/{project_id}/budget_items": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectBudgetItems",
+    "parameters": [
+     {
+      "name": "item_type",
+      "in": "query",
+      "required": true
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postBudgetItem"
+   }
+  },
+  "/projects/{project_id}/budget_items/{budget_item_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "budget_item_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectBudgetItem"
+   },
+   "put": {
+    "operationId": "putProjectBudgetItem"
+   }
+  },
+  "/projects/{project_id}/expense_items": {
+   "get": {
+    "operationId": "ListProjectExpenseItems",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/expense_items/{expense_item_id}": {
+   "get": {
+    "operationId": "FetchProjectExpenseItem",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "expense_item_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/expense_item_categories": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectExpenseBudgetItemCategories",
+    "parameters": [
+     {
+      "name": "item_type",
+      "in": "query",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/project_members": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectsProjectIdProjectMembers",
+    "parameters": [
+     {
+      "name": "membership",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postProjectsProjectIdProjectMembers"
+   },
+   "put": {
+    "operationId": "putProjectsProjectIdProjectMembers"
+   },
+   "delete": {
+    "operationId": "deleteProjectsProjectIdProjectMember"
+   }
+  },
+  "/projects/{project_id}/phases": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getPhases",
+    "parameters": [
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "strict",
+      "in": "query"
+     },
+     {
+      "name": "fields",
+      "in": "query"
+     },
+     {
+      "name": "filter_field",
+      "in": "query"
+     },
+     {
+      "name": "filter_list",
+      "in": "query"
+     },
+     {
+      "name": "sort_field",
+      "in": "query"
+     },
+     {
+      "name": "sort_order",
+      "in": "query"
+     },
+     {
+      "name": "project_code",
+      "in": "query"
+     },
+     {
+      "name": "phase_name",
+      "in": "query"
+     },
+     {
+      "name": "with_archived",
+      "in": "query"
+     },
+     {
+      "name": "archived",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postPhases"
+   }
+  },
+  "/projects/{project_id}/phases/{phase_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "phase_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "put": {
+    "operationId": "putPhasesId"
+   },
+   "delete": {
+    "operationId": "deletePhasesId"
+   }
+  },
+  "/projects/{project_id}/placeholder_resources": {
+   "get": {
+    "operationId": "ListProjectPlaceholderResources",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/tags": {
+   "get": {
+    "operationId": "getProjectTags",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postTag",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/tags/{tag_id}": {
+   "delete": {
+    "operationId": "deleteProjectTag",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "tag_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/time_entry_categories": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "project_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getProjectTimeEntryCategories",
+    "parameters": [
+     {
+      "name": "item_type",
+      "in": "query",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/time_entries": {
+   "get": {
+    "operationId": "ListProjectTimeEntries",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "with_suggestions",
+      "in": "query"
+     },
+     {
+      "name": "sort_field",
+      "in": "query"
+     },
+     {
+      "name": "sort_order",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "CreateProjectTimeEntry",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/time_entries/{id}": {
+   "get": {
+    "operationId": "FetchProjectTimeEntry",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/projects/{project_id}/users": {
+   "get": {
+    "operationId": "getUsersPerProject",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "fields",
+      "in": "query"
+     },
+     {
+      "name": "sort_field",
+      "in": "query"
+     },
+     {
+      "name": "sort_order",
+      "in": "query"
+     },
+     {
+      "name": "with_phases",
+      "in": "query"
+     },
+     {
+      "name": "with_archived",
+      "in": "query"
+     },
+     {
+      "name": "include_placeholders",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/relationships/project_members": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getRelationshipsProjectMembers",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "membership",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/relationships/project_memberships": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getRelationshipsProjectMemberships",
+    "parameters": [
+     {
+      "name": "user_ids",
+      "in": "query"
+     },
+     {
+      "name": "membership",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/reports/rows": {
+   "post": {
+    "operationId": "CreateRows"
+   }
+  },
+  "/reports/totals": {
+   "post": {
+    "operationId": "CreateTotals"
+   }
+  },
+  "/reports/underlying_data.csv": {
+   "post": {
+    "operationId": "ExportUnderlyingDataCSV"
+   }
+  },
+  "/roles": {
+   "get": {
+    "operationId": "ListRoles",
+    "parameters": [
+     {
+      "name": "filter",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/roles/{role_id}": {
+   "get": {
+    "operationId": "FetchRole",
+    "parameters": [
+     {
+      "name": "role_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/status_options": {
+   "get": {
+    "operationId": "GetStatusOptions",
+    "parameters": [
+     {
+      "name": "with_deleted",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/status_options/{status_option_id}": {
+   "get": {
+    "operationId": "FetchStatusOption",
+    "parameters": [
+     {
+      "name": "status_option_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/time_entry_categories": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getTimeBudgetItemCategories",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/time_entries": {
+   "get": {
+    "operationId": "ListTimeEntries",
+    "parameters": [
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "with_suggestions",
+      "in": "query"
+     },
+     {
+      "name": "sort_field",
+      "in": "query"
+     },
+     {
+      "name": "sort_order",
+      "in": "query"
+     }
+    ]
+   }
+  },
+  "/time_entries/{id}": {
+   "get": {
+    "operationId": "FetchTimeEntry",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/users": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "Accept",
+     "in": "header",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getUsers",
+    "parameters": [
+     {
+      "name": "fields",
+      "in": "query"
+     },
+     {
+      "name": "sort_field",
+      "in": "query"
+     },
+     {
+      "name": "sort_order",
+      "in": "query"
+     },
+     {
+      "name": "with_archived",
+      "in": "query"
+     },
+     {
+      "name": "include_placeholders",
+      "in": "query"
+     },
+     {
+      "name": "include_count",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postUsers"
+   }
+  },
+  "/users/{user_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "user_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getUsersId"
+   },
+   "put": {
+    "operationId": "putUsersId"
+   },
+   "delete": {
+    "operationId": "deleteUsersId"
+   }
+  },
+  "/users/{user_id}/assignments": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "user_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getUsersUserIdAssignments",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "with_phases",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postUsersUserIdAssignments"
+   }
+  },
+  "/users/{user_id}/assignments/{assignment_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "user_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "assignment_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getUsersUserIdAssignmentsAssignmentsId"
+   },
+   "put": {
+    "operationId": "putUsersUserIdAssignmentsAssignmentId"
+   },
+   "delete": {
+    "operationId": "deletetUsersUserIdAssignmentsAssignmentId"
+   }
+  },
+  "/users/{user_id}/availabilities": {
+   "get": {
+    "operationId": "getAvailabilityById",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "createAvailability",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/users/{user_id}/availabilities/{id}": {
+   "get": {
+    "operationId": "fetchAvailability",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "put": {
+    "operationId": "updateAvailability",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "delete": {
+    "operationId": "deleteAvailability",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/users/{user_id}/expense_items": {
+   "get": {
+    "operationId": "ListUserExpenseItems",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "CreateExpenseItem",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/users/{user_id}/expense_items/{expense_item_id}": {
+   "get": {
+    "operationId": "FetchUserExpenseItem",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "expense_item_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "put": {
+    "operationId": "UpdateExpenseItem",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "expense_item_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "delete": {
+    "operationId": "DeleteExpenseItem",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "expense_item_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/users/{user_id}/custom_field_values": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "user_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getUsersUserIdCustomFieldValues",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postUsersUserIdCustomFieldValues"
+   }
+  },
+  "/users/{user_id}/custom_field_values/{custom_field_value_id}": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "user_id",
+     "in": "path",
+     "required": true
+    },
+    {
+     "name": "custom_field_value_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getUsersUserIdCustomFieldValuesCustomFieldValuesId"
+   },
+   "put": {
+    "operationId": "putUsersUserIdCustomFieldValuesCustomFieldValueId"
+   }
+  },
+  "/users/{user_id}/project_memberships": {
+   "parameters": [
+    {
+     "name": "Content-Type",
+     "in": "header",
+     "required": true
+    },
+    {
+     "name": "user_id",
+     "in": "path",
+     "required": true
+    }
+   ],
+   "get": {
+    "operationId": "getUsersUserIdProjectMemberships",
+    "parameters": [
+     {
+      "name": "per_page",
+      "in": "query"
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "membership",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postUsersUserIdProjectMemberships"
+   },
+   "put": {
+    "operationId": "putUsersUserIdProjectMemberships"
+   },
+   "delete": {
+    "operationId": "deleteUsersUserIdProjectMemberships"
+   }
+  },
+  "/users/{user_id}/statuses": {
+   "get": {
+    "operationId": "getUserStatuses",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "page",
+      "in": "query"
+     },
+     {
+      "name": "per_page",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postUserStatus",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/users/{user_id}/tags": {
+   "get": {
+    "operationId": "getUserTag",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "post": {
+    "operationId": "postUserTag",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/users/{user_id}/tags/{tag_id}": {
+   "delete": {
+    "operationId": "deleteUserTag",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "tag_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/users/{user_id}/time_entries": {
+   "get": {
+    "operationId": "ListUserTimeEntries",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "from",
+      "in": "query"
+     },
+     {
+      "name": "to",
+      "in": "query"
+     },
+     {
+      "name": "with_suggestions",
+      "in": "query"
+     },
+     {
+      "name": "sort_field",
+      "in": "query"
+     },
+     {
+      "name": "sort_order",
+      "in": "query"
+     }
+    ]
+   },
+   "post": {
+    "operationId": "CreateUserTimeEntry",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/users/{user_id}/time_entries/{id}": {
+   "get": {
+    "operationId": "FetchUserTimeEntry",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "put": {
+    "operationId": "UpdateUserTimeEntry",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "delete": {
+    "operationId": "DeleteUserTimeEntry",
+    "parameters": [
+     {
+      "name": "user_id",
+      "in": "path",
+      "required": true
+     },
+     {
+      "name": "id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  },
+  "/webhooks": {
+   "get": {
+    "operationId": "ListWebhooks"
+   },
+   "post": {
+    "operationId": "CreateWebhook"
+   }
+  },
+  "/webhooks/{webhook_id}": {
+   "get": {
+    "operationId": "ShowSingleWebhook",
+    "parameters": [
+     {
+      "name": "webhook_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   },
+   "delete": {
+    "operationId": "DeleteWebhook",
+    "parameters": [
+     {
+      "name": "webhook_id",
+      "in": "path",
+      "required": true
+     }
+    ]
+   }
+  }
+ }
+}

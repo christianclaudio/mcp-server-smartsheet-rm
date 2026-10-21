@@ -37,10 +37,10 @@ TIMESHEETS = PROFILES["timesheets"]
 
 # Signed-off counts (total tools, read-only tools); Nexus gates on these.
 SIGNED_OFF = {
-    "full": (100, 39),
+    "full": (104, 39),
     "readonly": (39, 39),
-    "timesheets": (22, 12),
-    "staffing": (25, 18),
+    "timesheets": (24, 12),
+    "staffing": (27, 18),
     "org_setup": (35, 13),
     "portfolio": (33, 18),
 }
@@ -137,7 +137,7 @@ async def test_every_tool_has_explicit_read_only_hint() -> None:
     reads = {t.name for t in tools if t.annotations and t.annotations.read_only_hint is True}
     writes = {t.name for t in tools if t.annotations and t.annotations.read_only_hint is False}
     assert len(reads) == 39
-    assert len(writes) == 61
+    assert len(writes) == 65
     assert reads == set(PROFILES_READONLY_NAMES)
 
 

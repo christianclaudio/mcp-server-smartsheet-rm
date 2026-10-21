@@ -232,14 +232,16 @@ def _mask_bracket_values(text: str) -> str:
 def redact_secrets(text: str, extra_secret: str | None = None) -> str:
     """Scrub sensitive credentials, tokens, and authorization headers from text.
 
-    The configured ``SMARTSHEET_RM_API_TOKEN`` and an optional ``extra_secret`` are replaced
-    literally first, then the house rules and the Smartsheet RM extras run.
+    The configured ``SMARTSHEET_RM_API_TOKEN`` and ``SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN``
+    and an optional ``extra_secret`` are replaced literally first, then the house rules and
+    the Smartsheet RM extras run.
     """
     if not text:
         return ""
-    secret = os.environ.get("SMARTSHEET_RM_API_TOKEN", "")
-    if secret and secret in text:
-        text = text.replace(secret, MASK)
+    for env_name in ("SMARTSHEET_RM_API_TOKEN", "SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN"):
+        secret = os.environ.get(env_name, "")
+        if secret and secret in text:
+            text = text.replace(secret, MASK)
     if extra_secret and extra_secret in text:
         text = text.replace(extra_secret, MASK)
     sanitized = _mask_bracket_values(text)

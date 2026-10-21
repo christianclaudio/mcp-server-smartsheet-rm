@@ -39,8 +39,8 @@ uv run pytest --cov=src/smartsheet_rm_mcp --cov-report=term-missing --cov-fail-u
 # 4. Tool Contract & safety gate assertions
 uv run python scripts/check_tool_contract.py
 
-# 5. OpenAPI Drift monitor
-uv run python scripts/check_openapi_drift.py
+# 5. OpenAPI Drift check (offline fixture; CI uses --spec-url https://developers.smartsheet.com/_spec/api/resource_management/openapi.json)
+uv run python scripts/check_openapi_drift.py --spec-file tests/fixtures/rm-openapi-paths.json
 
 # 6. Protocol & stdio verification
 uv run pytest tests/test_protocol.py --no-cov
