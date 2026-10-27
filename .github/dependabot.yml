@@ -5,8 +5,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "sunday"
-      time: "04:30"
-      timezone: "Etc/UTC"
+      time: "09:30"
+      timezone: "America/New_York"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -20,8 +20,8 @@ updates:
     schedule:
       interval: "weekly"
       day: "sunday"
-      time: "04:30"
-      timezone: "Etc/UTC"
+      time: "09:30"
+      timezone: "America/New_York"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"

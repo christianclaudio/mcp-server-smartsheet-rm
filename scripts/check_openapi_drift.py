@@ -33,7 +33,7 @@ Spec endpoints no client call covers are listed for information.
 
 A vendor spec is required (``--spec-file`` or ``--spec-url``). The check exits 2 without one,
 or when the document cannot be read or has no ``paths``. Exit 1 means drift and nothing else;
-every other failure, including an unexpected exception, exits 2, so the weekly monitor opens a
+every other failure, including an unexpected exception, exits 2, so the drift-check job opens a
 drift issue only on exit 1. Smartsheet publishes it at
 ``DEFAULT_SPEC_URL``; its paths are relative to ``https://api.rm.smartsheet.com/api/v1``,
 the same as the client's, so no ``--path-prefix`` is needed.
