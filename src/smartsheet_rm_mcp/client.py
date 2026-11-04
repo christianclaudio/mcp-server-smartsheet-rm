@@ -576,8 +576,7 @@ class SmartsheetRMClient:
             if parsed_delay is not None:
                 delay = parsed_delay * random.uniform(1.0, 1.3)
             else:
-                delay = self.base_delay * (2**attempt) * random.uniform(0.5, 1.5)
-            delay = min(delay, self.max_retry_delay)
+                delay = min(self.base_delay * (2**attempt) * random.uniform(0.5, 1.5), self.max_retry_delay)
             await asyncio.sleep(delay)
 
         raise SmartsheetRMAPIError(

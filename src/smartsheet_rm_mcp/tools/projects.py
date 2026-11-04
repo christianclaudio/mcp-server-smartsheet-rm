@@ -748,6 +748,13 @@ async def rm_list_assignables(page: int = 1, per_page: int = 20) -> str:
     OpenAPI: GET /assignables (getAssignables). Docs:
     https://developers.smartsheet.com/api/resource_management/openapi
     https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
+
+    Args:
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of assignables, as a string.
     """
     client = await get_client()
     data = await client.list_assignables(params={"page": page, "per_page": per_page})
@@ -759,6 +766,12 @@ async def rm_get_assignable(assignable_id: int | str) -> str:
     """Fetch one assignable by ID (project or leave type).
 
     OpenAPI: GET /assignables/{assignable_id} (getAssignablesId).
+
+    Args:
+        assignable_id: ID of the project or leave type.
+
+    Returns:
+        The API's JSON response with the assignable, as a string.
     """
     client = await get_client()
     data = await client.get_assignable(assignable_id)
@@ -771,6 +784,13 @@ async def rm_list_project_budget_items(project_id: int | str, item_type: str) ->
 
     OpenAPI: GET /projects/{project_id}/budget_items (getProjectBudgetItems).
     ``item_type`` is required (BudgetItemType: TimeFees, TimeFeesDays, or Expenses).
+
+    Args:
+        project_id: ID of the project or phase.
+        item_type: Budget item type: TimeFees, TimeFeesDays or Expenses.
+
+    Returns:
+        The API's JSON response with the matching budget items, as a string.
     """
     client = await get_client()
     data = await client.list_project_budget_items(project_id, params={"item_type": item_type})
@@ -782,6 +802,12 @@ async def rm_get_budget_item(budget_item_id: int | str) -> str:
     """Fetch a budget item by ID.
 
     OpenAPI: GET /budget_items/{budget_item_id} (getBudgetItem).
+
+    Args:
+        budget_item_id: ID of the budget item.
+
+    Returns:
+        The API's JSON response with the budget item, as a string.
     """
     client = await get_client()
     data = await client.get_budget_item(budget_item_id)
@@ -793,6 +819,13 @@ async def rm_get_project_budget_item(project_id: int | str, budget_item_id: int 
     """Fetch a budget item under a project.
 
     OpenAPI: GET /projects/{project_id}/budget_items/{budget_item_id} (getProjectBudgetItem).
+
+    Args:
+        project_id: ID of the project or phase that owns the budget item.
+        budget_item_id: ID of the budget item.
+
+    Returns:
+        The API's JSON response with the budget item, as a string.
     """
     client = await get_client()
     data = await client.get_project_budget_item(project_id, budget_item_id)
@@ -811,6 +844,15 @@ async def rm_list_project_members(
     OpenAPI: GET /projects/{project_id}/project_members (getProjectsProjectIdProjectMembers).
     Optional ``membership`` filter: member, viewer, reporter, scheduler, or editor.
     When omitted, ``membership`` defaults to ``member``; pass another level to list those.
+
+    Args:
+        project_id: ID of the project.
+        membership: Membership level to list: member, viewer, reporter, scheduler or editor.
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of project members, as a string.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if membership is not None:
@@ -831,6 +873,14 @@ async def rm_list_relationships_project_members(
     OpenAPI: GET /relationships/project_members (getRelationshipsProjectMembers).
     Documented query params: membership, page, per_page.
     When omitted, ``membership`` defaults to ``member``; pass another level to list those.
+
+    Args:
+        membership: Membership level to list: member, viewer, reporter, scheduler or editor.
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of project members, as a string.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if membership is not None:
@@ -852,6 +902,15 @@ async def rm_list_relationships_project_memberships(
     OpenAPI: GET /relationships/project_memberships (getRelationshipsProjectMemberships).
     ``user_ids`` is a comma-separated list of user IDs when provided.
     When omitted, ``membership`` defaults to ``member``; pass another level to list those.
+
+    Args:
+        user_ids: Optional comma-separated IDs of the users whose memberships to list.
+        membership: Membership level to list: member, viewer, reporter, scheduler or editor.
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of project memberships, as a string.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if user_ids is not None:
@@ -877,6 +936,17 @@ async def rm_list_user_project_memberships(
     OpenAPI: GET /users/{user_id}/project_memberships (getUsersUserIdProjectMemberships).
     Optional ``from`` / ``to`` are YYYY-MM-DD date filters (tool args from_date / to_date).
     When omitted, ``membership`` defaults to ``member``; pass another level to list those.
+
+    Args:
+        user_id: ID of the user.
+        membership: Membership level to list: member, viewer, reporter, scheduler or editor.
+        from_date: Optional YYYY-MM-DD start date, sent as ``from``.
+        to_date: Optional YYYY-MM-DD end date, sent as ``to``.
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of the user's project memberships, as a string.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if membership is not None:

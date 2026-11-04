@@ -559,6 +559,13 @@ async def rm_list_time_entry_categories(page: int = 1, per_page: int = 20) -> st
     OpenAPI: GET /time_entry_categories (getTimeBudgetItemCategories). Docs:
     https://developers.smartsheet.com/api/resource_management/openapi
     https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
+
+    Args:
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of time entry categories, as a string.
     """
     client = await get_client()
     data = await client.list_time_entry_categories(params={"page": page, "per_page": per_page})
@@ -571,6 +578,13 @@ async def rm_list_project_time_entry_categories(project_id: int | str, item_type
 
     OpenAPI: GET /projects/{project_id}/time_entry_categories (getProjectTimeEntryCategories).
     ``item_type`` is required by the published OpenAPI (query name ``item_type``).
+
+    Args:
+        project_id: ID of the project or phase.
+        item_type: Item type the API requires for this list, sent as ``item_type``.
+
+    Returns:
+        The API's JSON response with the project's time entry categories, as a string.
     """
     client = await get_client()
     data = await client.list_project_time_entry_categories(project_id, params={"item_type": item_type})
