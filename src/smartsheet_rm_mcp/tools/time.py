@@ -552,6 +552,31 @@ async def rm_delete_approval(approval_id: int | str, confirm: bool = False) -> s
     return json.dumps(data, indent=2)
 
 
+@rm_tool
+async def rm_list_time_entry_categories(page: int = 1, per_page: int = 20) -> str:
+    """List account-level time entry budget item categories (project-specific excluded).
+
+    OpenAPI: GET /time_entry_categories (getTimeBudgetItemCategories). Docs:
+    https://developers.smartsheet.com/api/resource_management/openapi
+    https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
+    """
+    client = await get_client()
+    data = await client.list_time_entry_categories(params={"page": page, "per_page": per_page})
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_list_project_time_entry_categories(project_id: int | str, item_type: str) -> str:
+    """List project/phase-specific time entry budget item categories.
+
+    OpenAPI: GET /projects/{project_id}/time_entry_categories (getProjectTimeEntryCategories).
+    ``item_type`` is required by the published OpenAPI (query name ``item_type``).
+    """
+    client = await get_client()
+    data = await client.list_project_time_entry_categories(project_id, params={"item_type": item_type})
+    return json.dumps(data, indent=2)
+
+
 def timesheet_reconciliation(user_id: str, week_start_date: str) -> str:
     """Audit and reconcile weekly timesheets against 40-hour capacity target."""
     return f"""Audit timesheets for user ID {user_id} for the week starting {week_start_date}.
@@ -578,6 +603,8 @@ bulk_delete_time_entries = rm_bulk_delete_time_entries
 list_approvals = rm_list_approvals
 create_approval = rm_create_approval
 delete_approval = rm_delete_approval
+list_time_entry_categories = rm_list_time_entry_categories
+list_project_time_entry_categories = rm_list_project_time_entry_categories
 
 _TIME_TOOLS_CONFIG = [
     ("list_time_entries", rm_list_time_entries, ANNOTATION_READ_ONLY),
@@ -597,6 +624,8 @@ _TIME_TOOLS_CONFIG = [
     ("list_approvals", rm_list_approvals, ANNOTATION_READ_ONLY),
     ("create_approval", rm_create_approval, ANNOTATION_WRITE_SAFE),
     ("delete_approval", rm_delete_approval, ANNOTATION_DESTRUCTIVE),
+    ("list_time_entry_categories", rm_list_time_entry_categories, ANNOTATION_READ_ONLY),
+    ("list_project_time_entry_categories", rm_list_project_time_entry_categories, ANNOTATION_READ_ONLY),
 ]
 
 

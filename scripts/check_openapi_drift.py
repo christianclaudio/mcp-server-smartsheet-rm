@@ -183,6 +183,18 @@ ENDPOINT_TO_METHOD: dict[tuple[str, str], str] = {
     ("webhooks", "GET"): "list_webhooks",
     ("webhooks", "POST"): "create_webhook",
     ("webhooks/{id}", "DELETE"): "delete_webhook",
+    # 11. Assignables, budget items, members, memberships, time entry categories
+    ("assignables", "GET"): "list_assignables",
+    ("assignables/{id}", "GET"): "get_assignable",
+    ("budget_items/{id}", "GET"): "get_budget_item",
+    ("projects/{id}/budget_items", "GET"): "list_project_budget_items",
+    ("projects/{id}/budget_items/{id}", "GET"): "get_project_budget_item",
+    ("projects/{id}/project_members", "GET"): "list_project_members",
+    ("relationships/project_members", "GET"): "list_relationships_project_members",
+    ("relationships/project_memberships", "GET"): "list_relationships_project_memberships",
+    ("users/{id}/project_memberships", "GET"): "list_user_project_memberships",
+    ("time_entry_categories", "GET"): "list_time_entry_categories",
+    ("projects/{id}/time_entry_categories", "GET"): "list_project_time_entry_categories",
 }
 
 

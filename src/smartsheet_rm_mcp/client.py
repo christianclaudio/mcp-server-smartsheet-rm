@@ -1346,6 +1346,75 @@ class SmartsheetRMClient:
         )
         return r.json() if r.content else {"status": "deleted", "id": subtask_id}
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ASSIGNABLES, BUDGET ITEMS, PROJECT MEMBERS / MEMBERSHIPS, TIME ENTRY CATEGORIES
+    # Sourced from Smartsheet RM OpenAPI:
+    # https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def list_assignables(self, params: dict[str, Any] | None = None) -> Any:
+        """List assignables (GET /assignables; OpenAPI getAssignables)."""
+        r = await self._request("GET", "/assignables", params=params)
+        return r.json()
+
+    async def get_assignable(self, assignable_id: int | str) -> Any:
+        """Fetch one assignable (GET /assignables/{assignable_id}; OpenAPI getAssignablesId)."""
+        r = await self._request("GET", f"/assignables/{assignable_id}")
+        return r.json()
+
+    async def list_project_budget_items(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
+        """List project budget items (GET /projects/{project_id}/budget_items; getProjectBudgetItems).
+
+        Query ``item_type`` is required (BudgetItemType: TimeFees | TimeFeesDays | Expenses).
+        """
+        r = await self._request("GET", f"/projects/{project_id}/budget_items", params=params)
+        return r.json()
+
+    async def get_budget_item(self, budget_item_id: int | str) -> Any:
+        """Fetch a budget item (GET /budget_items/{budget_item_id}; OpenAPI getBudgetItem)."""
+        r = await self._request("GET", f"/budget_items/{budget_item_id}")
+        return r.json()
+
+    async def get_project_budget_item(self, project_id: int | str, budget_item_id: int | str) -> Any:
+        """Fetch a project budget item (GET /projects/{project_id}/budget_items/{budget_item_id})."""
+        r = await self._request("GET", f"/projects/{project_id}/budget_items/{budget_item_id}")
+        return r.json()
+
+    async def list_project_members(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
+        """List project members (GET /projects/{project_id}/project_members)."""
+        r = await self._request("GET", f"/projects/{project_id}/project_members", params=params)
+        return r.json()
+
+    async def list_relationships_project_members(self, params: dict[str, Any] | None = None) -> Any:
+        """List members across projects (GET /relationships/project_members)."""
+        r = await self._request("GET", "/relationships/project_members", params=params)
+        return r.json()
+
+    async def list_relationships_project_memberships(self, params: dict[str, Any] | None = None) -> Any:
+        """List project memberships for users (GET /relationships/project_memberships)."""
+        r = await self._request("GET", "/relationships/project_memberships", params=params)
+        return r.json()
+
+    async def list_user_project_memberships(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
+        """List a user's project memberships (GET /users/{user_id}/project_memberships)."""
+        r = await self._request("GET", f"/users/{user_id}/project_memberships", params=params)
+        return r.json()
+
+    async def list_time_entry_categories(self, params: dict[str, Any] | None = None) -> Any:
+        """List account-level time entry categories (GET /time_entry_categories)."""
+        r = await self._request("GET", "/time_entry_categories", params=params)
+        return r.json()
+
+    async def list_project_time_entry_categories(
+        self, project_id: int | str, params: dict[str, Any] | None = None
+    ) -> Any:
+        """List project time entry categories (GET /projects/{project_id}/time_entry_categories).
+
+        Query ``item_type`` is required by the published OpenAPI.
+        """
+        r = await self._request("GET", f"/projects/{project_id}/time_entry_categories", params=params)
+        return r.json()
+
     async def get_report_rows(self, data: dict[str, Any]) -> Any:
         """Generate and retrieve report rows."""
         r = await self._request("POST", "/reports/rows", json_data=data)

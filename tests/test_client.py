@@ -177,6 +177,19 @@ async def test_all_client_api_methods() -> None:
     assert await client.update_project_phase(100, 101, {"name": "Phase 1b"}) == {"success": True}
     assert await client.delete_project_phase(100, 101) == {"success": True}
 
+    # 2b. Assignables, budget items, members, memberships, time entry categories
+    assert await client.list_assignables() == {"success": True}
+    assert await client.get_assignable(50) == {"success": True}
+    assert await client.list_project_budget_items(100, {"item_type": "TimeFeesDays"}) == {"success": True}
+    assert await client.get_budget_item(7) == {"success": True}
+    assert await client.get_project_budget_item(100, 7) == {"success": True}
+    assert await client.list_project_members(100) == {"success": True}
+    assert await client.list_relationships_project_members() == {"success": True}
+    assert await client.list_relationships_project_memberships({"user_ids": "1,2"}) == {"success": True}
+    assert await client.list_user_project_memberships(1) == {"success": True}
+    assert await client.list_time_entry_categories() == {"success": True}
+    assert await client.list_project_time_entry_categories(100, {"item_type": "TimeFeesDays"}) == {"success": True}
+
     # 3. Assignments
     assert await client.list_assignments() == {"success": True}
     assert await client.get_assignment(200) == {"success": True}

@@ -63,6 +63,13 @@ SAFE_TOOL_FIXTURES: dict[str, dict[str, Any]] = {
     "admin_get_custom_field": {"custom_field_id": 999999},
     "admin_get_user_statuses": {"user_id": 999999},
     "projects_list_assignment_subtasks": {"project_id": 999999, "assignment_id": 999999},
+    "projects_get_assignable": {"assignable_id": 999999},
+    "projects_list_project_budget_items": {"project_id": 999999, "item_type": "TimeFeesDays"},
+    "projects_get_budget_item": {"budget_item_id": 999999},
+    "projects_get_project_budget_item": {"project_id": 999999, "budget_item_id": 999999},
+    "projects_list_project_members": {"project_id": 999999},
+    "projects_list_user_project_memberships": {"user_id": 999999},
+    "time_list_project_time_entry_categories": {"project_id": 999999, "item_type": "TimeFeesDays"},
     "admin_get_report_rows": {"report_parameters": {"from": "2026-08-01", "to": "2026-08-07"}},
     "admin_get_report_totals": {"report_parameters": {"from": "2026-08-01", "to": "2026-08-07"}},
 }
@@ -87,6 +94,10 @@ SAFE_ARGUMENTLESS_LIST_TOOLS: set[str] = {
     "time_list_approvals",
     "projects_list_status_options",
     "projects_list_placeholder_resources",
+    "projects_list_assignables",
+    "projects_list_relationships_project_members",
+    "projects_list_relationships_project_memberships",
+    "time_list_time_entry_categories",
     "admin_list_webhooks",
 }
 
@@ -110,6 +121,13 @@ SAFE_PROBE_EXPECTED_NOT_FOUND_TOOLS: set[str] = {
     "admin_get_custom_field",
     "admin_get_user_statuses",
     "projects_list_assignment_subtasks",
+    "projects_get_assignable",
+    "projects_list_project_budget_items",
+    "projects_get_budget_item",
+    "projects_get_project_budget_item",
+    "projects_list_project_members",
+    "projects_list_user_project_memberships",
+    "time_list_project_time_entry_categories",
 }
 
 INTENTIONALLY_SKIPPED_MUTATING_TOOLS: set[str] = {

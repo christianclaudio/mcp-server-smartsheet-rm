@@ -49,7 +49,7 @@ async def test_create_server_profiles() -> None:
     # 1. Full profile: exhaustive, bulk tools listed (refused at call time without the env)
     full_server = create_server(profile="full")
     tools_full = await full_server.list_tools()
-    assert len(tools_full) == 104
+    assert len(tools_full) == 115
     names = {t.name for t in tools_full}
     assert "time_list_time_entries" in names
     assert "projects_list_projects" in names
@@ -58,12 +58,12 @@ async def test_create_server_profiles() -> None:
 
     # 2. Time profile
     tools_time = await create_server(profile="time").list_tools()
-    assert len(tools_time) == 17
+    assert len(tools_time) == 19
     assert {t.name.split("_", 1)[0] for t in tools_time} == {"time"}
 
     # 3. Projects profile
     tools_proj = await create_server(profile="projects").list_tools()
-    assert len(tools_proj) == 27
+    assert len(tools_proj) == 36
     assert {t.name.split("_", 1)[0] for t in tools_proj} == {"projects"}
 
     # 4. Admin profile
@@ -73,7 +73,7 @@ async def test_create_server_profiles() -> None:
 
     # 5. Readonly profile
     tools_ro = await create_server(profile="readonly").list_tools()
-    assert len(tools_ro) == 39
+    assert len(tools_ro) == 50
     assert all(t.annotations and t.annotations.read_only_hint is True for t in tools_ro)
 
     # 6. Invalid profile raises ValueError
@@ -127,7 +127,7 @@ async def test_curated_profile_stays_flat_without_discovery_meta(
     with caplog.at_level(logging.WARNING):
         time_app = create_server(profile="time", enable_tool_search=True, enable_code_mode=False)
     time_names = {t.name for t in await time_app.list_tools()}
-    assert len(time_names) == 17
+    assert len(time_names) == 19
     assert not time_names & {"search_tools", "call_tool", "search", "execute"}
     assert any("Tool Search requested with profile='time'" in r.message for r in caplog.records)
 
