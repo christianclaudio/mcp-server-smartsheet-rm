@@ -810,6 +810,7 @@ async def rm_list_project_members(
 
     OpenAPI: GET /projects/{project_id}/project_members (getProjectsProjectIdProjectMembers).
     Optional ``membership`` filter: member, viewer, reporter, scheduler, or editor.
+    When omitted, ``membership`` defaults to ``member``; pass another level to list those.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if membership is not None:
@@ -829,6 +830,7 @@ async def rm_list_relationships_project_members(
 
     OpenAPI: GET /relationships/project_members (getRelationshipsProjectMembers).
     Documented query params: membership, page, per_page.
+    When omitted, ``membership`` defaults to ``member``; pass another level to list those.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if membership is not None:
@@ -849,6 +851,7 @@ async def rm_list_relationships_project_memberships(
 
     OpenAPI: GET /relationships/project_memberships (getRelationshipsProjectMemberships).
     ``user_ids`` is a comma-separated list of user IDs when provided.
+    When omitted, ``membership`` defaults to ``member``; pass another level to list those.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if user_ids is not None:
@@ -873,6 +876,7 @@ async def rm_list_user_project_memberships(
 
     OpenAPI: GET /users/{user_id}/project_memberships (getUsersUserIdProjectMemberships).
     Optional ``from`` / ``to`` are YYYY-MM-DD date filters (tool args from_date / to_date).
+    When omitted, ``membership`` defaults to ``member``; pass another level to list those.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if membership is not None:
