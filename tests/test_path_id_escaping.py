@@ -23,6 +23,7 @@ def _client() -> tuple[SmartsheetRMClient, list[httpx.Request]]:
 
 
 CASES: list[tuple[str, Callable[[SmartsheetRMClient], Awaitable[Any]], bytes]] = [
+    ("static path unchanged", lambda c: c.list_assignables(), b"/api/v1/assignables"),
     ("int id unchanged", lambda c: c.get_assignable(42), b"/api/v1/assignables/42"),
     ("slash", lambda c: c.get_assignable("a/b"), b"/api/v1/assignables/a%2Fb"),
     ("query", lambda c: c.get_project("7?include=x"), b"/api/v1/projects/7%3Finclude%3Dx"),
