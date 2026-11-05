@@ -54,6 +54,19 @@ GOV_BASE_URL = "https://app.smartsheetgov.com/2.0/rm/api/v1"
 GOV_HOST = "app.smartsheetgov.com"
 
 
+def _path_id(value: object) -> str:
+    """Percent-encode one caller-supplied ID as a single URL path segment.
+
+    Every character outside the unreserved set is encoded, so ``/``, ``?`` and ``#`` stay
+    inside the segment. Empty, ``.`` and ``..`` values are refused because they would
+    collapse or climb the path once the URL is normalized.
+    """
+    text = str(value)
+    if text in ("", ".", ".."):
+        raise ValueError(f"Invalid path ID: {text!r}")
+    return quote(text, safe="")
+
+
 def _resolve_allowed_hosts(allowed_hosts_str: str | None) -> set[str]:
     """Resolve the hostname allowlist for credentialed base URLs.
 
@@ -513,7 +526,7 @@ class SmartsheetRMClient:
     ) -> Response:
         """Execute an HTTP request with exponential backoff on 429 and transient errors."""
         cleaned_path = "/" + path.lstrip("/")
-        safe_segments = [quote(seg, safe="") if seg else "" for seg in cleaned_path.split("/")]
+        safe_segments = [quote(seg, safe="%") if seg else "" for seg in cleaned_path.split("/")]
         safe_path = "/".join(safe_segments)
         url = f"{self.base_url}{safe_path}"
 
@@ -563,8 +576,7 @@ class SmartsheetRMClient:
             if parsed_delay is not None:
                 delay = parsed_delay * random.uniform(1.0, 1.3)
             else:
-                delay = self.base_delay * (2**attempt) * random.uniform(0.5, 1.5)
-            delay = min(delay, self.max_retry_delay)
+                delay = min(self.base_delay * (2**attempt) * random.uniform(0.5, 1.5), self.max_retry_delay)
             await asyncio.sleep(delay)
 
         raise SmartsheetRMAPIError(
@@ -593,7 +605,7 @@ class SmartsheetRMClient:
 
     async def get_time_entry(self, entry_id: int | str) -> Any:
         """Get details for a specific time entry."""
-        r = await self._request("GET", f"/time_entries/{entry_id}")
+        r = await self._request("GET", f"/time_entries/{_path_id(entry_id)}")
         return r.json()
 
     async def create_time_entry(self, data: dict[str, Any]) -> Any:
@@ -612,7 +624,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "PUT", f"/time_entries/{entry_id}", json_data=data
+            "PUT", f"/time_entries/{_path_id(entry_id)}", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -622,28 +634,28 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/time_entries/{entry_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/time_entries/{_path_id(entry_id)}", allow_statuses=frozenset({200, 204})
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": entry_id}
 
     async def list_project_time_entries(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
         """List time entries associated with a project."""
-        r = await self._request("GET", f"/projects/{project_id}/time_entries", params=params)
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/time_entries", params=params)
         return r.json()
 
     async def create_project_time_entry(self, project_id: int | str, data: dict[str, Any]) -> Any:
         """Create a time entry directly under a project."""
-        r = await self._request("POST", f"/projects/{project_id}/time_entries", json_data=data)
+        r = await self._request("POST", f"/projects/{_path_id(project_id)}/time_entries", json_data=data)
         return r.json()
 
     async def list_user_time_entries(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
         """List time entries logged by a specific user."""
-        r = await self._request("GET", f"/users/{user_id}/time_entries", params=params)
+        r = await self._request("GET", f"/users/{_path_id(user_id)}/time_entries", params=params)
         return r.json()
 
     async def create_user_time_entry(self, user_id: int | str, data: dict[str, Any]) -> Any:
         """Create a time entry directly under a user."""
-        r = await self._request("POST", f"/users/{user_id}/time_entries", json_data=data)
+        r = await self._request("POST", f"/users/{_path_id(user_id)}/time_entries", json_data=data)
         return r.json()
 
     async def update_user_approval_status(self, user_id: int | str, data: dict[str, Any]) -> Any:
@@ -652,7 +664,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "PUT", f"/users/{user_id}/time_entries/approval_status", json_data=data
+            "PUT", f"/users/{_path_id(user_id)}/time_entries/approval_status", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "updated", "user_id": user_id}
 
@@ -662,7 +674,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "POST", f"/users/{user_id}/time_entries/lock", json_data=data
+            "POST", f"/users/{_path_id(user_id)}/time_entries/lock", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "locked", "user_id": user_id}
 
@@ -677,7 +689,7 @@ class SmartsheetRMClient:
 
     async def get_project(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
         """Get details of a single project."""
-        r = await self._request("GET", f"/projects/{project_id}", params=params)
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}", params=params)
         return r.json()
 
     async def create_project(self, data: dict[str, Any]) -> Any:
@@ -687,22 +699,22 @@ class SmartsheetRMClient:
 
     async def update_project(self, project_id: int | str, data: dict[str, Any]) -> Any:
         """Update project details, budget, dates, or state."""
-        r = await self._request("PUT", f"/projects/{project_id}", json_data=data)
+        r = await self._request("PUT", f"/projects/{_path_id(project_id)}", json_data=data)
         return r.json()
 
     async def delete_project(self, project_id: int | str) -> Any:
         """Delete or archive a project."""
-        r = await self._request("DELETE", f"/projects/{project_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request("DELETE", f"/projects/{_path_id(project_id)}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": project_id}
 
     async def list_project_users(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
         """List users associated with or assigned to a project."""
-        r = await self._request("GET", f"/projects/{project_id}/users", params=params)
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/users", params=params)
         return r.json()
 
     async def list_project_phases(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
         """List phases for a given project."""
-        r = await self._request("GET", f"/projects/{project_id}/phases", params=params)
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/phases", params=params)
         return r.json()
 
     async def get_project_phase(self, project_id: int | str, phase_id: int | str) -> Any:
@@ -711,24 +723,26 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/projects/{project_id}/phases/{phase_id}"
+            "GET", f"/projects/{_path_id(project_id)}/phases/{_path_id(phase_id)}"
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
     async def create_project_phase(self, project_id: int | str, data: dict[str, Any]) -> Any:
         """Create a new phase under a project."""
-        r = await self._request("POST", f"/projects/{project_id}/phases", json_data=data)
+        r = await self._request("POST", f"/projects/{_path_id(project_id)}/phases", json_data=data)
         return r.json()
 
     async def update_project_phase(self, project_id: int | str, phase_id: int | str, data: dict[str, Any]) -> Any:
         """Update a project phase."""
-        r = await self._request("PUT", f"/projects/{project_id}/phases/{phase_id}", json_data=data)
+        r = await self._request("PUT", f"/projects/{_path_id(project_id)}/phases/{_path_id(phase_id)}", json_data=data)
         return r.json()
 
     async def delete_project_phase(self, project_id: int | str, phase_id: int | str) -> Any:
         """Delete a project phase."""
         r = await self._request(
-            "DELETE", f"/projects/{project_id}/phases/{phase_id}", allow_statuses=frozenset({200, 204})
+            "DELETE",
+            f"/projects/{_path_id(project_id)}/phases/{_path_id(phase_id)}",
+            allow_statuses=frozenset({200, 204}),
         )
         return r.json() if r.content else {"status": "deleted", "phase_id": phase_id}
 
@@ -743,7 +757,7 @@ class SmartsheetRMClient:
 
     async def get_assignment(self, assignment_id: int | str) -> Any:
         """Get a specific assignment."""
-        r = await self._request("GET", f"/assignments/{assignment_id}")
+        r = await self._request("GET", f"/assignments/{_path_id(assignment_id)}")
         return r.json()
 
     async def create_assignment(self, data: dict[str, Any]) -> Any:
@@ -753,32 +767,34 @@ class SmartsheetRMClient:
 
     async def update_assignment(self, assignment_id: int | str, data: dict[str, Any]) -> Any:
         """Update an existing resource assignment."""
-        r = await self._request("PUT", f"/assignments/{assignment_id}", json_data=data)
+        r = await self._request("PUT", f"/assignments/{_path_id(assignment_id)}", json_data=data)
         return r.json()
 
     async def delete_assignment(self, assignment_id: int | str) -> Any:
         """Delete a resource assignment."""
-        r = await self._request("DELETE", f"/assignments/{assignment_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/assignments/{_path_id(assignment_id)}", allow_statuses=frozenset({200, 204})
+        )
         return r.json() if r.content else {"status": "deleted", "id": assignment_id}
 
     async def list_project_assignments(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
         """List assignments for a specific project."""
-        r = await self._request("GET", f"/projects/{project_id}/assignments", params=params)
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/assignments", params=params)
         return r.json()
 
     async def create_project_assignment(self, project_id: int | str, data: dict[str, Any]) -> Any:
         """Create an assignment directly under a project."""
-        r = await self._request("POST", f"/projects/{project_id}/assignments", json_data=data)
+        r = await self._request("POST", f"/projects/{_path_id(project_id)}/assignments", json_data=data)
         return r.json()
 
     async def list_user_assignments(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
         """List assignments for a specific user."""
-        r = await self._request("GET", f"/users/{user_id}/assignments", params=params)
+        r = await self._request("GET", f"/users/{_path_id(user_id)}/assignments", params=params)
         return r.json()
 
     async def create_user_assignment(self, user_id: int | str, data: dict[str, Any]) -> Any:
         """Create an assignment directly under a user."""
-        r = await self._request("POST", f"/users/{user_id}/assignments", json_data=data)
+        r = await self._request("POST", f"/users/{_path_id(user_id)}/assignments", json_data=data)
         return r.json()
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -792,7 +808,7 @@ class SmartsheetRMClient:
 
     async def get_user(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
         """Get details for a specific user."""
-        r = await self._request("GET", f"/users/{user_id}", params=params)
+        r = await self._request("GET", f"/users/{_path_id(user_id)}", params=params)
         return r.json()
 
     async def create_user(self, data: dict[str, Any]) -> Any:
@@ -802,12 +818,12 @@ class SmartsheetRMClient:
 
     async def update_user(self, user_id: int | str, data: dict[str, Any]) -> Any:
         """Update a user profile."""
-        r = await self._request("PUT", f"/users/{user_id}", json_data=data)
+        r = await self._request("PUT", f"/users/{_path_id(user_id)}", json_data=data)
         return r.json()
 
     async def delete_user(self, user_id: int | str) -> Any:
         """Delete / archive a user."""
-        r = await self._request("DELETE", f"/users/{user_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request("DELETE", f"/users/{_path_id(user_id)}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": user_id}
 
     async def list_user_bill_rates(self, user_id: int | str) -> Any:
@@ -816,7 +832,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/users/{user_id}/bill_rates"
+            "GET", f"/users/{_path_id(user_id)}/bill_rates"
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -826,7 +842,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "POST", f"/users/{user_id}/bill_rates", json_data=data
+            "POST", f"/users/{_path_id(user_id)}/bill_rates", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -836,7 +852,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/users/{user_id}/availability", params=params
+            "GET", f"/users/{_path_id(user_id)}/availability", params=params
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -846,7 +862,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/users/{user_id}/utilization", params=params
+            "GET", f"/users/{_path_id(user_id)}/utilization", params=params
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -871,7 +887,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "PUT", f"/roles/{role_id}", json_data=data
+            "PUT", f"/roles/{_path_id(role_id)}", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -881,7 +897,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/roles/{role_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/roles/{_path_id(role_id)}", allow_statuses=frozenset({200, 204})
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": role_id}
 
@@ -906,7 +922,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "PUT", f"/disciplines/{discipline_id}", json_data=data
+            "PUT", f"/disciplines/{_path_id(discipline_id)}", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -916,7 +932,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/disciplines/{discipline_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/disciplines/{_path_id(discipline_id)}", allow_statuses=frozenset({200, 204})
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": discipline_id}
 
@@ -940,7 +956,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/clients/{client_id}"
+            "GET", f"/clients/{_path_id(client_id)}"
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -960,7 +976,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "PUT", f"/clients/{client_id}", json_data=data
+            "PUT", f"/clients/{_path_id(client_id)}", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -970,7 +986,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/clients/{client_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/clients/{_path_id(client_id)}", allow_statuses=frozenset({200, 204})
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": client_id}
 
@@ -980,7 +996,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/clients/{client_id}/contacts"
+            "GET", f"/clients/{_path_id(client_id)}/contacts"
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -990,7 +1006,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "POST", f"/clients/{client_id}/contacts", json_data=data
+            "POST", f"/clients/{_path_id(client_id)}/contacts", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -1000,7 +1016,9 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/clients/{client_id}/contacts/{contact_id}", allow_statuses=frozenset({200, 204})
+            "DELETE",
+            f"/clients/{_path_id(client_id)}/contacts/{_path_id(contact_id)}",
+            allow_statuses=frozenset({200, 204}),
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "contact_id": contact_id}
 
@@ -1015,7 +1033,7 @@ class SmartsheetRMClient:
 
     async def get_leave_type(self, leave_type_id: int | str) -> Any:
         """Get leave type details."""
-        r = await self._request("GET", f"/leave_types/{leave_type_id}")
+        r = await self._request("GET", f"/leave_types/{_path_id(leave_type_id)}")
         return r.json()
 
     async def create_leave_type(self, data: dict[str, Any]) -> Any:
@@ -1034,7 +1052,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "PUT", f"/leave_types/{leave_type_id}", json_data=data
+            "PUT", f"/leave_types/{_path_id(leave_type_id)}", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -1044,7 +1062,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/leave_types/{leave_type_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/leave_types/{_path_id(leave_type_id)}", allow_statuses=frozenset({200, 204})
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": leave_type_id}
 
@@ -1059,7 +1077,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/holidays/{holiday_id}"
+            "GET", f"/holidays/{_path_id(holiday_id)}"
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -1079,7 +1097,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "PUT", f"/holidays/{holiday_id}", json_data=data
+            "PUT", f"/holidays/{_path_id(holiday_id)}", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -1089,7 +1107,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/holidays/{holiday_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/holidays/{_path_id(holiday_id)}", allow_statuses=frozenset({200, 204})
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": holiday_id}
 
@@ -1113,7 +1131,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/expenses/{expense_id}"
+            "GET", f"/expenses/{_path_id(expense_id)}"
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -1133,7 +1151,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "PUT", f"/expenses/{expense_id}", json_data=data
+            "PUT", f"/expenses/{_path_id(expense_id)}", json_data=data
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -1143,7 +1161,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/expenses/{expense_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/expenses/{_path_id(expense_id)}", allow_statuses=frozenset({200, 204})
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": expense_id}
 
@@ -1153,7 +1171,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/projects/{project_id}/expenses", params=params
+            "GET", f"/projects/{_path_id(project_id)}/expenses", params=params
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -1163,7 +1181,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "GET", f"/users/{user_id}/expenses", params=params
+            "GET", f"/users/{_path_id(user_id)}/expenses", params=params
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json()
 
@@ -1193,7 +1211,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/expense_categories/{category_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/expense_categories/{_path_id(category_id)}", allow_statuses=frozenset({200, 204})
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": category_id}
 
@@ -1227,7 +1245,7 @@ class SmartsheetRMClient:
         Undocumented route: not in the RM API reference or the archived 10,000ft API docs.
         """
         r = await self._request(
-            "DELETE", f"/tags/{tag_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/tags/{_path_id(tag_id)}", allow_statuses=frozenset({200, 204})
         )  # drift-ignore: undocumented route, kept on purpose (README: Undocumented routes)
         return r.json() if r.content else {"status": "deleted", "id": tag_id}
 
@@ -1238,7 +1256,7 @@ class SmartsheetRMClient:
 
     async def get_custom_field(self, custom_field_id: int | str) -> Any:
         """Get a custom field definition."""
-        r = await self._request("GET", f"/custom_fields/{custom_field_id}")
+        r = await self._request("GET", f"/custom_fields/{_path_id(custom_field_id)}")
         return r.json()
 
     async def create_custom_field(self, data: dict[str, Any]) -> Any:
@@ -1248,12 +1266,14 @@ class SmartsheetRMClient:
 
     async def update_custom_field(self, custom_field_id: int | str, data: dict[str, Any]) -> Any:
         """Update a custom field definition."""
-        r = await self._request("PUT", f"/custom_fields/{custom_field_id}", json_data=data)
+        r = await self._request("PUT", f"/custom_fields/{_path_id(custom_field_id)}", json_data=data)
         return r.json()
 
     async def delete_custom_field(self, custom_field_id: int | str) -> Any:
         """Delete a custom field definition."""
-        r = await self._request("DELETE", f"/custom_fields/{custom_field_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request(
+            "DELETE", f"/custom_fields/{_path_id(custom_field_id)}", allow_statuses=frozenset({200, 204})
+        )
         return r.json() if r.content else {"status": "deleted", "id": custom_field_id}
 
     async def list_custom_field_values(self, params: dict[str, Any] | None = None) -> Any:
@@ -1292,7 +1312,7 @@ class SmartsheetRMClient:
 
     async def delete_approval(self, approval_id: int | str) -> Any:
         """Delete a pending approval record."""
-        r = await self._request("DELETE", f"/approvals/{approval_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request("DELETE", f"/approvals/{_path_id(approval_id)}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": approval_id}
 
     async def list_status_options(self, params: dict[str, Any] | None = None) -> Any:
@@ -1302,12 +1322,12 @@ class SmartsheetRMClient:
 
     async def get_user_statuses(self, user_id: int | str) -> Any:
         """Get work statuses for a user (ITO, WFH, SIC, OOO, VAC, OOF)."""
-        r = await self._request("GET", f"/users/{user_id}/statuses")
+        r = await self._request("GET", f"/users/{_path_id(user_id)}/statuses")
         return r.json()
 
     async def set_user_status(self, user_id: int | str, data: dict[str, Any]) -> Any:
         """Set current status for a user."""
-        r = await self._request("POST", f"/users/{user_id}/statuses", json_data=data)
+        r = await self._request("POST", f"/users/{_path_id(user_id)}/statuses", json_data=data)
         return r.json()
 
     async def list_placeholder_resources(self, params: dict[str, Any] | None = None) -> Any:
@@ -1323,28 +1343,103 @@ class SmartsheetRMClient:
     async def delete_placeholder_resource(self, placeholder_id: int | str) -> Any:
         """Delete a placeholder resource."""
         r = await self._request(
-            "DELETE", f"/placeholder_resources/{placeholder_id}", allow_statuses=frozenset({200, 204})
+            "DELETE", f"/placeholder_resources/{_path_id(placeholder_id)}", allow_statuses=frozenset({200, 204})
         )
         return r.json() if r.content else {"status": "deleted", "id": placeholder_id}
 
     async def list_subtasks(self, project_id: int | str, assignment_id: int | str) -> Any:
         """List subtasks for an assignment."""
-        r = await self._request("GET", f"/projects/{project_id}/assignments/{assignment_id}/subtasks")
+        r = await self._request(
+            "GET", f"/projects/{_path_id(project_id)}/assignments/{_path_id(assignment_id)}/subtasks"
+        )
         return r.json()
 
     async def create_subtask(self, project_id: int | str, assignment_id: int | str, data: dict[str, Any]) -> Any:
         """Create a subtask on an assignment."""
-        r = await self._request("POST", f"/projects/{project_id}/assignments/{assignment_id}/subtasks", json_data=data)
+        r = await self._request(
+            "POST",
+            f"/projects/{_path_id(project_id)}/assignments/{_path_id(assignment_id)}/subtasks",
+            json_data=data,
+        )
         return r.json()
 
     async def delete_subtask(self, project_id: int | str, assignment_id: int | str, subtask_id: int | str) -> Any:
         """Delete a subtask."""
         r = await self._request(
             "DELETE",
-            f"/projects/{project_id}/assignments/{assignment_id}/subtasks/{subtask_id}",
+            f"/projects/{_path_id(project_id)}/assignments/{_path_id(assignment_id)}/subtasks/{_path_id(subtask_id)}",
             allow_statuses=frozenset({200, 204}),
         )
         return r.json() if r.content else {"status": "deleted", "id": subtask_id}
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ASSIGNABLES, BUDGET ITEMS, PROJECT MEMBERS / MEMBERSHIPS, TIME ENTRY CATEGORIES
+    # Sourced from Smartsheet RM OpenAPI:
+    # https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    async def list_assignables(self, params: dict[str, Any] | None = None) -> Any:
+        """List assignables (GET /assignables; OpenAPI getAssignables)."""
+        r = await self._request("GET", "/assignables", params=params)
+        return r.json()
+
+    async def get_assignable(self, assignable_id: int | str) -> Any:
+        """Fetch one assignable (GET /assignables/{assignable_id}; OpenAPI getAssignablesId)."""
+        r = await self._request("GET", f"/assignables/{_path_id(assignable_id)}")
+        return r.json()
+
+    async def list_project_budget_items(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
+        """List project budget items (GET /projects/{project_id}/budget_items; getProjectBudgetItems).
+
+        Query ``item_type`` is required (BudgetItemType: TimeFees | TimeFeesDays | Expenses).
+        """
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/budget_items", params=params)
+        return r.json()
+
+    async def get_budget_item(self, budget_item_id: int | str) -> Any:
+        """Fetch a budget item (GET /budget_items/{budget_item_id}; OpenAPI getBudgetItem)."""
+        r = await self._request("GET", f"/budget_items/{_path_id(budget_item_id)}")
+        return r.json()
+
+    async def get_project_budget_item(self, project_id: int | str, budget_item_id: int | str) -> Any:
+        """Fetch a project budget item (GET /projects/{project_id}/budget_items/{budget_item_id})."""
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/budget_items/{_path_id(budget_item_id)}")
+        return r.json()
+
+    async def list_project_members(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
+        """List project members (GET /projects/{project_id}/project_members)."""
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/project_members", params=params)
+        return r.json()
+
+    async def list_relationships_project_members(self, params: dict[str, Any] | None = None) -> Any:
+        """List members across projects (GET /relationships/project_members)."""
+        r = await self._request("GET", "/relationships/project_members", params=params)
+        return r.json()
+
+    async def list_relationships_project_memberships(self, params: dict[str, Any] | None = None) -> Any:
+        """List project memberships for users (GET /relationships/project_memberships)."""
+        r = await self._request("GET", "/relationships/project_memberships", params=params)
+        return r.json()
+
+    async def list_user_project_memberships(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
+        """List a user's project memberships (GET /users/{user_id}/project_memberships)."""
+        r = await self._request("GET", f"/users/{_path_id(user_id)}/project_memberships", params=params)
+        return r.json()
+
+    async def list_time_entry_categories(self, params: dict[str, Any] | None = None) -> Any:
+        """List account-level time entry categories (GET /time_entry_categories)."""
+        r = await self._request("GET", "/time_entry_categories", params=params)
+        return r.json()
+
+    async def list_project_time_entry_categories(
+        self, project_id: int | str, params: dict[str, Any] | None = None
+    ) -> Any:
+        """List project time entry categories (GET /projects/{project_id}/time_entry_categories).
+
+        Query ``item_type`` is required by the published OpenAPI.
+        """
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/time_entry_categories", params=params)
+        return r.json()
 
     async def get_report_rows(self, data: dict[str, Any]) -> Any:
         """Generate and retrieve report rows."""
@@ -1368,5 +1463,5 @@ class SmartsheetRMClient:
 
     async def delete_webhook(self, webhook_id: int | str) -> Any:
         """Delete a webhook."""
-        r = await self._request("DELETE", f"/webhooks/{webhook_id}", allow_statuses=frozenset({200, 204}))
+        r = await self._request("DELETE", f"/webhooks/{_path_id(webhook_id)}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": webhook_id}

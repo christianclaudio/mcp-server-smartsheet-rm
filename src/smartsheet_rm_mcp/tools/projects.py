@@ -741,6 +741,225 @@ async def rm_delete_assignment_subtask(
     return json.dumps(data, indent=2)
 
 
+@rm_tool
+async def rm_list_assignables(page: int = 1, per_page: int = 20) -> str:
+    """List accessible assignables (projects and leave types).
+
+    OpenAPI: GET /assignables (getAssignables). Docs:
+    https://developers.smartsheet.com/api/resource_management/openapi
+    https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
+
+    Args:
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of assignables, as a string.
+    """
+    client = await get_client()
+    data = await client.list_assignables(params={"page": page, "per_page": per_page})
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_assignable(assignable_id: int | str) -> str:
+    """Fetch one assignable by ID (project or leave type).
+
+    OpenAPI: GET /assignables/{assignable_id} (getAssignablesId).
+
+    Args:
+        assignable_id: ID of the project or leave type.
+
+    Returns:
+        The API's JSON response with the assignable, as a string.
+    """
+    client = await get_client()
+    data = await client.get_assignable(assignable_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_list_project_budget_items(project_id: int | str, item_type: str) -> str:
+    """List project/phase budget items of the given type.
+
+    OpenAPI: GET /projects/{project_id}/budget_items (getProjectBudgetItems).
+    ``item_type`` is required (BudgetItemType: TimeFees, TimeFeesDays, or Expenses).
+
+    Args:
+        project_id: ID of the project or phase.
+        item_type: Budget item type: TimeFees, TimeFeesDays or Expenses.
+
+    Returns:
+        The API's JSON response with the matching budget items, as a string.
+    """
+    client = await get_client()
+    data = await client.list_project_budget_items(project_id, params={"item_type": item_type})
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_budget_item(budget_item_id: int | str) -> str:
+    """Fetch a budget item by ID.
+
+    OpenAPI: GET /budget_items/{budget_item_id} (getBudgetItem).
+
+    Args:
+        budget_item_id: ID of the budget item.
+
+    Returns:
+        The API's JSON response with the budget item, as a string.
+    """
+    client = await get_client()
+    data = await client.get_budget_item(budget_item_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_project_budget_item(project_id: int | str, budget_item_id: int | str) -> str:
+    """Fetch a budget item under a project.
+
+    OpenAPI: GET /projects/{project_id}/budget_items/{budget_item_id} (getProjectBudgetItem).
+
+    Args:
+        project_id: ID of the project or phase that owns the budget item.
+        budget_item_id: ID of the budget item.
+
+    Returns:
+        The API's JSON response with the budget item, as a string.
+    """
+    client = await get_client()
+    data = await client.get_project_budget_item(project_id, budget_item_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_list_project_members(
+    project_id: int | str,
+    membership: str | None = None,
+    page: int = 1,
+    per_page: int = 20,
+) -> str:
+    """List members of a project.
+
+    OpenAPI: GET /projects/{project_id}/project_members (getProjectsProjectIdProjectMembers).
+    Optional ``membership`` filter: member, viewer, reporter, scheduler, or editor.
+    When omitted, ``membership`` defaults to ``member``; pass another level to list those.
+
+    Args:
+        project_id: ID of the project.
+        membership: Membership level to list: member, viewer, reporter, scheduler or editor.
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of project members, as a string.
+    """
+    params: dict[str, Any] = {"page": page, "per_page": per_page}
+    if membership is not None:
+        params["membership"] = membership
+    client = await get_client()
+    data = await client.list_project_members(project_id, params=params)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_list_relationships_project_members(
+    membership: str | None = None,
+    page: int = 1,
+    per_page: int = 20,
+) -> str:
+    """List members for one or more projects (relationships endpoint).
+
+    OpenAPI: GET /relationships/project_members (getRelationshipsProjectMembers).
+    Documented query params: membership, page, per_page.
+    When omitted, ``membership`` defaults to ``member``; pass another level to list those.
+
+    Args:
+        membership: Membership level to list: member, viewer, reporter, scheduler or editor.
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of project members, as a string.
+    """
+    params: dict[str, Any] = {"page": page, "per_page": per_page}
+    if membership is not None:
+        params["membership"] = membership
+    client = await get_client()
+    data = await client.list_relationships_project_members(params=params)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_list_relationships_project_memberships(
+    user_ids: str | None = None,
+    membership: str | None = None,
+    page: int = 1,
+    per_page: int = 20,
+) -> str:
+    """List project memberships for one or more users.
+
+    OpenAPI: GET /relationships/project_memberships (getRelationshipsProjectMemberships).
+    ``user_ids`` is a comma-separated list of user IDs when provided.
+    When omitted, ``membership`` defaults to ``member``; pass another level to list those.
+
+    Args:
+        user_ids: Optional comma-separated IDs of the users whose memberships to list.
+        membership: Membership level to list: member, viewer, reporter, scheduler or editor.
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of project memberships, as a string.
+    """
+    params: dict[str, Any] = {"page": page, "per_page": per_page}
+    if user_ids is not None:
+        params["user_ids"] = user_ids
+    if membership is not None:
+        params["membership"] = membership
+    client = await get_client()
+    data = await client.list_relationships_project_memberships(params=params)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_list_user_project_memberships(
+    user_id: int | str,
+    membership: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    page: int = 1,
+    per_page: int = 20,
+) -> str:
+    """List project memberships for a user.
+
+    OpenAPI: GET /users/{user_id}/project_memberships (getUsersUserIdProjectMemberships).
+    Optional ``from`` / ``to`` are YYYY-MM-DD date filters (tool args from_date / to_date).
+    When omitted, ``membership`` defaults to ``member``; pass another level to list those.
+
+    Args:
+        user_id: ID of the user.
+        membership: Membership level to list: member, viewer, reporter, scheduler or editor.
+        from_date: Optional YYYY-MM-DD start date, sent as ``from``.
+        to_date: Optional YYYY-MM-DD end date, sent as ``to``.
+        page: Response page to return, starting at 1 (default 1).
+        per_page: Maximum items per page, up to 1000 (default 20).
+
+    Returns:
+        The API's JSON response with one page of the user's project memberships, as a string.
+    """
+    params: dict[str, Any] = {"page": page, "per_page": per_page}
+    if membership is not None:
+        params["membership"] = membership
+    if from_date is not None:
+        params["from"] = from_date
+    if to_date is not None:
+        params["to"] = to_date
+    client = await get_client()
+    data = await client.list_user_project_memberships(user_id, params=params)
+    return json.dumps(data, indent=2)
+
+
 def project_staffing_plan(project_id: str) -> str:
     """Analyze resource assignments and phase timelines for a project."""
     return f"""Evaluate resource assignments and capacity for project ID {project_id}.
@@ -776,6 +995,15 @@ delete_placeholder_resource = rm_delete_placeholder_resource
 list_assignment_subtasks = rm_list_assignment_subtasks
 create_assignment_subtask = rm_create_assignment_subtask
 delete_assignment_subtask = rm_delete_assignment_subtask
+list_assignables = rm_list_assignables
+get_assignable = rm_get_assignable
+list_project_budget_items = rm_list_project_budget_items
+get_budget_item = rm_get_budget_item
+get_project_budget_item = rm_get_project_budget_item
+list_project_members = rm_list_project_members
+list_relationships_project_members = rm_list_relationships_project_members
+list_relationships_project_memberships = rm_list_relationships_project_memberships
+list_user_project_memberships = rm_list_user_project_memberships
 
 _PROJECTS_TOOLS_CONFIG = [
     ("list_projects", rm_list_projects, ANNOTATION_READ_ONLY),
@@ -805,6 +1033,15 @@ _PROJECTS_TOOLS_CONFIG = [
     ("list_assignment_subtasks", rm_list_assignment_subtasks, ANNOTATION_READ_ONLY),
     ("create_assignment_subtask", rm_create_assignment_subtask, ANNOTATION_WRITE_SAFE),
     ("delete_assignment_subtask", rm_delete_assignment_subtask, ANNOTATION_DESTRUCTIVE),
+    ("list_assignables", rm_list_assignables, ANNOTATION_READ_ONLY),
+    ("get_assignable", rm_get_assignable, ANNOTATION_READ_ONLY),
+    ("list_project_budget_items", rm_list_project_budget_items, ANNOTATION_READ_ONLY),
+    ("get_budget_item", rm_get_budget_item, ANNOTATION_READ_ONLY),
+    ("get_project_budget_item", rm_get_project_budget_item, ANNOTATION_READ_ONLY),
+    ("list_project_members", rm_list_project_members, ANNOTATION_READ_ONLY),
+    ("list_relationships_project_members", rm_list_relationships_project_members, ANNOTATION_READ_ONLY),
+    ("list_relationships_project_memberships", rm_list_relationships_project_memberships, ANNOTATION_READ_ONLY),
+    ("list_user_project_memberships", rm_list_user_project_memberships, ANNOTATION_READ_ONLY),
 ]
 
 

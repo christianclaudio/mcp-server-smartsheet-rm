@@ -132,6 +132,18 @@ def setup_mock_client():
     mock_client.create_webhook.return_value = {"id": 2, "url": "https://test.com"}
     mock_client.delete_webhook.return_value = {"status": "deleted"}
 
+    mock_client.list_assignables.return_value = {"data": []}
+    mock_client.get_assignable.return_value = {"id": 50, "type": "Project"}
+    mock_client.list_project_budget_items.return_value = {"data": []}
+    mock_client.get_budget_item.return_value = {"id": 7}
+    mock_client.get_project_budget_item.return_value = {"id": 7}
+    mock_client.list_project_members.return_value = {"data": []}
+    mock_client.list_relationships_project_members.return_value = {"data": []}
+    mock_client.list_relationships_project_memberships.return_value = {"data": []}
+    mock_client.list_user_project_memberships.return_value = {"data": []}
+    mock_client.list_time_entry_categories.return_value = {"data": []}
+    mock_client.list_project_time_entry_categories.return_value = {"data": []}
+
     old_client = srv._client
     srv._client = mock_client
     yield mock_client
@@ -442,6 +454,21 @@ async def test_project_and_phase_tools(setup_mock_client) -> None:
         in json.loads(await srv.rm_delete_project_phase(100, 10, confirm=False))["message"]
     )
     await srv.rm_delete_project_phase(100, 10, confirm=True)
+
+
+@pytest.mark.asyncio
+async def test_budget_members_assignables_category_tools(setup_mock_client) -> None:
+    await srv.rm_list_assignables(page=1, per_page=10)
+    await srv.rm_get_assignable(50)
+    await srv.rm_list_project_budget_items(100, item_type="TimeFeesDays")
+    await srv.rm_get_budget_item(7)
+    await srv.rm_get_project_budget_item(100, 7)
+    await srv.rm_list_project_members(100, membership="member", page=1, per_page=10)
+    await srv.rm_list_relationships_project_members(membership="viewer")
+    await srv.rm_list_relationships_project_memberships(user_ids="1,2")
+    await srv.rm_list_user_project_memberships(1, from_date="2026-01-01", to_date="2026-12-31")
+    await srv.rm_list_time_entry_categories()
+    await srv.rm_list_project_time_entry_categories(100, item_type="TimeFeesDays")
 
 
 @pytest.mark.asyncio

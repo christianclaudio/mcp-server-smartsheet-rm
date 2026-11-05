@@ -37,12 +37,12 @@ TIMESHEETS = PROFILES["timesheets"]
 
 # Signed-off counts (total tools, read-only tools); Nexus gates on these.
 SIGNED_OFF = {
-    "full": (104, 39),
-    "readonly": (39, 39),
-    "timesheets": (24, 12),
-    "staffing": (27, 18),
+    "full": (115, 50),
+    "readonly": (50, 50),
+    "timesheets": (26, 14),
+    "staffing": (33, 24),
     "org_setup": (35, 13),
-    "portfolio": (33, 18),
+    "portfolio": (36, 21),
 }
 
 CODE_MODE_SKIP_REASON = "needs the code-mode extra (fastmcp[code-mode] / pydantic-monty)"
@@ -136,7 +136,7 @@ async def test_every_tool_has_explicit_read_only_hint() -> None:
     assert missing == []
     reads = {t.name for t in tools if t.annotations and t.annotations.read_only_hint is True}
     writes = {t.name for t in tools if t.annotations and t.annotations.read_only_hint is False}
-    assert len(reads) == 39
+    assert len(reads) == 50
     assert len(writes) == 65
     assert reads == set(PROFILES_READONLY_NAMES)
 
@@ -181,6 +181,17 @@ PROFILES_READONLY_NAMES = (
     "admin_get_report_rows",
     "admin_get_report_totals",
     "admin_list_webhooks",
+    "time_list_time_entry_categories",
+    "time_list_project_time_entry_categories",
+    "projects_list_assignables",
+    "projects_get_assignable",
+    "projects_list_project_budget_items",
+    "projects_get_budget_item",
+    "projects_get_project_budget_item",
+    "projects_list_project_members",
+    "projects_list_relationships_project_members",
+    "projects_list_relationships_project_memberships",
+    "projects_list_user_project_memberships",
 )
 
 
@@ -359,7 +370,7 @@ async def test_readonly_enforced_under_allowlist_profile(monkeypatch: pytest.Mon
     """SMARTSHEET_RM_READONLY=1 on an allowlist profile hides and refuses its write tools."""
     monkeypatch.setattr(settings, "READONLY", True)
     app = create_server(profile="timesheets")
-    assert len(await _tool_names(app)) == 12
+    assert len(await _tool_names(app)) == 14
     with pytest.raises(SafetyViolationError, match="time_create_time_entry"):
         await app.call_tool("time_create_time_entry", {})
     res = await app.call_tool("projects_get_project", {"project_id": 7})

@@ -294,7 +294,7 @@ def test_main_spec_file_passes(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--spec-file", str(RM_SPEC_FILE), "--strict"]) == 0
     out = capsys.readouterr().out
     assert "No breaking drift" in out
-    assert f"103/{len(drift.ENDPOINT_TO_METHOD)}" in out
+    assert f"114/{len(drift.ENDPOINT_TO_METHOD)}" in out
 
 
 def test_main_requires_a_spec(capsys: pytest.CaptureFixture[str]) -> None:

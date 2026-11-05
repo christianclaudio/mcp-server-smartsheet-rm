@@ -60,6 +60,8 @@ TIMESHEETS_TOOLS: frozenset[str] = frozenset(
         "admin_get_user",
         "admin_list_leave_types",
         "admin_list_holidays",
+        "time_list_time_entry_categories",
+        "time_list_project_time_entry_categories",
     }
 )
 
@@ -92,6 +94,12 @@ STAFFING_TOOLS: frozenset[str] = frozenset(
         "admin_list_disciplines",
         "admin_list_holidays",
         "admin_get_user_statuses",
+        "projects_list_assignables",
+        "projects_get_assignable",
+        "projects_list_project_members",
+        "projects_list_relationships_project_members",
+        "projects_list_relationships_project_memberships",
+        "projects_list_user_project_memberships",
     }
 )
 
@@ -170,6 +178,9 @@ PORTFOLIO_TOOLS: frozenset[str] = frozenset(
         "admin_set_custom_field_values",
         "admin_get_report_rows",
         "admin_get_report_totals",
+        "projects_list_project_budget_items",
+        "projects_get_budget_item",
+        "projects_get_project_budget_item",
     }
 )
 
