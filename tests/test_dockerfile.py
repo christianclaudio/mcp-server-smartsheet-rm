@@ -79,7 +79,7 @@ def test_both_stages_use_the_same_base_image() -> None:
     digests = []
     for line in froms:
         image = line.split()[1]
-        match = re.fullmatch(r"python:3\.12-slim@sha256:([0-9a-f]{64})", image)
+        match = re.fullmatch(r"python:3\.12-slim-trixie@sha256:([0-9a-f]{64})", image)
         assert match is not None
         digests.append(match.group(1))
     assert digests[0] == digests[1]
