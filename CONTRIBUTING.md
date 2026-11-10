@@ -19,6 +19,8 @@ Thank you for your interest in contributing to `mcp-server-smartsheet-rm`! We we
    pip install -e ".[dev]"
    ```
 
+3. Do not edit `docker/build-backend.txt` by hand.
+
 ---
 
 ## 🧪 Quality Standards & Testing
