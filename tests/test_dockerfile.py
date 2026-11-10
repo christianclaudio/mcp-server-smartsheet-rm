@@ -73,13 +73,16 @@ def _ca_run(stage: str) -> str:
 
 
 def test_both_stages_use_the_same_base_image() -> None:
-    """Both stages share one base image. It is not digest-pinned here; the floor check guards it."""
+    """Both stages use python:3.12-slim@sha256:<64 hex>, the same multi-arch index digest."""
     froms = [lines[0] for name, lines in _stages().items() if name]
-    images = {line.split()[1] for line in froms}
     assert len(froms) == 2
-    assert len(images) == 1
-    (image,) = images
-    assert re.fullmatch(r"python:3\.12-slim(@sha256:[0-9a-f]{64})?", image)
+    digests = []
+    for line in froms:
+        image = line.split()[1]
+        match = re.fullmatch(r"python:3\.12-slim@sha256:([0-9a-f]{64})", image)
+        assert match is not None
+        digests.append(match.group(1))
+    assert digests[0] == digests[1]
 
 
 def test_floor_is_declared_once_and_used_by_both_stages() -> None:
