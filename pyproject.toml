@@ -26,7 +26,7 @@ dependencies = [
     # certifi floor from FastMCP's October 2026 certificate authority incident notice:
     # https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026
     # httpx verifies upstream TLS against certifi's bundle.
-    "certifi>=2026.10.19",
+    "certifi>=2026.10.23",
     "httpx>=0.28.1",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
