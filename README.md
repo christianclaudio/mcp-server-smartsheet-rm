@@ -304,7 +304,7 @@ docker run --rm -p 8000:8000 -e SMARTSHEET_RM_API_TOKEN -e SMARTSHEET_RM_MCP_AUT
 - **Batch Results**: `time_fill_weekly_timesheet`, `time_confirm_suggested_hours`, `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` share one shape: `"status": "success"` or `"partial_success"`, a success count (`filled_count` / `confirmed_count` / `deleted_count`), `failed_count`, `results` and `errors`. Each success is `{id|date, status, result}`; each failure is `{id|date, status: "failed", error}` where `error` always has a `message` (API errors via `to_dict()`; other exceptions as `"type": "internal"` with a redacted message). The field names from earlier releases stay alongside: `time_fill_weekly_timesheet` also returns `days_filled`, `created_count` and `entries` (the created entries), and `time_confirm_suggested_hours` returns `confirmed_entries`. When every item fails, the call is a tool error (`isError: true`, `"type": "batch_failed"`).
 - **Profiles**: Minimize token footprint by loading only the tools one job needs (`timesheets`, `staffing`, `org_setup`, `portfolio`) or one domain (`time`, `projects`, `admin`).
 - **Read-Only Gate**: `readOnlyHint` decides; anything else is refused with `isError: true`.
-- **Resilience**: Exponential backoff with randomized jitter on HTTP 429 rate limits.
+- **Resilience**: GET, HEAD, and OPTIONS retry HTTP 429, HTTP 5xx, and transport errors. The wait is the longer of a jittered backoff and a `Retry-After` of at most 120 seconds (delta-seconds or an HTTP-date). A longer or unparseable `Retry-After` fails the call immediately. Other methods are not retried.
 
 ---
 

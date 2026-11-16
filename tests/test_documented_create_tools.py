@@ -261,7 +261,7 @@ async def test_new_tools_are_safe_writes_in_job_profiles(sent: list[httpx.Reques
     for name, profile in NEW_TOOLS.items():
         ann = tools[name].annotations
         assert ann is not None
-        assert (ann.readOnlyHint, ann.destructiveHint, ann.idempotentHint) == (False, False, False)
+        assert (ann.read_only_hint, ann.destructive_hint, ann.idempotent_hint) == (False, False, False)
         assert name in (PROFILES[profile].tools or frozenset())
         assert name in {t.name for t in await create_server(profile=profile).list_tools()}
 

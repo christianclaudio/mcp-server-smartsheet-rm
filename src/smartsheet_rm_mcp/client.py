@@ -24,10 +24,13 @@ import contextvars
 import ipaddress
 import os
 import random
+import re
 import socket
 import ssl
 import time
 from collections.abc import Callable, Iterable
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote, urlparse
 
@@ -37,7 +40,7 @@ from httpx import Response
 
 from smartsheet_rm_mcp import __version__
 
-from .errors import SmartsheetRMAPIError
+from .errors import SmartsheetRMAPIError, redact_message
 
 JSONValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
@@ -430,6 +433,47 @@ async def fetch_pinned_https(url: str, *, timeout: float = 30.0) -> httpx.Respon
     return response
 
 
+MAX_RETRY_AFTER_SECONDS = 120
+"""Maximum ``Retry-After``, in seconds, that is honored in full.
+
+A value at or under this limit is waited out. A larger value, or a header that
+cannot be parsed, fails the call at once with ``SmartsheetRMAPIError`` and is
+not retried, so the client never waits less than the server asked. This limit
+is not the request timeout.
+"""
+
+# 429, 5xx, and transport errors are retried only for these methods.
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _parse_retry_after_value(header_val: str | None) -> float | None:
+    """Return the wait a ``Retry-After`` value asks for, or None if absent or malformed.
+
+    RFC 9110 section 10.2.3 allows delta-seconds or an HTTP-date. A date is taken
+    relative to now and a past date counts as zero. A negative or non-integer
+    number is malformed.
+    """
+    if header_val is None:
+        return None
+    value = header_val.strip()
+    if not value:
+        return None
+    if re.fullmatch(r"[0-9]+", value):
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError, OverflowError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
+def _retry_after_seconds(response: httpx.Response) -> float | None:
+    """Return the wait a response's ``Retry-After`` asks for, or None if absent or malformed."""
+    return _parse_retry_after_value(response.headers.get("Retry-After"))
+
+
 class SmartsheetRMClient:
     """Asynchronous HTTP Client for Smartsheet Resource Management API."""
 
@@ -524,7 +568,14 @@ class SmartsheetRMClient:
         json_data: JSONValue = None,
         allow_statuses: frozenset[int] | None = None,
     ) -> Response:
-        """Execute an HTTP request with exponential backoff on 429 and transient errors."""
+        """Execute an HTTP request. Only idempotent methods are retried.
+
+        A 429, a 5xx, or a transport error is retried only for GET, HEAD, and
+        OPTIONS. The wait is the longer of the jittered backoff and a
+        ``Retry-After`` at or under ``MAX_RETRY_AFTER_SECONDS``. A longer or
+        unparseable ``Retry-After`` fails at once. Other methods, and every
+        other 4xx, are not retried.
+        """
         cleaned_path = "/" + path.lstrip("/")
         safe_segments = [quote(seg, safe="%") if seg else "" for seg in cleaned_path.split("/")]
         safe_path = "/".join(safe_segments)
@@ -534,65 +585,119 @@ class SmartsheetRMClient:
         if params is not None:
             clean_params = {k: v for k, v in params.items() if v is not None}
 
+        idempotent = method.upper() in _IDEMPOTENT_METHODS
         for attempt in range(self.max_retries + 1):
-            r = await self._http.request(
-                method,
-                url,
-                headers=self._headers(),
-                params=clean_params,
-                json=json_data,
-                timeout=60.0,
-                follow_redirects=False,
-            )
-
-            if r.status_code != 429:
-                if r.status_code >= 400 and not (allow_statuses and r.status_code in allow_statuses):
-                    detail: Any = None
-                    try:
-                        detail = r.json()
-                    except Exception:
-                        detail = r.text[:500] if r.text else None
-                    request_id = r.headers.get("x-request-id") or r.headers.get("request-id")
-                    raise SmartsheetRMAPIError(
-                        status_code=r.status_code,
-                        path=path,
-                        method=method,
-                        detail=detail,
-                        request_id=request_id,
-                    )
-                return r
-
-            if attempt == self.max_retries:
+            try:
+                r = await self._http.request(
+                    method,
+                    url,
+                    headers=self._headers(),
+                    params=clean_params,
+                    json=json_data,
+                    timeout=60.0,
+                    follow_redirects=False,
+                )
+            except httpx.RequestError as exc:
+                if idempotent and attempt < self.max_retries:
+                    await asyncio.sleep(self._retry_delay(attempt, None))
+                    continue
                 raise SmartsheetRMAPIError(
-                    status_code=429,
+                    status_code=0,
                     path=path,
                     method=method,
-                    detail="Rate limit exceeded after max retries",
-                    request_id=r.headers.get("x-request-id") or r.headers.get("request-id"),
-                )
+                    detail=redact_message(str(exc)),
+                ) from exc
 
-            retry_after = r.headers.get("Retry-After")
-            parsed_delay = self._parse_retry_after(retry_after)
-            if parsed_delay is not None:
-                delay = parsed_delay * random.uniform(1.0, 1.3)
-            else:
-                delay = min(self.base_delay * (2**attempt) * random.uniform(0.5, 1.5), self.max_retry_delay)
-            await asyncio.sleep(delay)
+            if r.status_code < 400 or (allow_statuses and r.status_code in allow_statuses):
+                return r
 
-        raise SmartsheetRMAPIError(
-            status_code=429, path=path, method=method, detail="Rate limit exceeded"
-        )  # pragma: no cover
+            if r.status_code == 429 or r.status_code >= 500:
+                self._reject_hostile_retry_after(r, path=path, method=method)
+                if idempotent and attempt < self.max_retries:
+                    await asyncio.sleep(self._retry_delay(attempt, r))
+                    continue
+                if r.status_code == 429:
+                    raise self._failure(
+                        r,
+                        path,
+                        method,
+                        detail="Rate limit exceeded after max retries",
+                    )
+                raise self._failure(r, path, method)
+
+            raise self._failure(r, path, method)
+
+        raise SmartsheetRMAPIError(status_code=0, path=path, method=method, detail="Request failed")  # pragma: no cover
+
+    def _retry_delay(self, attempt: int, response: httpx.Response | None) -> float:
+        """Seconds to wait before retrying.
+
+        The computed backoff is ``base_delay * 2**attempt`` plus a little jitter,
+        capped by ``max_retry_delay``. A ``Retry-After`` at or under
+        ``MAX_RETRY_AFTER_SECONDS`` is waited out in full when it is longer.
+        A missing header, or a past HTTP-date (zero), uses the backoff. A hostile
+        header is rejected by the caller before this runs.
+        """
+        backoff = min(
+            self.base_delay * float(2**attempt) + random.uniform(0.1, 0.5),
+            self.max_retry_delay,
+        )
+        if response is None:
+            return backoff
+        retry_after = _retry_after_seconds(response)
+        if retry_after is None:
+            return backoff
+        return max(backoff, retry_after)
+
+    def _reject_hostile_retry_after(self, response: httpx.Response, *, path: str, method: str) -> None:
+        """Fail at once when a present ``Retry-After`` is over the cap or unreadable."""
+        if response.headers.get("Retry-After") is None:
+            return
+        seconds = _retry_after_seconds(response)
+        if seconds is None or seconds > MAX_RETRY_AFTER_SECONDS:
+            if response.status_code >= 500:
+                raise self._failure(response, path, method)
+            raise self._failure(
+                response,
+                path,
+                method,
+                detail=(
+                    f"HTTP {response.status_code}: Retry-After exceeds {MAX_RETRY_AFTER_SECONDS}s or cannot be parsed."
+                ),
+            )
+
+    @staticmethod
+    def _failure(
+        response: httpx.Response,
+        path: str,
+        method: str,
+        detail: Any = None,
+    ) -> SmartsheetRMAPIError:
+        """Build an API error from a response, reading the body only when no detail is given."""
+        if detail is None:
+            try:
+                detail = response.json()
+            except Exception:
+                text = response.text
+                detail = text[:500] if text else None
+        request_id = response.headers.get("x-request-id") or response.headers.get("request-id")
+        return SmartsheetRMAPIError(
+            status_code=response.status_code,
+            path=path,
+            method=method,
+            detail=detail,
+            request_id=request_id,
+        )
 
     @staticmethod
     def _parse_retry_after(header_val: str | None) -> float | None:
-        """Parse Retry-After header as integer or float seconds."""
-        if not header_val:
-            return None
-        try:
-            val = float(header_val)
-            return max(0.0, val)
-        except (ValueError, OverflowError):
-            return None
+        """Parse a ``Retry-After`` value as delta-seconds or an HTTP-date.
+
+        Returns None when the value is absent or cannot be parsed. A past
+        HTTP-date is zero. Callers treat a present but unparseable header, and
+        any wait over ``MAX_RETRY_AFTER_SECONDS``, as a failure.
+        """
+        return _parse_retry_after_value(header_val)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 1. TIME TRACKING & APPROVALS

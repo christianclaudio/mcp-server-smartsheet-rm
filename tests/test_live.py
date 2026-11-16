@@ -353,7 +353,7 @@ async def test_dispatch_tool_call_offline(monkeypatch: pytest.MonkeyPatch) -> No
     assert "***REDACTED***" in err
 
 
-@pytest.mark.e2e
+@pytest.mark.live
 @pytest.mark.asyncio
 async def test_all_discovered_tools_live() -> None:
     """Dynamically discover and exercise registered tools against live endpoints."""

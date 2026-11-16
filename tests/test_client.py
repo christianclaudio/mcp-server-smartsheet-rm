@@ -58,9 +58,10 @@ def test_parse_retry_after() -> None:
     assert SmartsheetRMClient._parse_retry_after(None) is None
     assert SmartsheetRMClient._parse_retry_after("") is None
     assert SmartsheetRMClient._parse_retry_after("5") == 5.0
-    assert SmartsheetRMClient._parse_retry_after("2.5") == 2.5
+    # Delta-seconds are non-negative integers. A fraction or a negative value is malformed.
+    assert SmartsheetRMClient._parse_retry_after("2.5") is None
     assert SmartsheetRMClient._parse_retry_after("invalid") is None
-    assert SmartsheetRMClient._parse_retry_after("-10") == 0.0
+    assert SmartsheetRMClient._parse_retry_after("-10") is None
 
 
 @pytest.mark.asyncio
@@ -109,7 +110,7 @@ async def test_request_429_rate_limit_retry_and_exhaustion() -> None:
     mock_http = AsyncMock()
     mock_resp_429 = MagicMock()
     mock_resp_429.status_code = 429
-    mock_resp_429.headers = {"Retry-After": "0.01", "x-request-id": "req-429"}
+    mock_resp_429.headers = {"Retry-After": "0", "x-request-id": "req-429"}
 
     mock_resp_200 = MagicMock()
     mock_resp_200.status_code = 200

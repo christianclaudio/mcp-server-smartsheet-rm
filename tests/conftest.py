@@ -8,6 +8,9 @@ from typing import Any
 
 import pytest
 
+# The floor test drives a child pytest with this plugin's pytester fixture.
+pytest_plugins = ["pytester"]
+
 # The module-level ``smartsheet_rm_mcp.server.mcp`` reads the token when it is
 # imported, which happens at collection, before any fixture runs. Clear the
 # shell's values first.
@@ -49,9 +52,9 @@ def _no_real_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyP
     """Fail any test that opens a socket to, or looks up, a non-loopback host.
 
     Every outbound path must go through the offline fake network (``tests/fake_network.py``),
-    respx or a mock transport. Only tests marked ``e2e`` (deselected by default) may dial out.
+    respx or a mock transport. Only tests marked ``live`` (deselected by default) may dial out.
     """
-    if request.node.get_closest_marker("e2e") is not None:
+    if request.node.get_closest_marker("live") is not None:
         return
     real_connect = socket.socket.connect
     real_connect_ex = socket.socket.connect_ex
@@ -109,3 +112,31 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     error = code_mode_ci_guard_error()
     if error is not None:
         pytest.exit(error, returncode=3)
+
+
+LIVE_REQUIRED_ENV = ("SMARTSHEET_RM_API_TOKEN",)
+
+
+def live_skip_reason(environ: dict[str, str] | None = None) -> str | None:
+    """Return why a live test must skip, or None when it may run.
+
+    Live tests run only when every name in ``LIVE_REQUIRED_ENV`` is non-empty.
+    The reason lists missing names and never a value.
+    """
+    env = os.environ if environ is None else environ
+    missing = [name for name in LIVE_REQUIRED_ENV if not env.get(name, "").strip()]
+    if missing:
+        return "missing or empty: " + ", ".join(missing)
+    return None
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Skip live items unless every required environment name is set."""
+    del config
+    reason = live_skip_reason()
+    if reason is None:
+        return
+    skip = pytest.mark.skip(reason=reason)
+    for item in items:
+        if item.get_closest_marker("live") is not None:
+            item.add_marker(skip)
