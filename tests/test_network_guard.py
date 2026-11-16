@@ -20,9 +20,14 @@ def test_guard_blocks_a_raw_socket_connect() -> None:
         socket.getaddrinfo("api.rm.smartsheet.com", 443)
     with pytest.raises(AssertionError, match="real DNS lookup"):
         socket.getaddrinfo(b"api.rm.smartsheet.com", 443)
-    # Literals and loopback resolve locally and stay allowed.
-    assert socket.getaddrinfo("192.0.2.1", 443)
-    assert socket.getaddrinfo("localhost", 443)
+    # Literals and loopback are not a forbidden lookup. They resolve locally when the
+    # resolver answers; a resolver refusal is not the guard classifying them as real DNS.
+    for host in ("192.0.2.1", "localhost"):
+        try:
+            socket.getaddrinfo(host, 443)
+        except OSError as exc:
+            assert "real DNS lookup" not in str(exc)
+            assert "real network connect" not in str(exc)
 
 
 @pytest.mark.asyncio
