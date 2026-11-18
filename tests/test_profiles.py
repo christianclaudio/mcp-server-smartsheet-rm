@@ -37,12 +37,12 @@ TIMESHEETS = PROFILES["timesheets"]
 
 # Signed-off counts (total tools, read-only tools); Nexus gates on these.
 SIGNED_OFF = {
-    "full": (115, 50),
-    "readonly": (50, 50),
-    "timesheets": (26, 14),
-    "staffing": (33, 24),
-    "org_setup": (35, 13),
-    "portfolio": (36, 21),
+    "full": (163, 74),
+    "readonly": (74, 74),
+    "timesheets": (29, 17),
+    "staffing": (56, 35),
+    "org_setup": (45, 20),
+    "portfolio": (49, 29),
 }
 
 CODE_MODE_SKIP_REASON = "needs the code-mode extra (fastmcp[code-mode] / pydantic-monty)"
@@ -114,9 +114,9 @@ async def test_full_is_exhaustive_and_every_tool_is_placed() -> None:
 
 
 def test_full_only_tools() -> None:
-    """The seven full-only tools: both bulk deletes plus five admin client/expense/tag tools."""
+    """The twelve full-only tools: both bulk deletes, five admin tools, and five API-token tools."""
     assert FULL_ONLY_TOOLS == EXPECTED_FULL_ONLY
-    assert len(FULL_ONLY_TOOLS) == 7
+    assert len(FULL_ONLY_TOOLS) == 12
     assert BULK_DESTRUCTIVE_TOOLS <= FULL_ONLY_TOOLS
     assert server.FULL_ONLY_TOOLS is FULL_ONLY_TOOLS
 
@@ -136,8 +136,8 @@ async def test_every_tool_has_explicit_read_only_hint() -> None:
     assert missing == []
     reads = {t.name for t in tools if t.annotations and t.annotations.read_only_hint is True}
     writes = {t.name for t in tools if t.annotations and t.annotations.read_only_hint is False}
-    assert len(reads) == 50
-    assert len(writes) == 65
+    assert len(reads) == 74
+    assert len(writes) == 89
     assert reads == set(PROFILES_READONLY_NAMES)
 
 
@@ -192,6 +192,30 @@ PROFILES_READONLY_NAMES = (
     "projects_list_relationships_project_members",
     "projects_list_relationships_project_memberships",
     "projects_list_user_project_memberships",
+    "time_get_project_time_entry",
+    "time_get_user_time_entry",
+    "projects_list_project_bill_rates",
+    "projects_get_project_bill_rate",
+    "projects_get_placeholder_resource",
+    "projects_list_placeholder_resource_assignments",
+    "projects_list_project_placeholder_resources",
+    "projects_get_assignment_subtask",
+    "projects_get_project_assignment",
+    "projects_get_user_assignment",
+    "projects_get_status_option",
+    "admin_list_bill_rates",
+    "admin_get_bill_rate",
+    "admin_list_availability_blocks",
+    "admin_get_availability_block",
+    "admin_get_discipline",
+    "admin_get_role",
+    "admin_get_webhook",
+    "admin_get_project_expense_item",
+    "admin_get_user_expense_item",
+    "admin_get_project_custom_field_value",
+    "admin_get_user_custom_field_value",
+    "admin_export_report_csv",
+    "admin_list_api_tokens",
 )
 
 
@@ -370,7 +394,7 @@ async def test_readonly_enforced_under_allowlist_profile(monkeypatch: pytest.Mon
     """SMARTSHEET_RM_READONLY=1 on an allowlist profile hides and refuses its write tools."""
     monkeypatch.setattr(settings, "READONLY", True)
     app = create_server(profile="timesheets")
-    assert len(await _tool_names(app)) == 14
+    assert len(await _tool_names(app)) == 17
     with pytest.raises(SafetyViolationError, match="time_create_time_entry"):
         await app.call_tool("time_create_time_entry", {})
     res = await app.call_tool("projects_get_project", {"project_id": 7})
