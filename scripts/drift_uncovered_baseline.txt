@@ -1,0 +1,21 @@
+PUT /users/{}/time_entries/{}  # gap: documented twin of undocumented PUT /time_entries/{id} behind time_update_time_entry; not a drop-in because it requires user_id and TimeEntryCreateRequest while the tool sends a partial body that can include billable
+DELETE /users/{}/time_entries/{}  # gap: documented twin of undocumented DELETE /time_entries/{id} behind time_delete_time_entry; not a drop-in because the documented route requires user_id
+GET /projects/{}/expense_items  # gap: documented twin of undocumented GET /projects/{project_id}/expenses; not a drop-in because ExpenseItemsResponse is not the body the /expenses tool returns and that tool also lists /expenses
+GET /users/{}/expense_items  # gap: documented twin of undocumented GET /users/{user_id}/expenses; not a drop-in because the list is ExpenseItemsResponse and the tool also lists /expenses with no user
+POST /users/{}/expense_items  # gap: documented twin of undocumented POST /expenses; not a drop-in because ExpenseItemCreateRequest requires date, amount, and user_id and has no expense_category_id or billable
+PUT /users/{}/expense_items/{}  # gap: documented twin of undocumented PUT /expenses/{id}; not a drop-in because the update requires date and amount, has no billable, and the path requires user_id
+DELETE /users/{}/expense_items/{}  # gap: documented twin of undocumented DELETE /expenses/{id}; not a drop-in because the documented route requires user_id
+GET /projects/{}/custom_field_values  # gap: documented twin of undocumented GET /custom_field_values; not a drop-in because this list is per project and the tool filters with target_id and target_type
+POST /projects/{}/custom_field_values  # gap: documented twin of undocumented PUT /custom_field_values; not a drop-in because create requires custom_field_id and value on one project
+PUT /projects/{}/custom_field_values/{}  # gap: documented twin of undocumented PUT /custom_field_values; not a drop-in because this updates one value and the tool sends a values map
+GET /users/{}/custom_field_values  # gap: documented twin of undocumented GET /custom_field_values; not a drop-in because this list is per user and the tool filters with target_id and target_type
+POST /users/{}/custom_field_values  # gap: documented twin of undocumented PUT /custom_field_values; not a drop-in because create requires custom_field_id and value on one user
+PUT /users/{}/custom_field_values/{}  # gap: documented twin of undocumented PUT /custom_field_values; not a drop-in because this updates one value and the tool sends a values map
+GET /projects/{}/tags  # gap: not in the mandate
+POST /projects/{}/tags  # gap: not in the mandate
+DELETE /projects/{}/tags/{}  # gap: not in the mandate
+GET /users/{}/tags  # gap: not in the mandate
+POST /users/{}/tags  # gap: not in the mandate
+DELETE /users/{}/tags/{}  # gap: not in the mandate
+GET /expense_item_categories  # gap: not in the mandate; the undocumented /expense_categories tool covers account expense categories and this route is budget item categories
+GET /projects/{}/expense_item_categories  # gap: not in the mandate; the undocumented /expense_categories tool covers account expense categories and this route is project budget item categories

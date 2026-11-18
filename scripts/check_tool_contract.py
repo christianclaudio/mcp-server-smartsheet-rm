@@ -17,24 +17,24 @@ REPO = Path(__file__).resolve().parent.parent
 # the two bulk tools are listed and refused at call time unless SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1.
 EXPECTED_PROFILE_COUNTS: dict[str, tuple[int, int]] = {
     # Domain-mount profiles
-    "full": (115, 50),
-    "time": (19, 6),
-    "projects": (36, 19),
-    "admin": (60, 25),
-    "readonly": (50, 50),
+    "full": (163, 74),
+    "time": (21, 8),
+    "projects": (62, 28),
+    "admin": (80, 38),
+    "readonly": (74, 74),
     # Job (allowlist) profiles
-    "timesheets": (26, 14),
-    "staffing": (33, 24),
-    "org_setup": (35, 13),
-    "portfolio": (36, 21),
+    "timesheets": (29, 17),
+    "staffing": (56, 35),
+    "org_setup": (45, 20),
+    "portfolio": (49, 29),
 }
 
 # Expected annotation split on ``full``.
 EXPECTED_DEFAULT = EXPECTED_PROFILE_COUNTS["full"][0]
 EXPECTED_READONLY = EXPECTED_PROFILE_COUNTS["readonly"][0]
-EXPECTED_READ_ONLY = 50
-EXPECTED_DESTRUCTIVE = 21
-EXPECTED_IDEMPOTENT = 54
+EXPECTED_READ_ONLY = 74
+EXPECTED_DESTRUCTIVE = 31
+EXPECTED_IDEMPOTENT = 78
 
 BULK_TOOLS = ("time_bulk_delete_time_entries", "projects_bulk_delete_assignments")
 EXPECTED_FULL_ONLY = {
@@ -45,6 +45,11 @@ EXPECTED_FULL_ONLY = {
     "admin_create_expense_category",
     "admin_delete_expense_category",
     "admin_delete_tag",
+    "admin_list_api_tokens",
+    "admin_create_api_token",
+    "admin_update_api_token",
+    "admin_delete_api_token",
+    "admin_renew_api_token",
 }
 
 PROBE = """

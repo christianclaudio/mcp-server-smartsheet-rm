@@ -31,8 +31,8 @@ import time
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
-from urllib.parse import quote, urlparse
+from typing import Any, Literal
+from urllib.parse import parse_qs, quote, urlparse
 
 import httpcore
 import httpx
@@ -40,7 +40,7 @@ from httpx import Response
 
 from smartsheet_rm_mcp import __version__
 
-from .errors import SmartsheetRMAPIError, redact_message
+from .errors import SmartsheetRMAPIError, redact_message, remember_token_values
 
 JSONValue = dict[str, Any] | list[Any] | str | int | float | bool | None
 
@@ -559,6 +559,39 @@ class SmartsheetRMClient:
             headers["Authorization"] = f"Bearer {self._gov_token}"
         return headers
 
+    def _request_base(self, api_base: Literal["v1", "root"]) -> str:
+        """Return the validated base URL, dropping a trailing ``/v1`` for ``api_base='root'``.
+
+        Token operations publish an operation-level server of ``https://api.rm.smartsheet.com/api``
+        (no ``/v1``). The host, SSRF transport and allowlist stay on the already-validated base.
+        """
+        if api_base == "v1" or not self.base_url.endswith("/v1"):
+            return self.base_url
+        return self.base_url[: -len("/v1")]
+
+    def _paging_next_target(self, nxt: str) -> tuple[str, dict[str, str] | None]:
+        """Return the path and query of a collection ``paging.next`` link on this API host.
+
+        ``next`` is a path plus query (the pagination article). An absolute link is followed
+        only when ``urlparse(next).hostname`` equals the base URL hostname.
+        """
+        parsed = urlparse(nxt)
+        if parsed.scheme or parsed.netloc:
+            host = (parsed.hostname or "").lower()
+            expected = (urlparse(self.base_url).hostname or "").lower()
+            if host != expected:
+                raise ValueError("paging next host does not match the API host")
+            path = parsed.path or ""
+        else:
+            path = parsed.path or nxt.split("?", 1)[0]
+        root_path = urlparse(self._request_base("root")).path.rstrip("/")
+        if root_path and path.startswith(root_path + "/"):
+            path = path[len(root_path) :]
+        if not path.startswith("/"):
+            path = "/" + path
+        query = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
+        return path, query or None
+
     async def _request(
         self,
         method: str,
@@ -566,6 +599,8 @@ class SmartsheetRMClient:
         *,
         params: dict[str, Any] | None = None,
         json_data: JSONValue = None,
+        form_data: dict[str, Any] | None = None,
+        api_base: Literal["v1", "root"] = "v1",
         allow_statuses: frozenset[int] | None = None,
     ) -> Response:
         """Execute an HTTP request. Only idempotent methods are retried.
@@ -574,16 +609,26 @@ class SmartsheetRMClient:
         OPTIONS. The wait is the longer of the jittered backoff and a
         ``Retry-After`` at or under ``MAX_RETRY_AFTER_SECONDS``. A longer or
         unparseable ``Retry-After`` fails at once. Other methods, and every
-        other 4xx, are not retried.
+        other 4xx, are not retried. ``form_data`` is sent as
+        ``application/x-www-form-urlencoded``. ``api_base='root'`` calls the
+        operation server that omits ``/v1``.
         """
         cleaned_path = "/" + path.lstrip("/")
         safe_segments = [quote(seg, safe="%") if seg else "" for seg in cleaned_path.split("/")]
         safe_path = "/".join(safe_segments)
-        url = f"{self.base_url}{safe_path}"
+        url = f"{self._request_base(api_base)}{safe_path}"
 
         clean_params = None
         if params is not None:
             clean_params = {k: v for k, v in params.items() if v is not None}
+
+        headers = self._headers()
+        encoded_form: dict[str, str] | None = None
+        json_body: JSONValue = json_data
+        if form_data is not None:
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            encoded_form = {key: str(value) for key, value in form_data.items() if value is not None}
+            json_body = None
 
         idempotent = method.upper() in _IDEMPOTENT_METHODS
         for attempt in range(self.max_retries + 1):
@@ -591,9 +636,10 @@ class SmartsheetRMClient:
                 r = await self._http.request(
                     method,
                     url,
-                    headers=self._headers(),
+                    headers=headers,
                     params=clean_params,
-                    json=json_data,
+                    json=json_body,
+                    data=encoded_form,
                     timeout=60.0,
                     follow_redirects=False,
                 )
@@ -1431,8 +1477,12 @@ class SmartsheetRMClient:
         return r.json()
 
     async def set_user_status(self, user_id: int | str, data: dict[str, Any]) -> Any:
-        """Set current status for a user."""
-        r = await self._request("POST", f"/users/{_path_id(user_id)}/statuses", json_data=data)
+        """Set current status for a user.
+
+        OpenAPI POST /users/{user_id}/statuses takes ``application/x-www-form-urlencoded``
+        (StatusCreateRequest), not JSON.
+        """
+        r = await self._request("POST", f"/users/{_path_id(user_id)}/statuses", form_data=data)
         return r.json()
 
     async def list_placeholder_resources(self, params: dict[str, Any] | None = None) -> Any:
@@ -1441,8 +1491,12 @@ class SmartsheetRMClient:
         return r.json()
 
     async def create_placeholder_resource(self, data: dict[str, Any]) -> Any:
-        """Create a placeholder resource."""
-        r = await self._request("POST", "/placeholder_resources", json_data=data)
+        """Create a placeholder resource.
+
+        OpenAPI POST /placeholder_resources takes ``application/x-www-form-urlencoded``
+        (PlaceholderCreateRequest: title, role, discipline, location), not JSON.
+        """
+        r = await self._request("POST", "/placeholder_resources", form_data=data)
         return r.json()
 
     async def delete_placeholder_resource(self, placeholder_id: int | str) -> Any:
@@ -1570,3 +1624,385 @@ class SmartsheetRMClient:
         """Delete a webhook."""
         r = await self._request("DELETE", f"/webhooks/{_path_id(webhook_id)}", allow_statuses=frozenset({200, 204}))
         return r.json() if r.content else {"status": "deleted", "id": webhook_id}
+
+    # Coverage-gap operations. Shapes follow the published Resource Management OpenAPI document.
+
+    async def get_project_time_entry(self, project_id: int | str, entry_id: int | str) -> Any:
+        """GET /projects/{project_id}/time_entries/{id}."""
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/time_entries/{_path_id(entry_id)}")
+        return r.json()
+
+    async def get_user_time_entry(self, user_id: int | str, entry_id: int | str) -> Any:
+        """GET /users/{user_id}/time_entries/{id}."""
+        r = await self._request("GET", f"/users/{_path_id(user_id)}/time_entries/{_path_id(entry_id)}")
+        return r.json()
+
+    async def create_project_budget_item(self, project_id: int | str, data: dict[str, Any]) -> Any:
+        """POST /projects/{project_id}/budget_items."""
+        r = await self._request("POST", f"/projects/{_path_id(project_id)}/budget_items", json_data=data)
+        return r.json()
+
+    async def update_budget_item(self, budget_item_id: int | str, data: dict[str, Any]) -> Any:
+        """PUT /budget_items/{budget_item_id}."""
+        r = await self._request("PUT", f"/budget_items/{_path_id(budget_item_id)}", json_data=data)
+        return r.json()
+
+    async def update_project_budget_item(
+        self, project_id: int | str, budget_item_id: int | str, data: dict[str, Any]
+    ) -> Any:
+        """PUT /projects/{project_id}/budget_items/{budget_item_id}."""
+        r = await self._request(
+            "PUT",
+            f"/projects/{_path_id(project_id)}/budget_items/{_path_id(budget_item_id)}",
+            json_data=data,
+        )
+        return r.json()
+
+    async def delete_budget_item(self, budget_item_id: int | str) -> Any:
+        """DELETE /budget_items/{budget_item_id}."""
+        r = await self._request(
+            "DELETE",
+            f"/budget_items/{_path_id(budget_item_id)}",
+            allow_statuses=frozenset({200, 204}),
+        )
+        return r.json() if r.content else {"status": "deleted", "id": budget_item_id}
+
+    async def set_project_members(self, project_id: int | str, data: dict[str, Any]) -> Any:
+        """POST /projects/{project_id}/project_members. Replaces the member list."""
+        r = await self._request("POST", f"/projects/{_path_id(project_id)}/project_members", json_data=data)
+        return r.json()
+
+    async def update_project_members(self, project_id: int | str, data: dict[str, Any]) -> Any:
+        """PUT /projects/{project_id}/project_members. Adds or changes; does not remove."""
+        r = await self._request("PUT", f"/projects/{_path_id(project_id)}/project_members", json_data=data)
+        return r.json()
+
+    async def delete_project_members(self, project_id: int | str, data: dict[str, Any]) -> Any:
+        """DELETE /projects/{project_id}/project_members with a JSON body of user_ids."""
+        r = await self._request(
+            "DELETE",
+            f"/projects/{_path_id(project_id)}/project_members",
+            json_data=data,
+            allow_statuses=frozenset({200, 204}),
+        )
+        return r.json() if r.content else {"status": "deleted"}
+
+    async def set_user_project_memberships(self, user_id: int | str, data: dict[str, Any]) -> Any:
+        """POST /users/{user_id}/project_memberships. Replaces every membership."""
+        r = await self._request("POST", f"/users/{_path_id(user_id)}/project_memberships", json_data=data)
+        return r.json()
+
+    async def update_user_project_memberships(self, user_id: int | str, data: dict[str, Any]) -> Any:
+        """PUT /users/{user_id}/project_memberships."""
+        r = await self._request("PUT", f"/users/{_path_id(user_id)}/project_memberships", json_data=data)
+        return r.json()
+
+    async def delete_user_project_memberships(self, user_id: int | str, data: dict[str, Any]) -> Any:
+        """DELETE /users/{user_id}/project_memberships with a JSON body of project_ids."""
+        r = await self._request(
+            "DELETE",
+            f"/users/{_path_id(user_id)}/project_memberships",
+            json_data=data,
+            allow_statuses=frozenset({200, 204}),
+        )
+        return r.json() if r.content else {"status": "deleted"}
+
+    async def list_project_bill_rates(self, project_id: int | str, params: dict[str, Any] | None = None) -> Any:
+        """GET /projects/{project_id}/bill_rates."""
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/bill_rates", params=params)
+        return r.json()
+
+    async def get_project_bill_rate(self, project_id: int | str, bill_rate_id: int | str) -> Any:
+        """GET /projects/{project_id}/bill_rates/{bill_rate_id}."""
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/bill_rates/{_path_id(bill_rate_id)}")
+        return r.json()
+
+    async def update_project_bill_rate(
+        self, project_id: int | str, bill_rate_id: int | str, data: dict[str, Any]
+    ) -> Any:
+        """PUT /projects/{project_id}/bill_rates/{bill_rate_id}."""
+        r = await self._request(
+            "PUT",
+            f"/projects/{_path_id(project_id)}/bill_rates/{_path_id(bill_rate_id)}",
+            json_data=data,
+        )
+        return r.json()
+
+    async def get_placeholder_resource(
+        self, placeholder_resource_id: int | str, params: dict[str, Any] | None = None
+    ) -> Any:
+        """GET /placeholder_resources/{placeholder_resource_id}."""
+        r = await self._request("GET", f"/placeholder_resources/{_path_id(placeholder_resource_id)}", params=params)
+        return r.json()
+
+    async def update_placeholder_resource(self, placeholder_resource_id: int | str, data: dict[str, Any]) -> Any:
+        """PUT /placeholder_resources/{placeholder_resource_id} as form data (PlaceholderCreateRequest)."""
+        r = await self._request(
+            "PUT",
+            f"/placeholder_resources/{_path_id(placeholder_resource_id)}",
+            form_data=data,
+        )
+        return r.json()
+
+    async def list_placeholder_resource_assignments(self, placeholder_resource_id: int | str) -> Any:
+        """GET /placeholder_resources/{placeholder_resource_id}/assignments."""
+        r = await self._request("GET", f"/placeholder_resources/{_path_id(placeholder_resource_id)}/assignments")
+        return r.json()
+
+    async def list_project_placeholder_resources(self, project_id: int | str) -> Any:
+        """GET /projects/{project_id}/placeholder_resources."""
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/placeholder_resources")
+        return r.json()
+
+    async def get_assignment_subtask(
+        self, project_id: int | str, assignment_id: int | str, subtask_id: int | str
+    ) -> Any:
+        """GET /projects/{project_id}/assignments/{assignment_id}/subtasks/{subtask_id}."""
+        r = await self._request(
+            "GET",
+            f"/projects/{_path_id(project_id)}/assignments/{_path_id(assignment_id)}/subtasks/{_path_id(subtask_id)}",
+        )
+        return r.json()
+
+    async def update_assignment_subtask(
+        self, project_id: int | str, assignment_id: int | str, subtask_id: int | str, data: dict[str, Any]
+    ) -> Any:
+        """PUT /projects/{project_id}/assignments/{assignment_id}/subtasks/{subtask_id}."""
+        r = await self._request(
+            "PUT",
+            f"/projects/{_path_id(project_id)}/assignments/{_path_id(assignment_id)}/subtasks/{_path_id(subtask_id)}",
+            json_data=data,
+        )
+        return r.json()
+
+    async def get_project_assignment(self, project_id: int | str, assignment_id: int | str) -> Any:
+        """GET /projects/{project_id}/assignments/{assignment_id}."""
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/assignments/{_path_id(assignment_id)}")
+        return r.json()
+
+    async def update_project_assignment(
+        self, project_id: int | str, assignment_id: int | str, data: dict[str, Any]
+    ) -> Any:
+        """PUT /projects/{project_id}/assignments/{assignment_id}."""
+        r = await self._request(
+            "PUT",
+            f"/projects/{_path_id(project_id)}/assignments/{_path_id(assignment_id)}",
+            json_data=data,
+        )
+        return r.json()
+
+    async def delete_project_assignment(self, project_id: int | str, assignment_id: int | str) -> Any:
+        """DELETE /projects/{project_id}/assignments/{assignment_id}."""
+        r = await self._request(
+            "DELETE",
+            f"/projects/{_path_id(project_id)}/assignments/{_path_id(assignment_id)}",
+            allow_statuses=frozenset({200, 204}),
+        )
+        return r.json() if r.content else {"status": "deleted", "id": assignment_id}
+
+    async def get_user_assignment(self, user_id: int | str, assignment_id: int | str) -> Any:
+        """GET /users/{user_id}/assignments/{assignment_id}."""
+        r = await self._request("GET", f"/users/{_path_id(user_id)}/assignments/{_path_id(assignment_id)}")
+        return r.json()
+
+    async def update_user_assignment(self, user_id: int | str, assignment_id: int | str, data: dict[str, Any]) -> Any:
+        """PUT /users/{user_id}/assignments/{assignment_id}."""
+        r = await self._request(
+            "PUT",
+            f"/users/{_path_id(user_id)}/assignments/{_path_id(assignment_id)}",
+            json_data=data,
+        )
+        return r.json()
+
+    async def delete_user_assignment(self, user_id: int | str, assignment_id: int | str) -> Any:
+        """DELETE /users/{user_id}/assignments/{assignment_id}."""
+        r = await self._request(
+            "DELETE",
+            f"/users/{_path_id(user_id)}/assignments/{_path_id(assignment_id)}",
+            allow_statuses=frozenset({200, 204}),
+        )
+        return r.json() if r.content else {"status": "deleted", "id": assignment_id}
+
+    async def get_status_option(self, status_option_id: int | str) -> Any:
+        """GET /status_options/{status_option_id}."""
+        r = await self._request("GET", f"/status_options/{_path_id(status_option_id)}")
+        return r.json()
+
+    async def list_bill_rates(self, params: dict[str, Any] | None = None) -> Any:
+        """GET /bill_rates."""
+        r = await self._request("GET", "/bill_rates", params=params)
+        return r.json()
+
+    async def get_bill_rate(self, bill_rate_id: int | str) -> Any:
+        """GET /bill_rates/{bill_rate_id}."""
+        r = await self._request("GET", f"/bill_rates/{_path_id(bill_rate_id)}")
+        return r.json()
+
+    async def list_availability_blocks(self, user_id: int | str, params: dict[str, Any] | None = None) -> Any:
+        """GET /users/{user_id}/availabilities."""
+        r = await self._request("GET", f"/users/{_path_id(user_id)}/availabilities", params=params)
+        return r.json()
+
+    async def get_availability_block(self, user_id: int | str, availability_id: int | str) -> Any:
+        """GET /users/{user_id}/availabilities/{id}."""
+        r = await self._request("GET", f"/users/{_path_id(user_id)}/availabilities/{_path_id(availability_id)}")
+        return r.json()
+
+    async def create_availability_block(self, user_id: int | str, data: dict[str, Any]) -> Any:
+        """POST /users/{user_id}/availabilities."""
+        r = await self._request("POST", f"/users/{_path_id(user_id)}/availabilities", json_data=data)
+        return r.json()
+
+    async def update_availability_block(
+        self, user_id: int | str, availability_id: int | str, data: dict[str, Any]
+    ) -> Any:
+        """PUT /users/{user_id}/availabilities/{id}."""
+        r = await self._request(
+            "PUT",
+            f"/users/{_path_id(user_id)}/availabilities/{_path_id(availability_id)}",
+            json_data=data,
+        )
+        return r.json()
+
+    async def delete_availability_block(self, user_id: int | str, availability_id: int | str) -> Any:
+        """DELETE /users/{user_id}/availabilities/{id}."""
+        r = await self._request(
+            "DELETE",
+            f"/users/{_path_id(user_id)}/availabilities/{_path_id(availability_id)}",
+            allow_statuses=frozenset({200, 204}),
+        )
+        return r.json() if r.content else {"status": "deleted", "id": availability_id}
+
+    async def get_discipline(self, discipline_id: int | str) -> Any:
+        """GET /disciplines/{discipline_id}."""
+        r = await self._request("GET", f"/disciplines/{_path_id(discipline_id)}")
+        return r.json()
+
+    async def get_role(self, role_id: int | str) -> Any:
+        """GET /roles/{role_id}."""
+        r = await self._request("GET", f"/roles/{_path_id(role_id)}")
+        return r.json()
+
+    async def get_webhook(self, webhook_id: int | str) -> Any:
+        """GET /webhooks/{webhook_id}."""
+        r = await self._request("GET", f"/webhooks/{_path_id(webhook_id)}")
+        return r.json()
+
+    async def get_project_expense_item(self, project_id: int | str, expense_item_id: int | str) -> Any:
+        """GET /projects/{project_id}/expense_items/{expense_item_id}."""
+        r = await self._request("GET", f"/projects/{_path_id(project_id)}/expense_items/{_path_id(expense_item_id)}")
+        return r.json()
+
+    async def get_user_expense_item(self, user_id: int | str, expense_item_id: int | str) -> Any:
+        """GET /users/{user_id}/expense_items/{expense_item_id}."""
+        r = await self._request("GET", f"/users/{_path_id(user_id)}/expense_items/{_path_id(expense_item_id)}")
+        return r.json()
+
+    async def get_project_custom_field_value(self, project_id: int | str, custom_field_value_id: int | str) -> Any:
+        """GET /projects/{project_id}/custom_field_values/{custom_field_value_id}."""
+        r = await self._request(
+            "GET",
+            f"/projects/{_path_id(project_id)}/custom_field_values/{_path_id(custom_field_value_id)}",
+        )
+        return r.json()
+
+    async def get_user_custom_field_value(self, user_id: int | str, custom_field_value_id: int | str) -> Any:
+        """GET /users/{user_id}/custom_field_values/{custom_field_value_id}."""
+        r = await self._request(
+            "GET",
+            f"/users/{_path_id(user_id)}/custom_field_values/{_path_id(custom_field_value_id)}",
+        )
+        return r.json()
+
+    async def export_report_csv(self, data: dict[str, Any]) -> tuple[str, int]:
+        """POST /reports/underlying_data.csv. Returns the CSV text and its byte length.
+
+        The published export operation and the Resource Management docs give no smaller byte
+        limit (https://developers.smartsheet.com/api/resource_management/openapi). Callers cap
+        the body at 10 MB (10 * 1024 * 1024 bytes).
+        """
+        r = await self._request("POST", "/reports/underlying_data.csv", json_data=data)
+        return r.text, len(r.content)
+
+    async def list_api_tokens(self) -> Any:
+        """GET /api_tokens on the operation server ``/api`` (not ``/api/v1``).
+
+        The RM Authentication page
+        (https://developers.smartsheet.com/api/resource_management/getting-started/authentication)
+        requires an RM API token on Smartsheet Gov and does not say these token operations are
+        unsupported there, so the call uses the configured base URL on that host as well.
+        """
+        r = await self._request("GET", "/api_tokens", api_base="root")
+        return r.json()
+
+    async def collect_api_tokens(self) -> list[dict[str, Any]]:
+        """Follow ``APITokensResponse.paging.next`` until it is null.
+
+        Raises ``ValueError`` when a page is not the documented object (``data`` list and
+        ``paging.next``). Token strings seen on a page are remembered for later redaction.
+        The pages are not logged.
+        """
+        params: dict[str, str] | None = None
+        seen: set[tuple[tuple[str, str], ...]] = set()
+        found: list[dict[str, Any]] = []
+        while True:
+            key = tuple(sorted((params or {}).items()))
+            if key in seen:
+                raise ValueError("paging next repeated a page already fetched")
+            seen.add(key)
+            response = await self._request("GET", "/api_tokens", params=params, api_base="root")
+            try:
+                body = response.json()
+            except Exception as exc:
+                raise ValueError("API token list was not JSON") from exc
+            if not isinstance(body, dict) or not isinstance(body.get("data"), list):
+                raise ValueError("API token list body is missing data")
+            paging = body.get("paging")
+            nxt = paging.get("next") if isinstance(paging, dict) else None
+            if not isinstance(paging, dict) or ("next" in paging and nxt is not None and not isinstance(nxt, str)):
+                raise ValueError("API token list paging is invalid")
+            if "next" not in paging:
+                raise ValueError("API token list paging is invalid")
+            remember_token_values(body)
+            for item in body["data"]:
+                if not isinstance(item, dict):
+                    raise ValueError("API token list entry is not an object")
+                found.append(item)
+            if nxt is None:
+                return found
+            if not nxt.strip():
+                raise ValueError("API token list paging next is empty")
+            next_path, params = self._paging_next_target(nxt)
+            if next_path.rstrip("/") != "/api_tokens":
+                raise ValueError("paging next is not an API token page")
+
+    async def create_api_token(self, title: str | None = None) -> Any:
+        """POST /api_tokens. ``title`` is a query parameter and must not be ``primary``."""
+        params = {"title": title} if title is not None else None
+        r = await self._request("POST", "/api_tokens", params=params, api_base="root")
+        return r.json()
+
+    async def update_api_token(self, token_id: int | str, title: str) -> Any:
+        """PUT /api_tokens/{id}. ``title`` is a required query parameter."""
+        r = await self._request(
+            "PUT",
+            f"/api_tokens/{_path_id(token_id)}",
+            params={"title": title},
+            api_base="root",
+        )
+        return r.json()
+
+    async def delete_api_token(self, token_id: int | str) -> Any:
+        """DELETE /api_tokens/{id}."""
+        r = await self._request(
+            "DELETE",
+            f"/api_tokens/{_path_id(token_id)}",
+            api_base="root",
+            allow_statuses=frozenset({200, 204}),
+        )
+        return r.json() if r.content else {"status": "deleted", "id": token_id}
+
+    async def renew_api_token(self, token_id: int | str) -> Any:
+        """POST /api_tokens/renew/{id}. Deletes the token and creates a new one."""
+        r = await self._request("POST", f"/api_tokens/renew/{_path_id(token_id)}", api_base="root")
+        return r.json()

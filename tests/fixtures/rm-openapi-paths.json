@@ -1,14 +1,14 @@
 {
  "_source": {
   "url": "https://developers.smartsheet.com/_spec/api/resource_management/openapi.json",
-  "fetched": "2026-10-21",
-  "note": "Only endpoint paths, methods, operation IDs and parameter names are kept; no descriptions."
+  "fetched": "2026-11-18",
+  "note": "Only endpoint paths, methods, operation IDs, parameter names and operation servers are kept; no descriptions."
  },
  "openapi": "3.0.3",
  "info": {
   "title": "Smartsheet Resource Management API (paths, methods and parameter names only)",
   "x-source": "https://developers.smartsheet.com/_spec/api/resource_management/openapi.json",
-  "x-retrieved": "2026-10-21"
+  "x-retrieved": "2026-11-18"
  },
  "servers": [
   {
@@ -18,15 +18,24 @@
  "paths": {
   "/api_tokens": {
    "get": {
-    "operationId": "ListAPITokens"
+    "operationId": "ListAPITokens",
+    "servers": [
+     {
+      "url": "https://api.rm.smartsheet.com/api"
+     }
+    ]
    },
    "post": {
     "operationId": "CreateAPIToken",
     "parameters": [
      {
       "name": "title",
-      "in": "query",
-      "required": false
+      "in": "query"
+     }
+    ],
+    "servers": [
+     {
+      "url": "https://api.rm.smartsheet.com/api"
      }
     ]
    }
@@ -45,6 +54,11 @@
       "in": "query",
       "required": true
      }
+    ],
+    "servers": [
+     {
+      "url": "https://api.rm.smartsheet.com/api"
+     }
     ]
    },
    "delete": {
@@ -54,6 +68,11 @@
       "name": "id",
       "in": "path",
       "required": true
+     }
+    ],
+    "servers": [
+     {
+      "url": "https://api.rm.smartsheet.com/api"
      }
     ]
    }
@@ -66,6 +85,11 @@
       "name": "id",
       "in": "path",
       "required": true
+     }
+    ],
+    "servers": [
+     {
+      "url": "https://api.rm.smartsheet.com/api"
      }
     ]
    }
@@ -407,13 +431,11 @@
     "parameters": [
      {
       "name": "per_page",
-      "in": "query",
-      "required": false
+      "in": "query"
      },
      {
       "name": "page",
-      "in": "query",
-      "required": false
+      "in": "query"
      }
     ]
    }

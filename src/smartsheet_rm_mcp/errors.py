@@ -229,12 +229,40 @@ def _mask_bracket_values(text: str) -> str:
     return "".join(parts)
 
 
+# Token strings seen by the API-token tools, masked literally on later errors and logs.
+_REMEMBERED_SECRETS: set[str] = set()
+
+
+def remember_secret(value: str) -> None:
+    """Remember one token string so later redaction masks it literally."""
+    if value and value != MASK:
+        _REMEMBERED_SECRETS.add(value)
+
+
+def clear_remembered_secrets() -> None:
+    """Drop remembered token strings. Tests call this so one case cannot mask another."""
+    _REMEMBERED_SECRETS.clear()
+
+
+def remember_token_values(value: Any) -> None:
+    """Remember every ``token`` string in a decoded API payload. The payload is not logged."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "token" and isinstance(item, str):
+                remember_secret(item)
+            else:
+                remember_token_values(item)
+    elif isinstance(value, list):
+        for item in value:
+            remember_token_values(item)
+
+
 def redact_secrets(text: str, extra_secret: str | None = None) -> str:
     """Scrub sensitive credentials, tokens, and authorization headers from text.
 
-    The configured ``SMARTSHEET_RM_API_TOKEN`` and ``SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN``
-    and an optional ``extra_secret`` are replaced literally first, then the house rules and
-    the Smartsheet RM extras run.
+    The configured ``SMARTSHEET_RM_API_TOKEN`` and ``SMARTSHEET_RM_GOV_SMARTSHEET_API_TOKEN``,
+    an optional ``extra_secret``, and any token string remembered by the API-token tools are
+    replaced literally first, then the house rules and the Smartsheet RM extras run.
     """
     if not text:
         return ""
@@ -244,6 +272,9 @@ def redact_secrets(text: str, extra_secret: str | None = None) -> str:
             text = text.replace(secret, MASK)
     if extra_secret and extra_secret in text:
         text = text.replace(extra_secret, MASK)
+    for secret in sorted(_REMEMBERED_SECRETS, key=len, reverse=True):
+        if secret in text:
+            text = text.replace(secret, MASK)
     sanitized = _mask_bracket_values(text)
     for pattern in SECRET_PATTERNS:
         sanitized = pattern.sub(lambda m: m.group(1) + MASK, sanitized)
