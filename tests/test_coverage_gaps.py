@@ -16,7 +16,7 @@ import pytest
 from fastmcp.exceptions import ToolError
 
 from smartsheet_rm_mcp import server
-from smartsheet_rm_mcp.client import GOV_BASE_URL, GOV_HOST, SmartsheetRMClient
+from smartsheet_rm_mcp.client import DEFAULT_BASE_URL, GOV_BASE_URL, GOV_HOST, SmartsheetRMClient
 from smartsheet_rm_mcp.config import settings
 from smartsheet_rm_mcp.errors import clear_remembered_secrets
 from smartsheet_rm_mcp.server import create_server
@@ -472,7 +472,7 @@ async def test_token_guard_refuses_before_delete(
     fail_page: int | None,
     fragment: str,
 ) -> None:
-    monkeypatch.setenv("SMARTSHEET_RM_API_TOKEN", TOKEN)
+    monkeypatch.setattr(server._client, "api_token", TOKEN)
     inbox.responder = _pages(page2, fail_page=fail_page)
     if page2 == TOKEN:
         err = await _fail("admin_delete_api_token", {"token_id": 9, "confirm": True})
@@ -507,6 +507,68 @@ async def test_token_guard_not_found_and_proceeds_when_the_value_differs(
     assert not any(req.method == "DELETE" for req in inbox.requests)
     preview = await _call("admin_delete_api_token", {"token_id": 9})
     assert preview["status"] == "confirmation_required"
+
+
+def _header_client(inbox: Inbox, token: str) -> SmartsheetRMClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        inbox.requests.append(request)
+        return inbox.responder(request)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://api.rm.smartsheet.com/api/v1")
+    return SmartsheetRMClient(api_token=token, http_client=http)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool", ["admin_delete_api_token", "admin_renew_api_token"])
+async def test_token_guard_compares_the_header_credential(
+    inbox: Inbox, monkeypatch: pytest.MonkeyPatch, tool: str
+) -> None:
+    """A request authenticated by a header token cannot delete or renew that same token."""
+    from smartsheet_rm_mcp import common
+
+    monkeypatch.setenv("SMARTSHEET_RM_API_TOKEN", TOKEN)
+    monkeypatch.delenv("SMARTSHEET_RM_BASE_URL", raising=False)
+    base_url = common._validate_base_url(DEFAULT_BASE_URL, check_dns=False)
+    common._HEADER_CLIENT_CACHE.clear()
+    common._HEADER_CLIENT_CACHE[(OTHER, base_url, None)] = _header_client(inbox, f" {OTHER} ")
+    monkeypatch.setattr(
+        "fastmcp.server.dependencies.get_http_headers",
+        lambda include_all=True: {"x-smartsheet-rm-token": OTHER},
+    )
+    inbox.responder = _pages(f" {OTHER} ")
+    try:
+        err = await _fail(tool, {"token_id": 9, "confirm": True})
+    finally:
+        common._HEADER_CLIENT_CACHE.clear()
+    assert "would revoke the token this server uses" in json.dumps(err)
+    assert inbox.requests
+    assert not any(req.method in {"DELETE", "POST"} for req in inbox.requests)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("env_token", [TOKEN, None])
+async def test_token_guard_ignores_the_environment_value(
+    inbox: Inbox, monkeypatch: pytest.MonkeyPatch, env_token: str | None
+) -> None:
+    """The resolved client's token decides, whether the environment differs from it or is unset."""
+    if env_token is None:
+        monkeypatch.delenv("SMARTSHEET_RM_API_TOKEN", raising=False)
+    else:
+        monkeypatch.setenv("SMARTSHEET_RM_API_TOKEN", env_token)
+    monkeypatch.setattr(server._client, "api_token", OTHER)
+    inbox.responder = _pages(OTHER)
+    err = await _fail("admin_delete_api_token", {"token_id": 9, "confirm": True})
+    assert "would revoke the token this server uses" in json.dumps(err)
+    assert not any(req.method in {"DELETE", "POST"} for req in inbox.requests)
+
+
+@pytest.mark.asyncio
+async def test_token_guard_fails_closed_without_a_resolved_token(inbox: Inbox, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server._client, "api_token", "  ")
+    inbox.responder = _pages(OTHER)
+    err = await _fail("admin_renew_api_token", {"token_id": 9, "confirm": True})
+    assert "could not be determined" in json.dumps(err)
+    assert not any(req.method in {"DELETE", "POST"} for req in inbox.requests)
 
 
 @pytest.mark.asyncio

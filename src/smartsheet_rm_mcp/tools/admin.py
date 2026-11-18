@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import hmac
 import json
-import os
 from typing import Any
 
 from fastmcp import FastMCP
 
 from smartsheet_rm_mcp import __version__
-from smartsheet_rm_mcp.client import DEFAULT_BASE_URL
+from smartsheet_rm_mcp.client import DEFAULT_BASE_URL, SmartsheetRMClient
 from smartsheet_rm_mcp.common import (
     ANNOTATION_DESTRUCTIVE,
     ANNOTATION_IDEMPOTENT,
@@ -1127,8 +1126,13 @@ def _token_unusable(value: object) -> bool:
     return not text or text == MASK or set(text) <= {"*"}
 
 
-async def _refuse_if_own_token(token_id: int | str) -> None:
-    """Fail closed before delete or renew. The token list stays in memory and is not returned."""
+async def _refuse_if_own_token(token_id: int | str) -> SmartsheetRMClient:
+    """Fail closed before delete or renew, and return the client the mutation must use.
+
+    The comparison uses the credential this request resolved to (environment, request header,
+    or cached header client), not the environment variable. The token list stays in memory
+    and is not returned.
+    """
     client = await get_rm_client()
     try:
         tokens = await client.collect_api_tokens()
@@ -1148,11 +1152,16 @@ async def _refuse_if_own_token(token_id: int | str) -> None:
         raise SafetyViolationError(
             "Refusing to delete or renew this API token because the target value is missing or masked."
         )
-    configured = os.environ.get("SMARTSHEET_RM_API_TOKEN", "")
-    if configured and hmac.compare_digest(str(raw), configured):
+    own = (getattr(client, "api_token", "") or "").strip()
+    if not own:
+        raise SafetyViolationError(
+            "Refusing to delete or renew this API token because the token this request uses could not be determined."
+        )
+    if hmac.compare_digest(str(raw).strip(), own):
         raise SafetyViolationError(
             "Refusing to delete or renew this API token because it would revoke the token this server uses."
         )
+    return client
 
 
 def _redacted_token_payload(payload: Any) -> str:
@@ -1402,8 +1411,7 @@ async def rm_delete_api_token(token_id: int | str, confirm: bool = False) -> str
     gate = _destructive_gate(confirm, f"admin_delete_api_token({token_id})")
     if gate:
         return gate
-    await _refuse_if_own_token(token_id)
-    client = await get_rm_client()
+    client = await _refuse_if_own_token(token_id)
     data = await client.delete_api_token(token_id)
     return json.dumps(data, indent=2)
 
@@ -1419,8 +1427,7 @@ async def rm_renew_api_token(token_id: int | str, confirm: bool = False) -> str:
     gate = _destructive_gate(confirm, f"admin_renew_api_token({token_id})")
     if gate:
         return gate
-    await _refuse_if_own_token(token_id)
-    client = await get_rm_client()
+    client = await _refuse_if_own_token(token_id)
     data = await client.renew_api_token(token_id)
     return _new_token_result(data)
 
