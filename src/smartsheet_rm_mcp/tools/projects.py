@@ -32,6 +32,9 @@ _ALLOCATION_MODE_DESCRIPTION = (
     "`hours_per_day` (`hours_per_day` is then required), or the fixed mode, which the API reference "
     "names `fixed` in its description and `fixed_hours` in its enum (`fixed_hours` is then required)."
 )
+_BUDGET_ITEM_TYPES = ("TimeFees", "TimeFeesDays", "Expenses")
+_REPLACE_LIST_DETAIL = "Unlisted members are removed."
+
 _PERCENT_DESCRIPTION = (
     "Share of the user's time as a fraction from 0 to 1. Required when allocation_mode is `percent`, "
     "which is the default; without it the call is refused before any request is sent."
@@ -457,17 +460,15 @@ async def rm_create_user_assignment(
     return json.dumps(data, indent=2)
 
 
-@rm_tool
-async def rm_update_assignment(
-    assignment_id: int | str,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    percent: float | None = None,
-    hours_per_day: float | None = None,
-    fixed_hours: float | None = None,
-    note: str | None = None,
-) -> str:
-    """Update dates, allocation percentage, or hours on an existing assignment."""
+def _assignment_update_payload(
+    start_date: str | None,
+    end_date: str | None,
+    percent: float | None,
+    hours_per_day: float | None,
+    fixed_hours: float | None,
+    note: str | None,
+) -> dict[str, Any]:
+    """Body for PUT assignment. Same keys as ``projects_update_assignment``."""
     payload: dict[str, Any] = {}
     if start_date is not None:
         payload["starts_at"] = start_date
@@ -481,10 +482,23 @@ async def rm_update_assignment(
         payload["fixed_hours"] = fixed_hours
     if note is not None:
         payload["note"] = note
-
     if not payload:
         _invalid_request("No update fields provided")
+    return payload
 
+
+@rm_tool
+async def rm_update_assignment(
+    assignment_id: int | str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    percent: float | None = None,
+    hours_per_day: float | None = None,
+    fixed_hours: float | None = None,
+    note: str | None = None,
+) -> str:
+    """Update dates, allocation percentage, or hours on an existing assignment."""
+    payload = _assignment_update_payload(start_date, end_date, percent, hours_per_day, fixed_hours, note)
     client = await get_client()
     data = await client.update_assignment(assignment_id, payload)
     return json.dumps(data, indent=2)
@@ -960,6 +974,462 @@ async def rm_list_user_project_memberships(
     return json.dumps(data, indent=2)
 
 
+def _budget_item_body(
+    item_type: str | None = None,
+    amount: float | None = None,
+    *,
+    include_amount: bool = False,
+    assignable_id: int | str | None = None,
+    assignable_parent_id: int | str | None = None,
+    category: str | None = None,
+    peritem_amount: float | None = None,
+    peritem_label: str | None = None,
+) -> dict[str, Any]:
+    """BudgetItem keys from the published schema. Read-only fields are not sent."""
+    payload: dict[str, Any] = {}
+    if item_type is not None:
+        if item_type not in _BUDGET_ITEM_TYPES:
+            _invalid_request("item_type must be TimeFees, TimeFeesDays, or Expenses")
+        payload["item_type"] = item_type
+    if include_amount:
+        payload["amount"] = amount
+    elif amount is not None:
+        payload["amount"] = amount
+    if assignable_id is not None:
+        payload["assignable_id"] = assignable_id
+    if assignable_parent_id is not None:
+        payload["assignable_parent_id"] = assignable_parent_id
+    if category is not None:
+        payload["category"] = category
+    if peritem_amount is not None:
+        payload["peritem_amount"] = peritem_amount
+    if peritem_label is not None:
+        payload["peritem_label"] = peritem_label
+    return payload
+
+
+def _relationship_pairs(relationships: list[list[int | str]]) -> list[list[int | str]]:
+    """Require the spec's list of [user_id, membership] pairs."""
+    if not isinstance(relationships, list):
+        _invalid_request("relationships must be a list of [user_id, membership] pairs")
+    pairs: list[list[int | str]] = []
+    for pair in relationships:
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            _invalid_request("each relationship must be a [user_id, membership] pair")
+        user_id, membership = pair
+        if isinstance(user_id, bool) or not isinstance(user_id, int):
+            _invalid_request("relationship user_id must be an integer")
+        if not isinstance(membership, str) or not membership:
+            _invalid_request("relationship membership must be a string")
+        pairs.append([user_id, membership])
+    return pairs
+
+
+def _int_id_list(values: list[int], name: str) -> list[int]:
+    if not isinstance(values, list) or any(isinstance(item, bool) or not isinstance(item, int) for item in values):
+        _invalid_request(f"{name} must be a list of integers")
+    return values
+
+
+@rm_tool
+async def rm_create_project_budget_item(
+    project_id: int | str,
+    item_type: str,
+    amount: float | None,
+    assignable_id: int | str | None = None,
+    assignable_parent_id: int | str | None = None,
+    category: str | None = None,
+    peritem_amount: float | None = None,
+    peritem_label: str | None = None,
+) -> str:
+    """Create a project budget item (POST /projects/{project_id}/budget_items).
+
+    item_type is TimeFees, TimeFeesDays, or Expenses. amount is required and may be null.
+    """
+    if item_type not in _BUDGET_ITEM_TYPES:
+        _invalid_request("item_type must be TimeFees, TimeFeesDays, or Expenses")
+    payload = _budget_item_body(
+        item_type,
+        amount,
+        include_amount=True,
+        assignable_id=assignable_id,
+        assignable_parent_id=assignable_parent_id,
+        category=category,
+        peritem_amount=peritem_amount,
+        peritem_label=peritem_label,
+    )
+    client = await get_client()
+    data = await client.create_project_budget_item(project_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_update_budget_item(
+    budget_item_id: int | str,
+    item_type: str | None = None,
+    amount: float | None = None,
+    assignable_id: int | str | None = None,
+    assignable_parent_id: int | str | None = None,
+    category: str | None = None,
+    peritem_amount: float | None = None,
+    peritem_label: str | None = None,
+) -> str:
+    """Update a budget item (PUT /budget_items/{budget_item_id}). No field is required."""
+    payload = _budget_item_body(
+        item_type,
+        amount,
+        assignable_id=assignable_id,
+        assignable_parent_id=assignable_parent_id,
+        category=category,
+        peritem_amount=peritem_amount,
+        peritem_label=peritem_label,
+    )
+    if not payload:
+        _invalid_request("No update fields provided")
+    client = await get_client()
+    data = await client.update_budget_item(budget_item_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_update_project_budget_item(
+    project_id: int | str,
+    budget_item_id: int | str,
+    item_type: str | None = None,
+    amount: float | None = None,
+    assignable_id: int | str | None = None,
+    assignable_parent_id: int | str | None = None,
+    category: str | None = None,
+    peritem_amount: float | None = None,
+    peritem_label: str | None = None,
+) -> str:
+    """Update a project budget item (PUT /projects/{project_id}/budget_items/{budget_item_id})."""
+    payload = _budget_item_body(
+        item_type,
+        amount,
+        assignable_id=assignable_id,
+        assignable_parent_id=assignable_parent_id,
+        category=category,
+        peritem_amount=peritem_amount,
+        peritem_label=peritem_label,
+    )
+    if not payload:
+        _invalid_request("No update fields provided")
+    client = await get_client()
+    data = await client.update_project_budget_item(project_id, budget_item_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_delete_budget_item(budget_item_id: int | str, confirm: bool = False) -> str:
+    """Delete a budget item (DELETE /budget_items/{budget_item_id}). Requires confirm=true."""
+    gate = _destructive_gate(confirm, f"projects_delete_budget_item({budget_item_id})")
+    if gate:
+        return gate
+    client = await get_client()
+    data = await client.delete_budget_item(budget_item_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_set_project_members(
+    project_id: int | str, relationships: list[list[int | str]], confirm: bool = False
+) -> str:
+    """Replace a project's member list (POST /projects/{project_id}/project_members).
+
+    The API removes anyone left off the relationships list. Requires confirm=true.
+    relationships is a list of [user_id, membership] pairs.
+    """
+    gate = _destructive_gate(confirm, f"projects_set_project_members({project_id})", _REPLACE_LIST_DETAIL)
+    if gate:
+        return gate
+    payload = {"relationships": _relationship_pairs(relationships)}
+    client = await get_client()
+    data = await client.set_project_members(project_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_update_project_members(project_id: int | str, relationships: list[list[int | str]]) -> str:
+    """Add or change project members (PUT /projects/{project_id}/project_members). Does not remove."""
+    payload = {"relationships": _relationship_pairs(relationships)}
+    client = await get_client()
+    data = await client.update_project_members(project_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_delete_project_members(project_id: int | str, user_ids: list[int], confirm: bool = False) -> str:
+    """Remove users from a project (DELETE /projects/{project_id}/project_members). JSON body user_ids."""
+    gate = _destructive_gate(confirm, f"projects_delete_project_members({project_id})")
+    if gate:
+        return gate
+    payload = {"user_ids": _int_id_list(user_ids, "user_ids")}
+    client = await get_client()
+    data = await client.delete_project_members(project_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_set_user_project_memberships(
+    user_id: int | str, relationships: list[list[int | str]], confirm: bool = False
+) -> str:
+    """Replace a user's project memberships (POST /users/{user_id}/project_memberships).
+
+    The API removes any membership left off the list. Requires confirm=true.
+    """
+    gate = _destructive_gate(confirm, f"projects_set_user_project_memberships({user_id})", _REPLACE_LIST_DETAIL)
+    if gate:
+        return gate
+    payload = {"relationships": _relationship_pairs(relationships)}
+    client = await get_client()
+    data = await client.set_user_project_memberships(user_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_update_user_project_memberships(user_id: int | str, relationships: list[list[int | str]]) -> str:
+    """Add or change a user's project memberships (PUT /users/{user_id}/project_memberships)."""
+    payload = {"relationships": _relationship_pairs(relationships)}
+    client = await get_client()
+    data = await client.update_user_project_memberships(user_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_delete_user_project_memberships(user_id: int | str, project_ids: list[int], confirm: bool = False) -> str:
+    """Remove a user's memberships (DELETE /users/{user_id}/project_memberships). JSON body project_ids."""
+    gate = _destructive_gate(confirm, f"projects_delete_user_project_memberships({user_id})")
+    if gate:
+        return gate
+    payload = {"project_ids": _int_id_list(project_ids, "project_ids")}
+    client = await get_client()
+    data = await client.delete_user_project_memberships(user_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_list_project_bill_rates(project_id: int | str, page: int = 1, per_page: int = 20) -> str:
+    """List bill rates on a project (GET /projects/{project_id}/bill_rates)."""
+    client = await get_client()
+    data = await client.list_project_bill_rates(project_id, params={"page": page, "per_page": per_page})
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_project_bill_rate(project_id: int | str, bill_rate_id: int | str) -> str:
+    """Fetch one project bill rate (GET /projects/{project_id}/bill_rates/{bill_rate_id})."""
+    client = await get_client()
+    data = await client.get_project_bill_rate(project_id, bill_rate_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_update_project_bill_rate(
+    project_id: int | str,
+    bill_rate_id: int | str,
+    rate: float | None = None,
+    starts_at: str | None = None,
+    ends_at: str | None = None,
+    role_id: int | str | None = None,
+    discipline_id: int | str | None = None,
+    user_id: int | str | None = None,
+    assignable_id: int | str | None = None,
+) -> str:
+    """Update a project bill rate (PUT /projects/{project_id}/bill_rates/{bill_rate_id})."""
+    payload: dict[str, Any] = {}
+    if rate is not None:
+        payload["rate"] = rate
+    if starts_at is not None:
+        payload["starts_at"] = starts_at
+    if ends_at is not None:
+        payload["ends_at"] = ends_at
+    if role_id is not None:
+        payload["role_id"] = role_id
+    if discipline_id is not None:
+        payload["discipline_id"] = discipline_id
+    if user_id is not None:
+        payload["user_id"] = user_id
+    if assignable_id is not None:
+        payload["assignable_id"] = assignable_id
+    if not payload:
+        _invalid_request("No update fields provided")
+    client = await get_client()
+    data = await client.update_project_bill_rate(project_id, bill_rate_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_placeholder_resource(placeholder_resource_id: int | str, fields: str | None = None) -> str:
+    """Fetch one placeholder (GET /placeholder_resources/{placeholder_resource_id})."""
+    params: dict[str, Any] = {}
+    if fields is not None:
+        params["fields"] = fields
+    client = await get_client()
+    data = await client.get_placeholder_resource(placeholder_resource_id, params=params or None)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_update_placeholder_resource(
+    placeholder_resource_id: int | str,
+    title: str,
+    role: str | None = None,
+    discipline: str | None = None,
+    location: str | None = None,
+) -> str:
+    """Update a placeholder (PUT /placeholder_resources/{id}) as form-encoded fields.
+
+    The spec requires title and accepts role, discipline, and location. The body is
+    application/x-www-form-urlencoded, the same content type as create.
+    """
+    if not title:
+        _invalid_request("title is required")
+    payload: dict[str, Any] = {"title": title}
+    if role is not None:
+        payload["role"] = role
+    if discipline is not None:
+        payload["discipline"] = discipline
+    if location is not None:
+        payload["location"] = location
+    client = await get_client()
+    data = await client.update_placeholder_resource(placeholder_resource_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_list_placeholder_resource_assignments(placeholder_resource_id: int | str) -> str:
+    """List assignments for a placeholder (GET /placeholder_resources/{id}/assignments)."""
+    client = await get_client()
+    data = await client.list_placeholder_resource_assignments(placeholder_resource_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_list_project_placeholder_resources(project_id: int | str) -> str:
+    """List placeholders on a project (GET /projects/{project_id}/placeholder_resources)."""
+    client = await get_client()
+    data = await client.list_project_placeholder_resources(project_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_assignment_subtask(project_id: int | str, assignment_id: int | str, subtask_id: int | str) -> str:
+    """Fetch one subtask (GET .../assignments/{assignment_id}/subtasks/{subtask_id})."""
+    client = await get_client()
+    data = await client.get_assignment_subtask(project_id, assignment_id, subtask_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_update_assignment_subtask(
+    project_id: int | str,
+    assignment_id: int | str,
+    subtask_id: int | str,
+    description: str | None = None,
+    completed: bool | None = None,
+) -> str:
+    """Update a subtask (PUT .../subtasks/{subtask_id}). description and completed are optional."""
+    payload: dict[str, Any] = {}
+    if description is not None:
+        payload["description"] = description
+    if completed is not None:
+        payload["completed"] = completed
+    if not payload:
+        _invalid_request("No update fields provided")
+    client = await get_client()
+    data = await client.update_assignment_subtask(project_id, assignment_id, subtask_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_project_assignment(project_id: int | str, assignment_id: int | str) -> str:
+    """Fetch one project assignment (GET /projects/{project_id}/assignments/{assignment_id})."""
+    client = await get_client()
+    data = await client.get_project_assignment(project_id, assignment_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_update_project_assignment(
+    project_id: int | str,
+    assignment_id: int | str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    percent: float | None = None,
+    hours_per_day: float | None = None,
+    fixed_hours: float | None = None,
+    note: str | None = None,
+) -> str:
+    """Update a project assignment (PUT /projects/{project_id}/assignments/{assignment_id}).
+
+    Sends the same fields as projects_update_assignment.
+    """
+    payload = _assignment_update_payload(start_date, end_date, percent, hours_per_day, fixed_hours, note)
+    client = await get_client()
+    data = await client.update_project_assignment(project_id, assignment_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_delete_project_assignment(project_id: int | str, assignment_id: int | str, confirm: bool = False) -> str:
+    """Delete a project assignment (DELETE /projects/{project_id}/assignments/{assignment_id})."""
+    gate = _destructive_gate(confirm, f"projects_delete_project_assignment({project_id}, {assignment_id})")
+    if gate:
+        return gate
+    client = await get_client()
+    data = await client.delete_project_assignment(project_id, assignment_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_user_assignment(user_id: int | str, assignment_id: int | str) -> str:
+    """Fetch one user assignment (GET /users/{user_id}/assignments/{assignment_id})."""
+    client = await get_client()
+    data = await client.get_user_assignment(user_id, assignment_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_update_user_assignment(
+    user_id: int | str,
+    assignment_id: int | str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    percent: float | None = None,
+    hours_per_day: float | None = None,
+    fixed_hours: float | None = None,
+    note: str | None = None,
+) -> str:
+    """Update a user assignment (PUT /users/{user_id}/assignments/{assignment_id}).
+
+    Sends the same fields as projects_update_assignment.
+    """
+    payload = _assignment_update_payload(start_date, end_date, percent, hours_per_day, fixed_hours, note)
+    client = await get_client()
+    data = await client.update_user_assignment(user_id, assignment_id, payload)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_delete_user_assignment(user_id: int | str, assignment_id: int | str, confirm: bool = False) -> str:
+    """Delete a user assignment (DELETE /users/{user_id}/assignments/{assignment_id})."""
+    gate = _destructive_gate(confirm, f"projects_delete_user_assignment({user_id}, {assignment_id})")
+    if gate:
+        return gate
+    client = await get_client()
+    data = await client.delete_user_assignment(user_id, assignment_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_status_option(status_option_id: int | str) -> str:
+    """Fetch one status option (GET /status_options/{status_option_id})."""
+    client = await get_client()
+    data = await client.get_status_option(status_option_id)
+    return json.dumps(data, indent=2)
+
+
 def project_staffing_plan(project_id: str) -> str:
     """Analyze resource assignments and phase timelines for a project."""
     return f"""Evaluate resource assignments and capacity for project ID {project_id}.
@@ -1004,6 +1474,32 @@ list_project_members = rm_list_project_members
 list_relationships_project_members = rm_list_relationships_project_members
 list_relationships_project_memberships = rm_list_relationships_project_memberships
 list_user_project_memberships = rm_list_user_project_memberships
+create_project_budget_item = rm_create_project_budget_item
+update_budget_item = rm_update_budget_item
+update_project_budget_item = rm_update_project_budget_item
+delete_budget_item = rm_delete_budget_item
+set_project_members = rm_set_project_members
+update_project_members = rm_update_project_members
+delete_project_members = rm_delete_project_members
+set_user_project_memberships = rm_set_user_project_memberships
+update_user_project_memberships = rm_update_user_project_memberships
+delete_user_project_memberships = rm_delete_user_project_memberships
+list_project_bill_rates = rm_list_project_bill_rates
+get_project_bill_rate = rm_get_project_bill_rate
+update_project_bill_rate = rm_update_project_bill_rate
+get_placeholder_resource = rm_get_placeholder_resource
+update_placeholder_resource = rm_update_placeholder_resource
+list_placeholder_resource_assignments = rm_list_placeholder_resource_assignments
+list_project_placeholder_resources = rm_list_project_placeholder_resources
+get_assignment_subtask = rm_get_assignment_subtask
+update_assignment_subtask = rm_update_assignment_subtask
+get_project_assignment = rm_get_project_assignment
+update_project_assignment = rm_update_project_assignment
+delete_project_assignment = rm_delete_project_assignment
+get_user_assignment = rm_get_user_assignment
+update_user_assignment = rm_update_user_assignment
+delete_user_assignment = rm_delete_user_assignment
+get_status_option = rm_get_status_option
 
 _PROJECTS_TOOLS_CONFIG = [
     ("list_projects", rm_list_projects, ANNOTATION_READ_ONLY),
@@ -1042,6 +1538,32 @@ _PROJECTS_TOOLS_CONFIG = [
     ("list_relationships_project_members", rm_list_relationships_project_members, ANNOTATION_READ_ONLY),
     ("list_relationships_project_memberships", rm_list_relationships_project_memberships, ANNOTATION_READ_ONLY),
     ("list_user_project_memberships", rm_list_user_project_memberships, ANNOTATION_READ_ONLY),
+    ("create_project_budget_item", rm_create_project_budget_item, ANNOTATION_WRITE_SAFE),
+    ("update_budget_item", rm_update_budget_item, ANNOTATION_WRITE_SAFE),
+    ("update_project_budget_item", rm_update_project_budget_item, ANNOTATION_WRITE_SAFE),
+    ("delete_budget_item", rm_delete_budget_item, ANNOTATION_DESTRUCTIVE),
+    ("set_project_members", rm_set_project_members, ANNOTATION_DESTRUCTIVE),
+    ("update_project_members", rm_update_project_members, ANNOTATION_WRITE_SAFE),
+    ("delete_project_members", rm_delete_project_members, ANNOTATION_DESTRUCTIVE),
+    ("set_user_project_memberships", rm_set_user_project_memberships, ANNOTATION_DESTRUCTIVE),
+    ("update_user_project_memberships", rm_update_user_project_memberships, ANNOTATION_WRITE_SAFE),
+    ("delete_user_project_memberships", rm_delete_user_project_memberships, ANNOTATION_DESTRUCTIVE),
+    ("list_project_bill_rates", rm_list_project_bill_rates, ANNOTATION_READ_ONLY),
+    ("get_project_bill_rate", rm_get_project_bill_rate, ANNOTATION_READ_ONLY),
+    ("update_project_bill_rate", rm_update_project_bill_rate, ANNOTATION_WRITE_SAFE),
+    ("get_placeholder_resource", rm_get_placeholder_resource, ANNOTATION_READ_ONLY),
+    ("update_placeholder_resource", rm_update_placeholder_resource, ANNOTATION_WRITE_SAFE),
+    ("list_placeholder_resource_assignments", rm_list_placeholder_resource_assignments, ANNOTATION_READ_ONLY),
+    ("list_project_placeholder_resources", rm_list_project_placeholder_resources, ANNOTATION_READ_ONLY),
+    ("get_assignment_subtask", rm_get_assignment_subtask, ANNOTATION_READ_ONLY),
+    ("update_assignment_subtask", rm_update_assignment_subtask, ANNOTATION_WRITE_SAFE),
+    ("get_project_assignment", rm_get_project_assignment, ANNOTATION_READ_ONLY),
+    ("get_user_assignment", rm_get_user_assignment, ANNOTATION_READ_ONLY),
+    ("get_status_option", rm_get_status_option, ANNOTATION_READ_ONLY),
+    ("update_project_assignment", rm_update_project_assignment, ANNOTATION_WRITE_SAFE),
+    ("delete_project_assignment", rm_delete_project_assignment, ANNOTATION_DESTRUCTIVE),
+    ("update_user_assignment", rm_update_user_assignment, ANNOTATION_WRITE_SAFE),
+    ("delete_user_assignment", rm_delete_user_assignment, ANNOTATION_DESTRUCTIVE),
 ]
 
 

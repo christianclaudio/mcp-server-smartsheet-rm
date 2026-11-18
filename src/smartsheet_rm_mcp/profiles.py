@@ -62,6 +62,9 @@ TIMESHEETS_TOOLS: frozenset[str] = frozenset(
         "admin_list_holidays",
         "time_list_time_entry_categories",
         "time_list_project_time_entry_categories",
+        "time_get_project_time_entry",
+        "time_get_user_time_entry",
+        "projects_get_assignment_subtask",
     }
 )
 
@@ -100,6 +103,29 @@ STAFFING_TOOLS: frozenset[str] = frozenset(
         "projects_list_relationships_project_members",
         "projects_list_relationships_project_memberships",
         "projects_list_user_project_memberships",
+        "projects_set_project_members",
+        "projects_update_project_members",
+        "projects_delete_project_members",
+        "projects_set_user_project_memberships",
+        "projects_update_user_project_memberships",
+        "projects_delete_user_project_memberships",
+        "projects_get_placeholder_resource",
+        "projects_update_placeholder_resource",
+        "projects_list_placeholder_resource_assignments",
+        "projects_list_project_placeholder_resources",
+        "projects_get_assignment_subtask",
+        "projects_update_assignment_subtask",
+        "projects_get_project_assignment",
+        "projects_get_user_assignment",
+        "projects_get_status_option",
+        "projects_update_project_assignment",
+        "projects_delete_project_assignment",
+        "projects_update_user_assignment",
+        "projects_delete_user_assignment",
+        "admin_list_availability_blocks",
+        "admin_get_availability_block",
+        "admin_get_discipline",
+        "admin_get_role",
     }
 )
 
@@ -140,6 +166,16 @@ ORG_SETUP_TOOLS: frozenset[str] = frozenset(
         "admin_list_webhooks",
         "admin_create_webhook",
         "admin_delete_webhook",
+        "admin_list_bill_rates",
+        "admin_get_bill_rate",
+        "admin_list_availability_blocks",
+        "admin_get_availability_block",
+        "admin_create_availability_block",
+        "admin_update_availability_block",
+        "admin_delete_availability_block",
+        "admin_get_discipline",
+        "admin_get_role",
+        "admin_get_webhook",
     }
 )
 
@@ -181,6 +217,19 @@ PORTFOLIO_TOOLS: frozenset[str] = frozenset(
         "projects_list_project_budget_items",
         "projects_get_budget_item",
         "projects_get_project_budget_item",
+        "projects_create_project_budget_item",
+        "projects_update_budget_item",
+        "projects_update_project_budget_item",
+        "projects_delete_budget_item",
+        "projects_list_project_bill_rates",
+        "projects_get_project_bill_rate",
+        "projects_update_project_bill_rate",
+        "projects_get_status_option",
+        "admin_get_project_expense_item",
+        "admin_get_user_expense_item",
+        "admin_get_project_custom_field_value",
+        "admin_get_user_custom_field_value",
+        "admin_export_report_csv",
     }
 )
 
@@ -196,6 +245,11 @@ FULL_ONLY_TOOLS: frozenset[str] = frozenset(
         "admin_create_expense_category",
         "admin_delete_expense_category",
         "admin_delete_tag",
+        "admin_list_api_tokens",
+        "admin_create_api_token",
+        "admin_update_api_token",
+        "admin_delete_api_token",
+        "admin_renew_api_token",
     }
 )
 
