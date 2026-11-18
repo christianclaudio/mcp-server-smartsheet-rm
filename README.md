@@ -36,9 +36,9 @@ graph TD
 ## 🚀 FastMCP 4 Server Composition
 
 * **Domain mounts** (`root.mount(..., namespace=...)`):
-  * `namespace="time"` → `time_*` (19 tools, including the bulk-gated `time_bulk_delete_time_entries`).
-  * `namespace="projects"` → `projects_*` (36 tools, including the bulk-gated `projects_bulk_delete_assignments`).
-  * `namespace="admin"` → `admin_*` (60 tools).
+  * `namespace="time"` → `time_*` (21 tools, including the bulk-gated `time_bulk_delete_time_entries`).
+  * `namespace="projects"` → `projects_*` (62 tools, including the bulk-gated `projects_bulk_delete_assignments`).
+  * `namespace="admin"` → `admin_*` (80 tools).
 * **Hierarchical middleware**:
   * **Parent**: `ParentAuditMiddleware` (timing, lifecycle logs, secret redaction) and `ReadOnlyGateMiddleware` (annotation-driven read-only gate, see below).
   * **Child**: `TimeDomainGuardMiddleware` (logged hours must be 0–24; bulk gate), `ProjectsDomainGuardMiddleware` (project names must be non-empty; bulk gate), `AdminDomainGuardMiddleware` (`per_page` must be ≤ 1000).
@@ -52,21 +52,21 @@ Pick a profile with `--profile` or `SMARTSHEET_RM_PROFILE` (default `full`). An 
 
 | Profile | Job it serves | Tools | With `SMARTSHEET_RM_READONLY=1` |
 | :--- | :--- | ---: | ---: |
-| `full` | Complete catalog, nothing omitted. Bulk tools are listed and refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`. Tool Search and Code Mode attach only here. | **115** | 50 |
-| `time` | Time tracking, approvals and timesheet recipes (time domain). | **19** | 6 |
-| `projects` | Projects, phases, assignments, placeholders and subtasks (projects domain). | **36** | 19 |
-| `admin` | Users, org reference data, clients, expenses, fields, reports and webhooks (admin domain). | **60** | 25 |
-| `readonly` | Inspect without side effects: every tool annotated `readOnlyHint=True`. | **50** | 50 |
-| `timesheets` | Team member or manager logs, corrects, submits, locks and approves weekly time against their assignments. | **26** | 14 |
-| `staffing` | Resource manager checks availability and utilization and creates or adjusts assignments, placeholders and subtasks. | **33** | 24 |
-| `org_setup` | Resource-management admin onboards people and maintains org reference data, custom-field definitions, user statuses and webhooks. | **35** | 13 |
-| `portfolio` | PMO sets up and maintains projects, phases, clients, expenses and project metadata, and reads budget and report totals. | **36** | 21 |
+| `full` | Complete catalog, nothing omitted. Bulk tools are listed and refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`. Tool Search and Code Mode attach only here. | **163** | 74 |
+| `time` | Time tracking, approvals and timesheet recipes (time domain). | **21** | 8 |
+| `projects` | Projects, phases, assignments, placeholders and subtasks (projects domain). | **62** | 28 |
+| `admin` | Users, org reference data, clients, expenses, fields, reports and webhooks (admin domain). | **80** | 38 |
+| `readonly` | Inspect without side effects: every tool annotated `readOnlyHint=True`. | **74** | 74 |
+| `timesheets` | Team member or manager logs, corrects, submits, locks and approves weekly time against their assignments. | **29** | 17 |
+| `staffing` | Resource manager checks availability and utilization and creates or adjusts assignments, placeholders and subtasks. | **56** | 35 |
+| `org_setup` | Resource-management admin onboards people and maintains org reference data, custom-field definitions, user statuses and webhooks. | **45** | 20 |
+| `portfolio` | PMO sets up and maintains projects, phases, clients, expenses and project metadata, and reads budget and report totals. | **49** | 29 |
 
-Seven tools are in no job profile and are reachable only in `full` (or their domain-mount profile): `time_bulk_delete_time_entries`, `projects_bulk_delete_assignments`, `admin_delete_client`, `admin_delete_client_contact`, `admin_create_expense_category`, `admin_delete_expense_category`, and `admin_delete_tag`.
+Twelve tools are in no job profile and are reachable only in `full` (or their domain-mount profile): `time_bulk_delete_time_entries`, `projects_bulk_delete_assignments`, `admin_delete_client`, `admin_delete_client_contact`, `admin_create_expense_category`, `admin_delete_expense_category`, `admin_delete_tag`, and the five API-token tools `admin_list_api_tokens`, `admin_create_api_token`, `admin_update_api_token`, `admin_delete_api_token`, and `admin_renew_api_token`.
 
 ### Read-only behavior
 
-* The MCP `readOnlyHint` annotation is the only thing that decides whether a tool is read-only. Every tool declares it explicitly: `true` on the 50 reads and `false` on the 65 writes. A tool with no annotation or no `readOnlyHint` counts as a write.
+* The MCP `readOnlyHint` annotation is the only thing that decides whether a tool is read-only. Every tool declares it explicitly: `true` on the 74 reads and `false` on the 89 writes. A tool with no annotation or no `readOnlyHint` counts as a write.
 * `--profile readonly` or `SMARTSHEET_RM_READONLY=1` (on any profile) lists only the read-only tools, and `ReadOnlyGateMiddleware` refuses any call to a real tool that is not read-only, including a write the filter hid. A refusal comes back as a tool result with `isError: true`.
 * A name that is not a tool on the server gets FastMCP's normal `Unknown tool` error, directly or through `call_tool`, so a typo is never reported as a blocked tool.
 * With Tool Search on, the gate checks the tool that `call_tool` wraps. Reads through `call_tool` work and writes are refused. Without Tool Search, `call_tool` is not a tool on the server, so a call to it gets `Unknown tool: 'call_tool'`.
@@ -90,27 +90,29 @@ Seven tools are in no job profile and are reachable only in `full` (or their dom
 ## ⚡ Tool Surface Overview
 
 The server exposes tools covering projects, resources, timesheets, and capacity. Call the namespaced names below:
-- **Default Registration**: 115 tools on `full` (the 2 bulk-destructive tools are listed and refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`).
-- **Read-Only Mode**: 50 tools (`readOnlyHint=true`).
-- **Destructive Gates**: 21 tools requiring explicit `confirm=True` (19 standard + 2 bulk).
-- **Idempotent Operations**: 54 tools with `idempotentHint=true` (the 50 read-only tools, plus `time_update_time_approval_status`, `time_lock_timesheet`, `admin_set_custom_field_values`, and `admin_set_user_status`).
+- **Default Registration**: 163 tools on `full` (the 2 bulk-destructive tools are listed and refused at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`).
+- **Read-Only Mode**: 74 tools (`readOnlyHint=true`).
+- **Destructive Gates**: 31 tools requiring explicit `confirm=True` (29 standard + 2 bulk). `admin_create_api_token` also requires `confirm=True` before it creates a token; it is not a delete.
+- **Idempotent Operations**: 78 tools with `idempotentHint=true` (the 74 read-only tools, plus `time_update_time_approval_status`, `time_lock_timesheet`, `admin_set_custom_field_values`, and `admin_set_user_status`).
 
 ### Domain Overview
 Agents call these `tools/list` names. Counts for time and projects include the bulk-gated tool.
 
-1. **Time (`time_*`, 19 tools)**: `time_list_time_entries`, `time_get_time_entry`, `time_create_time_entry`, `time_create_user_time_entry`, `time_create_project_time_entry`, `time_update_time_entry`, `time_delete_time_entry`, `time_list_user_suggestions`, `time_update_time_approval_status`, `time_lock_timesheet`, `time_fill_weekly_timesheet`, `time_confirm_suggested_hours`, `time_reconcile_and_submit_week`, `time_list_approvals`, `time_create_approval`, `time_delete_approval`, `time_list_time_entry_categories`, `time_list_project_time_entry_categories`. Bulk-gated: `time_bulk_delete_time_entries`.
-2. **Projects (`projects_*`, 36 tools)**: `projects_list_projects`, `projects_get_project`, `projects_create_project`, `projects_update_project`, `projects_delete_project`, `projects_list_project_users`, `projects_list_project_phases`, `projects_get_project_phase`, `projects_create_project_phase`, `projects_update_project_phase`, `projects_delete_project_phase`, `projects_list_assignments`, `projects_get_assignment`, `projects_create_assignment`, `projects_create_project_assignment`, `projects_create_user_assignment`, `projects_update_assignment`, `projects_delete_assignment`, `projects_clone_project_schedule`, `projects_list_status_options`, `projects_list_placeholder_resources`, `projects_create_placeholder_resource`, `projects_delete_placeholder_resource`, `projects_list_assignment_subtasks`, `projects_create_assignment_subtask`, `projects_delete_assignment_subtask`, `projects_list_assignables`, `projects_get_assignable`, `projects_list_project_budget_items`, `projects_get_budget_item`, `projects_get_project_budget_item`, `projects_list_project_members`, `projects_list_relationships_project_members`, `projects_list_relationships_project_memberships`, `projects_list_user_project_memberships`. Bulk-gated: `projects_bulk_delete_assignments`.
-3. **Admin (`admin_*`, 60 tools)**:
+1. **Time (`time_*`, 21 tools)**: `time_list_time_entries`, `time_get_time_entry`, `time_create_time_entry`, `time_create_user_time_entry`, `time_create_project_time_entry`, `time_update_time_entry`, `time_delete_time_entry`, `time_list_user_suggestions`, `time_update_time_approval_status`, `time_lock_timesheet`, `time_fill_weekly_timesheet`, `time_confirm_suggested_hours`, `time_reconcile_and_submit_week`, `time_list_approvals`, `time_create_approval`, `time_delete_approval`, `time_list_time_entry_categories`, `time_list_project_time_entry_categories`, `time_get_project_time_entry`, `time_get_user_time_entry`. Bulk-gated: `time_bulk_delete_time_entries`.
+2. **Projects (`projects_*`, 62 tools)**: `projects_list_projects`, `projects_get_project`, `projects_create_project`, `projects_update_project`, `projects_delete_project`, `projects_list_project_users`, `projects_list_project_phases`, `projects_get_project_phase`, `projects_create_project_phase`, `projects_update_project_phase`, `projects_delete_project_phase`, `projects_list_assignments`, `projects_get_assignment`, `projects_create_assignment`, `projects_create_project_assignment`, `projects_create_user_assignment`, `projects_update_assignment`, `projects_delete_assignment`, `projects_clone_project_schedule`, `projects_list_status_options`, `projects_list_placeholder_resources`, `projects_create_placeholder_resource`, `projects_delete_placeholder_resource`, `projects_list_assignment_subtasks`, `projects_create_assignment_subtask`, `projects_delete_assignment_subtask`, `projects_list_assignables`, `projects_get_assignable`, `projects_list_project_budget_items`, `projects_get_budget_item`, `projects_get_project_budget_item`, `projects_list_project_members`, `projects_list_relationships_project_members`, `projects_list_relationships_project_memberships`, `projects_list_user_project_memberships`, `projects_create_project_budget_item`, `projects_update_budget_item`, `projects_update_project_budget_item`, `projects_delete_budget_item`, `projects_set_project_members`, `projects_update_project_members`, `projects_delete_project_members`, `projects_set_user_project_memberships`, `projects_update_user_project_memberships`, `projects_delete_user_project_memberships`, `projects_list_project_bill_rates`, `projects_get_project_bill_rate`, `projects_update_project_bill_rate`, `projects_get_placeholder_resource`, `projects_update_placeholder_resource`, `projects_list_placeholder_resource_assignments`, `projects_list_project_placeholder_resources`, `projects_get_assignment_subtask`, `projects_update_assignment_subtask`, `projects_get_project_assignment`, `projects_get_user_assignment`, `projects_get_status_option`, `projects_update_project_assignment`, `projects_delete_project_assignment`, `projects_update_user_assignment`, `projects_delete_user_assignment`. Bulk-gated: `projects_bulk_delete_assignments`.
+3. **Admin (`admin_*`, 80 tools)**:
    * Users, roles, disciplines, and capacity: `admin_list_users`, `admin_get_user`, `admin_create_user`, `admin_update_user`, `admin_delete_user`, `admin_list_user_bill_rates`, `admin_create_user_bill_rate`, `admin_get_user_availability`, `admin_get_user_utilization`, `admin_list_roles`, `admin_create_role`, `admin_update_role`, `admin_delete_role`, `admin_list_disciplines`, `admin_create_discipline`, `admin_update_discipline`, `admin_delete_discipline`.
    * Clients and contacts: `admin_list_clients`, `admin_get_client`, `admin_create_client`, `admin_update_client`, `admin_delete_client`, `admin_list_client_contacts`, `admin_create_client_contact`, `admin_delete_client_contact`.
    * Leaves and holidays: `admin_list_leave_types`, `admin_get_leave_type`, `admin_create_leave_type`, `admin_update_leave_type`, `admin_delete_leave_type`, `admin_list_holidays`, `admin_get_holiday`, `admin_create_holiday`, `admin_update_holiday`, `admin_delete_holiday`.
    * Expenses: `admin_list_expenses`, `admin_get_expense`, `admin_create_expense`, `admin_update_expense`, `admin_delete_expense`, `admin_list_expense_categories`, `admin_create_expense_category`, `admin_delete_expense_category`.
    * Tags and custom fields: `admin_list_tags`, `admin_create_tag`, `admin_delete_tag`, `admin_list_custom_fields`, `admin_get_custom_field`, `admin_create_custom_field`, `admin_update_custom_field`, `admin_delete_custom_field`, `admin_list_custom_field_values`, `admin_set_custom_field_values`.
-   * Status, reports, and webhooks: `admin_get_user_statuses`, `admin_set_user_status`, `admin_get_report_rows`, `admin_get_report_totals`, `admin_list_webhooks`, `admin_create_webhook`, `admin_delete_webhook`.
+   * Status, reports, and webhooks: `admin_get_user_statuses`, `admin_set_user_status`, `admin_get_report_rows`, `admin_get_report_totals`, `admin_list_webhooks`, `admin_create_webhook`, `admin_delete_webhook`, `admin_get_webhook`, `admin_export_report_csv`.
+   * Bill rates, availability blocks, and single lookups: `admin_list_bill_rates`, `admin_get_bill_rate`, `admin_list_availability_blocks`, `admin_get_availability_block`, `admin_create_availability_block`, `admin_update_availability_block`, `admin_delete_availability_block`, `admin_get_discipline`, `admin_get_role`, `admin_get_project_expense_item`, `admin_get_user_expense_item`, `admin_get_project_custom_field_value`, `admin_get_user_custom_field_value`.
+   * API tokens (full profile only; values are masked except a new token returned once after confirm): `admin_list_api_tokens`, `admin_create_api_token`, `admin_update_api_token`, `admin_delete_api_token`, `admin_renew_api_token`.
 
 ### Undocumented routes
 
-The tools below call routes that are in neither Smartsheet's [Resource Management API reference](https://developers.smartsheet.com/api/resource_management/openapi) ([OpenAPI JSON](https://developers.smartsheet.com/_spec/api/resource_management/openapi.json)) nor the archived [10,000ft API docs](https://github.com/10Kft/10kft-api). There are 46 such method and path pairs. They are kept, and not re-pointed, because some documented equivalents take different request shapes, so moving a tool would change what it sends. Smartsheet may change or remove an undocumented route without notice, and each of these tools says so in its description. Prefer a tool on a documented route when one fits: for example, `time_create_user_time_entry` or `time_create_project_time_entry` instead of `time_create_time_entry`. Each of these client calls carries `# drift-ignore: undocumented route`, and `scripts/check_openapi_drift.py` fails on any other call that is not in the published spec.
+The tools below call routes that are in neither Smartsheet's [Resource Management API reference](https://developers.smartsheet.com/api/resource_management/openapi) ([OpenAPI JSON](https://developers.smartsheet.com/_spec/api/resource_management/openapi.json)) nor the archived [10,000ft API docs](https://github.com/10Kft/10kft-api). There are 46 such method and path pairs. A tool is re-pointed onto a documented route only when that route takes the same inputs and returns the same outputs. Each documented twin of the tools below changes the inputs or the outputs, so these 46 stay. Smartsheet may change or remove an undocumented route without notice, and each of these tools says so in its description. Prefer a tool on a documented route when one fits: for example, `time_create_user_time_entry` or `time_create_project_time_entry` instead of `time_create_time_entry`. Each of these client calls carries `# drift-ignore: undocumented route`, and `scripts/check_openapi_drift.py` fails on any other call that is not in the published spec.
 
 | Tool | Undocumented route | Documented equivalent |
 | :--- | :--- | :--- |
@@ -317,7 +319,13 @@ pytest --cov=src/smartsheet_rm_mcp --cov-fail-under=100 -v
 # Run Tool Contract verification
 python scripts/check_tool_contract.py
 
-# Run OpenAPI Drift check against Smartsheet's published spec (or --spec-file for a local copy)
+# Run OpenAPI Drift check against Smartsheet's published spec (or --spec-file for a local copy).
+# Exit 1 is wrong-path drift. --fail-on-new-uncovered also exits 1 for a spec operation that is
+# not called and not listed in scripts/drift_uncovered_baseline.txt (METHOD path # tag: reason).
+# The scheduled drift-check job passes that flag and opens an issue for wrong paths, new
+# uncovered operations, both, or a monitor failure. This command does not pass the flag, and
+# neither does the per-push OpenAPI drift job. A spec that cannot be fetched or read exits 2
+# before any comparison.
 python scripts/check_openapi_drift.py --spec-url https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
 ```
 
