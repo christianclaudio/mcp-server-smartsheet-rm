@@ -111,26 +111,50 @@ def _tool_failure(error_type: str, message: str, **details: Any) -> NoReturn:
     raise tool_failure(error_type, message, **details) from None
 
 
-def _destructive_gate(confirm: bool, action_name: str) -> str | None:
+def _destructive_gate(confirm: bool, action_name: str, detail: str | None = None) -> str | None:
     """Enforce explicit user confirmation for destructive tools.
 
     Without confirmation, returns the confirm two-step prompt as a normal tool result
     (``isError: false``): the tool made no change and tells the caller to re-call with
     ``confirm=true``. That is the designed behavior, not a failed call. Returns None if confirmed.
+    ``detail`` is appended for a list-replacing call that removes anyone left off.
     """
     if not confirm:
+        message = (
+            f"Action '{action_name}' is destructive and was not executed. "
+            "Re-call this tool with confirm=true to proceed."
+        )
+        if detail:
+            message = f"{message} {detail}"
         return json.dumps(
             {
                 "status": "confirmation_required",
                 "executed": False,
-                "message": (
-                    f"Action '{action_name}' is destructive and was not executed. "
-                    "Re-call this tool with confirm=true to proceed."
-                ),
+                "message": message,
             },
             indent=2,
         )
     return None
+
+
+def _confirm_gate(confirm: bool, action_name: str, detail: str) -> str | None:
+    """Return the confirm prompt for a non-delete write that still requires confirm.
+
+    Used by ``admin_create_api_token``. Without confirmation the tool sends nothing and
+    returns ``confirmation_required`` as a normal result.
+    """
+    if confirm:
+        return None
+    return json.dumps(
+        {
+            "status": "confirmation_required",
+            "executed": False,
+            "message": (
+                f"Action '{action_name}' was not executed. Re-call this tool with confirm=true to proceed. {detail}"
+            ),
+        },
+        indent=2,
+    )
 
 
 async def get_client(ctx: Any | None = None) -> SmartsheetRMClient:
