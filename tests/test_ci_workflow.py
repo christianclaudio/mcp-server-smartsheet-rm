@@ -113,6 +113,26 @@ def test_openapi_drift_job_keeps_the_published_spec() -> None:
     """The per-push drift job still checks Smartsheet's published Resource Management spec."""
     body = _job_block(_jobs_section(_ci_text()), "openapi-drift")
     assert "developers.smartsheet.com/_spec/api/resource_management/openapi.json" in body
+    assert "--fail-on-new-uncovered" not in body
+
+
+def test_scheduled_drift_job_fails_on_new_uncovered_and_names_every_issue() -> None:
+    """The scheduled job is the only one that fails on new uncovered operations."""
+    jobs = _jobs_section(_ci_text())
+    drift = _job_block(jobs, "drift-check")
+    assert drift.count("--fail-on-new-uncovered") == 1
+    assert "--fail-on-new-uncovered" not in jobs.replace(drift, "", 1)
+    assert "issues: write" in drift
+    assert "issues: write" not in jobs.replace(drift, "", 1)
+    assert 'if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]' not in drift
+    assert 'exit "$rc"' not in drift
+    assert "⚠️ Smartsheet RM OpenAPI Drift Detected" in drift
+    assert "Smartsheet RM API drift: new uncovered endpoints" in drift
+    assert "Smartsheet RM API drift: wrong client paths and new uncovered endpoints" in drift
+    assert "Smartsheet RM drift monitor failed (exit" in drift
+    assert "add a tool or a tagged baseline line" in drift
+    assert "No drift was evaluated" in drift
+    assert "steps.drift.outputs.rc != '0'" in drift
 
 
 def test_governance_required_contexts() -> None:

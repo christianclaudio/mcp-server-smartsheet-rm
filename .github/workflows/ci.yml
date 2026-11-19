@@ -366,24 +366,45 @@ jobs:
         id: drift
         env:
           SPEC_URL: "https://developers.smartsheet.com/_spec/api/resource_management/openapi.json"
-        # Exit 1 is drift (on main, open an issue below). Any other non-zero code (2: spec unreadable,
-        # a client-surface failure, an unparseable source file, no client calls found or an
-        # unexpected error) fails the job without a drift issue.
+        # Record rc and keep going so the issue step can run for every non-zero code.
+        # The job fails at the end on any non-zero rc. The new-uncovered flag is only
+        # on this scheduled job; the per-push openapi-drift job does not pass it.
         run: |
           set +e
-          python scripts/check_openapi_drift.py --spec-url "$SPEC_URL"
-          rc=$?
+          python scripts/check_openapi_drift.py --spec-url "$SPEC_URL" --fail-on-new-uncovered 2>&1 | tee drift.log
+          rc=${PIPESTATUS[0]}
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
-            echo "::error title=Drift check failed::check_openapi_drift.py exited $rc, which is not drift; no issue was opened."
-            exit "$rc"
-          fi
       - name: Open Issue on Drift
-        if: steps.drift.outputs.rc == '1' && github.ref == 'refs/heads/main'
+        if: steps.drift.outputs.rc != '0' && github.ref == 'refs/heads/main'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
-            const title = "⚠️ Smartsheet RM OpenAPI Drift Detected";
+            const fs = require("fs");
+            const rc = "${{ steps.drift.outputs.rc }}";
+            const log = fs.readFileSync("drift.log", "utf8");
+            const wrong = log.includes("❌ BREAKING DRIFT DETECTED");
+            const uncovered = log.includes("❌ New uncovered");
+            const wrongTitle = "⚠️ Smartsheet RM OpenAPI Drift Detected";
+            const uncoveredTitle = "Smartsheet RM API drift: new uncovered endpoints";
+            const bothTitle = "Smartsheet RM API drift: wrong client paths and new uncovered endpoints";
+            const failedTitle = `Smartsheet RM drift monitor failed (exit ${rc})`;
+            const wrongBody = "The weekly OpenAPI drift monitor detected differences against the published Smartsheet Resource Management specification. Please review recent API changes.";
+            const uncoveredBody = "The weekly OpenAPI drift monitor found spec operations no client call covers and that are not in the reviewed baseline. Remediation: add a tool or a tagged baseline line.";
+            let title;
+            let body;
+            if (rc === "1" && wrong && uncovered) {
+              title = bothTitle;
+              body = `${wrongBody}\n\n${uncoveredBody}`;
+            } else if (rc === "1" && uncovered) {
+              title = uncoveredTitle;
+              body = uncoveredBody;
+            } else if (rc === "1" && wrong) {
+              title = wrongTitle;
+              body = wrongBody;
+            } else {
+              title = failedTitle;
+              body = `The weekly OpenAPI drift monitor failed (exit ${rc}). No drift was evaluated.`;
+            }
             // Duplicate check uses the same forge-todo label the issue is created with.
             const open = await github.paginate(github.rest.issues.listForRepo, {
               owner: context.repo.owner,
@@ -398,7 +419,10 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 title: title,
-                body: "The weekly OpenAPI drift monitor detected differences against the published Smartsheet Resource Management specification. Please review recent API changes.",
+                body: body,
                 labels: ["forge-todo"]
               });
             }
+      - name: Fail the job when the drift monitor is non-zero
+        if: steps.drift.outputs.rc != '0'
+        run: exit 1

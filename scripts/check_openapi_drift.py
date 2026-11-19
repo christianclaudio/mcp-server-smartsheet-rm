@@ -29,14 +29,26 @@ Warnings (exit 1 only with ``--strict``):
   in its title).
 - UNDOCUMENTED PARAMETER: the client passes a query parameter the spec does not declare.
 
-Spec endpoints no client call covers are listed for information.
+Spec endpoints no client call covers are listed for information. With
+``--fail-on-new-uncovered``, an uncovered operation that is not in
+``--uncovered-baseline`` (default ``scripts/drift_uncovered_baseline.txt``) is drift: the
+check prints ``❌ New uncovered endpoints: N`` and exits 1. Baseline lines whose operation
+is now covered, or gone from the spec, are warnings and do not change the exit code. Each
+baseline line is ``METHOD path  # tag: reason`` with tag ``deprecated``, ``excluded``, or
+``gap``. An unknown tag, an empty reason, a duplicate, or a missing baseline file exits 2.
+Without the flag the output is unchanged and a new spec operation does not fail the check.
+
+A call's ``api_base=`` (``v1`` or ``root``) must match the operation's server. ``root`` is
+the server that drops ``/v1`` (the API token operations). A mismatch is
+``❌ WRONG BASE`` and exits 1 with the other wrong-path drift.
 
 A vendor spec is required (``--spec-file`` or ``--spec-url``). The check exits 2 without one,
-or when the document cannot be read or has no ``paths``. Exit 1 means drift and nothing else;
-every other failure, including an unexpected exception, exits 2, so the drift-check job opens a
-drift issue only on exit 1, and only on main. Smartsheet publishes it at
-``DEFAULT_SPEC_URL``; its paths are relative to ``https://api.rm.smartsheet.com/api/v1``,
-the same as the client's, so no ``--path-prefix`` is needed.
+or when the document cannot be read or has no ``paths``. That failure happens before any
+comparison, so it never prints ``New uncovered``. Exit 1 means drift and nothing else;
+every other failure, including an unexpected exception, exits 2. Smartsheet publishes the
+spec at ``DEFAULT_SPEC_URL``; its paths are relative to ``https://api.rm.smartsheet.com/api/v1``,
+the same as the client's, so no ``--path-prefix`` is needed. The API token operations
+override that server with ``https://api.rm.smartsheet.com/api``.
 
 Usage:
     python scripts/check_openapi_drift.py (--spec-file PATH | --spec-url URL)
@@ -55,6 +67,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "src"))
@@ -195,6 +208,55 @@ ENDPOINT_TO_METHOD: dict[tuple[str, str], str] = {
     ("users/{id}/project_memberships", "GET"): "list_user_project_memberships",
     ("time_entry_categories", "GET"): "list_time_entry_categories",
     ("projects/{id}/time_entry_categories", "GET"): "list_project_time_entry_categories",
+    # 12. Coverage-gap operations from the published spec
+    ("projects/{id}/time_entries/{id}", "GET"): "get_project_time_entry",
+    ("users/{id}/time_entries/{id}", "GET"): "get_user_time_entry",
+    ("projects/{id}/budget_items", "POST"): "create_project_budget_item",
+    ("budget_items/{id}", "PUT"): "update_budget_item",
+    ("projects/{id}/budget_items/{id}", "PUT"): "update_project_budget_item",
+    ("budget_items/{id}", "DELETE"): "delete_budget_item",
+    ("projects/{id}/project_members", "POST"): "set_project_members",
+    ("projects/{id}/project_members", "PUT"): "update_project_members",
+    ("projects/{id}/project_members", "DELETE"): "delete_project_members",
+    ("users/{id}/project_memberships", "POST"): "set_user_project_memberships",
+    ("users/{id}/project_memberships", "PUT"): "update_user_project_memberships",
+    ("users/{id}/project_memberships", "DELETE"): "delete_user_project_memberships",
+    ("projects/{id}/bill_rates", "GET"): "list_project_bill_rates",
+    ("projects/{id}/bill_rates/{id}", "GET"): "get_project_bill_rate",
+    ("projects/{id}/bill_rates/{id}", "PUT"): "update_project_bill_rate",
+    ("placeholder_resources/{id}", "GET"): "get_placeholder_resource",
+    ("placeholder_resources/{id}", "PUT"): "update_placeholder_resource",
+    ("placeholder_resources/{id}/assignments", "GET"): "list_placeholder_resource_assignments",
+    ("projects/{id}/placeholder_resources", "GET"): "list_project_placeholder_resources",
+    ("projects/{id}/assignments/{id}/subtasks/{id}", "GET"): "get_assignment_subtask",
+    ("projects/{id}/assignments/{id}/subtasks/{id}", "PUT"): "update_assignment_subtask",
+    ("projects/{id}/assignments/{id}", "GET"): "get_project_assignment",
+    ("projects/{id}/assignments/{id}", "PUT"): "update_project_assignment",
+    ("projects/{id}/assignments/{id}", "DELETE"): "delete_project_assignment",
+    ("users/{id}/assignments/{id}", "GET"): "get_user_assignment",
+    ("users/{id}/assignments/{id}", "PUT"): "update_user_assignment",
+    ("users/{id}/assignments/{id}", "DELETE"): "delete_user_assignment",
+    ("status_options/{id}", "GET"): "get_status_option",
+    ("bill_rates", "GET"): "list_bill_rates",
+    ("bill_rates/{id}", "GET"): "get_bill_rate",
+    ("users/{id}/availabilities", "GET"): "list_availability_blocks",
+    ("users/{id}/availabilities/{id}", "GET"): "get_availability_block",
+    ("users/{id}/availabilities", "POST"): "create_availability_block",
+    ("users/{id}/availabilities/{id}", "PUT"): "update_availability_block",
+    ("users/{id}/availabilities/{id}", "DELETE"): "delete_availability_block",
+    ("disciplines/{id}", "GET"): "get_discipline",
+    ("roles/{id}", "GET"): "get_role",
+    ("webhooks/{id}", "GET"): "get_webhook",
+    ("projects/{id}/expense_items/{id}", "GET"): "get_project_expense_item",
+    ("users/{id}/expense_items/{id}", "GET"): "get_user_expense_item",
+    ("projects/{id}/custom_field_values/{id}", "GET"): "get_project_custom_field_value",
+    ("users/{id}/custom_field_values/{id}", "GET"): "get_user_custom_field_value",
+    ("reports/underlying_data.csv", "POST"): "export_report_csv",
+    ("api_tokens", "GET"): "list_api_tokens",
+    ("api_tokens", "POST"): "create_api_token",
+    ("api_tokens/{id}", "PUT"): "update_api_token",
+    ("api_tokens/{id}", "DELETE"): "delete_api_token",
+    ("api_tokens/renew/{id}", "POST"): "renew_api_token",
 }
 
 
@@ -232,6 +294,7 @@ class ClientCall:
     body_keys: set[str] = field(default_factory=set)
     source_file: str = ""
     line_number: int = 0
+    api_base: str = "v1"
 
 
 @dataclass
@@ -266,6 +329,7 @@ class SpecEndpoint:
     deprecated_params: set[str] = field(default_factory=set)
     required_params: set[str] = field(default_factory=set)
     is_deprecated_route: bool = False
+    server_path: str = ""
 
 
 def normalize_path(path: str) -> str:
@@ -300,12 +364,25 @@ def validate_spec(raw_spec: Any) -> dict[str, Any]:
     return raw_spec
 
 
+def _server_path(url: object) -> str:
+    """Return the path of an OpenAPI server URL, without a trailing slash."""
+    return urlparse(str(url or "")).path.rstrip("/")
+
+
+def _document_server_path(raw_spec: dict[str, Any]) -> str:
+    servers = raw_spec.get("servers")
+    if isinstance(servers, list) and servers and isinstance(servers[0], dict):
+        return _server_path(servers[0].get("url"))
+    return ""
+
+
 def parse_spec(raw_spec: dict[str, Any]) -> dict[tuple[str, str], SpecEndpoint]:
     """Index OpenAPI specification endpoints, parameters, and deprecation markers."""
     endpoints: dict[tuple[str, str], SpecEndpoint] = {}
     paths = raw_spec.get("paths", {})
     if not isinstance(paths, dict):
         return endpoints
+    document_server = _document_server_path(raw_spec)
 
     for path_str, methods in paths.items():
         if not isinstance(methods, dict):
@@ -324,11 +401,16 @@ def parse_spec(raw_spec: dict[str, Any]) -> dict[tuple[str, str], SpecEndpoint]:
             if not isinstance(op_params, list):
                 op_params = []
 
+            op_servers = op.get("servers")
+            server_path = document_server
+            if isinstance(op_servers, list) and op_servers and isinstance(op_servers[0], dict):
+                server_path = _server_path(op_servers[0].get("url")) or document_server
             endpoint = SpecEndpoint(
                 method=method,
                 path=path_str,
                 normalized_path=norm_path,
                 is_deprecated_route=op.get("deprecated") is True,
+                server_path=server_path,
             )
 
             for param in list(path_level_params) + op_params:
@@ -430,6 +512,13 @@ class ClientAstVisitor(ast.NodeVisitor):
         raw_path = self._extract_path(path_node)
 
         problems = []
+        api_base = "v1"
+        if "api_base" in keywords:
+            base_node = keywords["api_base"]
+            if isinstance(base_node, ast.Constant) and base_node.value in ("v1", "root"):
+                api_base = str(base_node.value)
+            else:
+                problems.append("api_base is not the literal 'v1' or 'root'")
         if method.lower() not in HTTP_METHODS:
             problems.append("HTTP method is not a string literal")
         if raw_path is None:
@@ -444,7 +533,7 @@ class ClientAstVisitor(ast.NodeVisitor):
         for name in ("params", "query_params"):
             if name in keywords:
                 query_params.update(self._extract_dict_keys(keywords[name]))
-        for name in ("json", "json_data", "body"):
+        for name in ("json", "json_data", "body", "form_data"):
             if name in keywords:
                 body_keys.update(self._extract_dict_keys(keywords[name]))
         if args and method_name in HTTP_METHODS:
@@ -463,6 +552,7 @@ class ClientAstVisitor(ast.NodeVisitor):
                 body_keys=body_keys,
                 source_file=self.filename,
                 line_number=node.lineno,
+                api_base=api_base,
             )
         )
 
@@ -520,13 +610,62 @@ def extract_client_calls(source_dir: Path) -> list[ClientCall]:
     return scan_source(source_dir).calls
 
 
+def expected_api_base(endpoint: SpecEndpoint) -> str:
+    """``root`` when the operation server omits ``/v1``; otherwise ``v1``."""
+    path = endpoint.server_path.rstrip("/")
+    if path and not path.endswith("/v1"):
+        return "root"
+    return "v1"
+
+
+_BASELINE_LINE = re.compile(r"^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) (\S+)\s+# ([A-Za-z_-]+):\s*(.*)$")
+_BASELINE_TAGS = frozenset({"deprecated", "excluded", "gap"})
+DEFAULT_UNCOVERED_BASELINE = REPO / "scripts" / "drift_uncovered_baseline.txt"
+
+
+class BaselineError(SpecError):
+    """The uncovered-operation baseline cannot be used. This is exit 2, not drift."""
+
+
+def load_uncovered_baseline(path: Path) -> dict[tuple[str, str], str]:
+    """Parse ``METHOD path  # tag: reason`` lines. Paths are stored normalized."""
+    if not path.is_file():
+        raise BaselineError(f"uncovered baseline not found at {path}")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise BaselineError(f"cannot read uncovered baseline: {exc}") from exc
+    found: dict[tuple[str, str], str] = {}
+    for lineno, raw in enumerate(text.splitlines(), start=1):
+        if not raw.strip():
+            raise BaselineError(f"uncovered baseline line {lineno} is empty")
+        match = _BASELINE_LINE.match(raw.strip())
+        if match is None:
+            raise BaselineError(f"uncovered baseline line {lineno} must be 'METHOD path  # tag: reason'")
+        method, path_text, tag, reason = match.groups()
+        if tag not in _BASELINE_TAGS:
+            raise BaselineError(f"uncovered baseline line {lineno} has unknown tag '{tag}'")
+        if not reason.strip():
+            raise BaselineError(f"uncovered baseline line {lineno} has an empty reason")
+        key = (method, normalize_path(path_text))
+        if key in found:
+            raise BaselineError(f"uncovered baseline duplicate {method} {normalize_path(path_text)}")
+        found[key] = f"{tag}: {reason.strip()}"
+    return found
+
+
 def run_drift_check(
     spec: dict[str, Any],
     source_dir: Path,
     strict: bool = False,
     path_prefix: str = "",
+    uncovered_baseline: dict[tuple[str, str], str] | None = None,
 ) -> tuple[int, list[str]]:
-    """Compare client calls with the spec. Returns (exit code, report lines)."""
+    """Compare client calls with the spec. Returns (exit code, report lines).
+
+    ``uncovered_baseline`` is set only for ``--fail-on-new-uncovered``. ``None`` leaves
+    the uncovered list informational, which is the output without that flag.
+    """
     spec_endpoints = parse_spec(spec)
     scan = scan_source(source_dir, path_prefix)
 
@@ -575,6 +714,13 @@ def run_drift_check(
 
         covered_keys.add(key)
 
+        if call.api_base != expected_api_base(spec_op):
+            issues.append(
+                f"❌ WRONG BASE: Client calls '{call.method} {call.raw_path}' with api_base="
+                f"{call.api_base} ({where}) but the spec server path is "
+                f"'{spec_op.server_path or '/api/v1'}'."
+            )
+
         if spec_op.is_deprecated_route:
             warnings.append(
                 f"⚠️ DEPRECATED ROUTE: Client calls deprecated route '{call.method} {spec_op.path}' ({where})."
@@ -614,17 +760,33 @@ def run_drift_check(
         for w in warnings:
             output_lines.append(f"  {w}")
 
+    exit_code = 0
     if issues:
         output_lines.append("\n❌ BREAKING DRIFT DETECTED:")
         for err in issues:
             output_lines.append(f"  {err}")
-        return 1, output_lines
+        exit_code = 1
+    elif warnings and strict:
+        exit_code = 1
 
-    if warnings and strict:
-        return 1, output_lines
+    if uncovered_baseline is not None:
+        spec_keys = set(spec_endpoints)
+        new_uncovered = [key for key in uncovered if key not in uncovered_baseline]
+        for key, label in sorted(uncovered_baseline.items()):
+            method, norm = key
+            if key in covered_keys:
+                output_lines.append(f"⚠️ Baseline endpoint is now covered: {method} {norm} ({label})")
+            elif key not in spec_keys:
+                output_lines.append(f"⚠️ Baseline endpoint is no longer in the spec: {method} {norm} ({label})")
+        if new_uncovered:
+            output_lines.append(f"\n❌ New uncovered endpoints: {len(new_uncovered)}")
+            for method, norm in new_uncovered:
+                output_lines.append(f"  {method} {spec_endpoints[(method, norm)].path}")
+            exit_code = 1
 
-    output_lines.append("\n[✓] No breaking drift or path mismatches detected.")
-    return 0, output_lines
+    if exit_code == 0:
+        output_lines.append("\n[✓] No breaking drift or path mismatches detected.")
+    return exit_code, output_lines
 
 
 def load_spec(spec_file: str | None, spec_url: str | None) -> dict[str, Any]:
@@ -720,6 +882,16 @@ def main(argv: list[str] | None = None) -> int:
         default=str(REPO / "src"),
         help="Root source directory to inspect",
     )
+    parser.add_argument(
+        "--fail-on-new-uncovered",
+        action="store_true",
+        help="Exit 1 when a spec operation is uncovered and not in the baseline",
+    )
+    parser.add_argument(
+        "--uncovered-baseline",
+        default=str(DEFAULT_UNCOVERED_BASELINE),
+        help="Baseline of METHOD path  # tag: reason lines (used with --fail-on-new-uncovered)",
+    )
     args = parser.parse_args(argv)
     try:
         return _run(args)
@@ -748,11 +920,25 @@ def _run(args: argparse.Namespace) -> int:
         print(f"Error: source directory not found at {source_path}", file=sys.stderr)
         return 2
 
+    uncovered_baseline = None
+    if args.fail_on_new_uncovered:
+        try:
+            uncovered_baseline = load_uncovered_baseline(Path(args.uncovered_baseline))
+        except BaselineError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+
     print("=" * 70)
     print("🔍 OPENAPI ROUTE & PARAMETER DRIFT CHECK")
     print("=" * 70)
 
-    exit_code, report_lines = run_drift_check(raw_spec, source_path, strict=args.strict, path_prefix=args.path_prefix)
+    exit_code, report_lines = run_drift_check(
+        raw_spec,
+        source_path,
+        strict=args.strict,
+        path_prefix=args.path_prefix,
+        uncovered_baseline=uncovered_baseline,
+    )
     for line in report_lines:
         print(line)
 

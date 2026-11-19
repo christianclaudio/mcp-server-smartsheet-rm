@@ -591,6 +591,22 @@ async def rm_list_project_time_entry_categories(project_id: int | str, item_type
     return json.dumps(data, indent=2)
 
 
+@rm_tool
+async def rm_get_project_time_entry(project_id: int | str, entry_id: int | str) -> str:
+    """Fetch one time entry on a project (GET /projects/{project_id}/time_entries/{id})."""
+    client = await get_client()
+    data = await client.get_project_time_entry(project_id, entry_id)
+    return json.dumps(data, indent=2)
+
+
+@rm_tool
+async def rm_get_user_time_entry(user_id: int | str, entry_id: int | str) -> str:
+    """Fetch one time entry for a user (GET /users/{user_id}/time_entries/{id})."""
+    client = await get_client()
+    data = await client.get_user_time_entry(user_id, entry_id)
+    return json.dumps(data, indent=2)
+
+
 def timesheet_reconciliation(user_id: str, week_start_date: str) -> str:
     """Audit and reconcile weekly timesheets against 40-hour capacity target."""
     return f"""Audit timesheets for user ID {user_id} for the week starting {week_start_date}.
@@ -619,6 +635,8 @@ create_approval = rm_create_approval
 delete_approval = rm_delete_approval
 list_time_entry_categories = rm_list_time_entry_categories
 list_project_time_entry_categories = rm_list_project_time_entry_categories
+get_project_time_entry = rm_get_project_time_entry
+get_user_time_entry = rm_get_user_time_entry
 
 _TIME_TOOLS_CONFIG = [
     ("list_time_entries", rm_list_time_entries, ANNOTATION_READ_ONLY),
@@ -640,6 +658,8 @@ _TIME_TOOLS_CONFIG = [
     ("delete_approval", rm_delete_approval, ANNOTATION_DESTRUCTIVE),
     ("list_time_entry_categories", rm_list_time_entry_categories, ANNOTATION_READ_ONLY),
     ("list_project_time_entry_categories", rm_list_project_time_entry_categories, ANNOTATION_READ_ONLY),
+    ("get_project_time_entry", rm_get_project_time_entry, ANNOTATION_READ_ONLY),
+    ("get_user_time_entry", rm_get_user_time_entry, ANNOTATION_READ_ONLY),
 ]
 
 

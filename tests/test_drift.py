@@ -294,7 +294,8 @@ def test_main_spec_file_passes(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["--spec-file", str(RM_SPEC_FILE), "--strict"]) == 0
     out = capsys.readouterr().out
     assert "No breaking drift" in out
-    assert f"114/{len(drift.ENDPOINT_TO_METHOD)}" in out
+    count = len(drift.ENDPOINT_TO_METHOD)
+    assert f"{count}/{count}" in out
 
 
 def test_main_requires_a_spec(capsys: pytest.CaptureFixture[str]) -> None:
@@ -491,6 +492,114 @@ def test_main_exits_2_when_a_repo_import_fails(capsys: pytest.CaptureFixture[str
     err = capsys.readouterr().err
     assert "drift check failed unexpectedly: ModuleNotFoundError" in err
     assert "smartsheet_rm_mcp.server" in err
+
+
+def test_fail_on_new_uncovered_baseline_gate(tmp_path: Path) -> None:
+    """A spec operation missing from the baseline exits 1; a baselined one does not."""
+    spec = {
+        "openapi": "3.0.3",
+        "paths": {"/items": {"get": {}}, "/extra": {"get": {}}},
+    }
+    src = _src(
+        tmp_path,
+        "class C:\n    async def go(self):\n        await self._request('GET', '/items')\n",
+    )
+    code, lines = run_drift_check(spec, src, uncovered_baseline={})
+    assert code == 1
+    assert any("New uncovered endpoints:" in line for line in lines)
+    text = "\n".join(lines)
+    assert "GET /extra" in text
+    baselined = {("GET", "/extra"): "gap: held"}
+    code, lines = run_drift_check(spec, src, uncovered_baseline=baselined)
+    assert code == 0
+    assert not any("New uncovered" in line for line in lines)
+    code, lines = run_drift_check(spec, src)
+    assert code == 0
+    assert "No breaking drift" in "\n".join(lines)
+    assert not any("New uncovered" in line for line in lines)
+
+
+def test_baseline_warnings_do_not_fail_and_bad_lines_exit_2(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Covered or removed baseline lines warn. A bad baseline file exits 2."""
+    spec = {"openapi": "3.0.3", "paths": {"/items": {"get": {}}}}
+    src = _src(tmp_path, "class C:\n    async def go(self):\n        await self._request('GET', '/items')\n")
+    code, lines = run_drift_check(
+        spec,
+        src,
+        uncovered_baseline={
+            ("GET", "/items"): "gap: now called",
+            ("GET", "/gone"): "excluded: left the spec",
+        },
+    )
+    assert code == 0
+    text = "\n".join(lines)
+    assert "Baseline endpoint is now covered" in text
+    assert "Baseline endpoint is no longer in the spec" in text
+    assert "New uncovered" not in text
+
+    bad = tmp_path / "baseline.txt"
+    bad.write_text("GET /items  # nope: reason\n", encoding="utf-8")
+    assert main(["--spec-file", str(RM_SPEC_FILE), "--fail-on-new-uncovered", "--uncovered-baseline", str(bad)]) == 2
+    assert "unknown tag" in capsys.readouterr().err
+    bad.write_text("GET /items  # gap:\n", encoding="utf-8")
+    assert main(["--spec-file", str(RM_SPEC_FILE), "--fail-on-new-uncovered", "--uncovered-baseline", str(bad)]) == 2
+    assert "empty reason" in capsys.readouterr().err
+    bad.write_text("GET /items  # gap: one\nGET /items/  # gap: two\n", encoding="utf-8")
+    assert main(["--spec-file", str(RM_SPEC_FILE), "--fail-on-new-uncovered", "--uncovered-baseline", str(bad)]) == 2
+    assert "duplicate" in capsys.readouterr().err
+    missing = tmp_path / "missing-baseline.txt"
+    assert (
+        main(["--spec-file", str(RM_SPEC_FILE), "--fail-on-new-uncovered", "--uncovered-baseline", str(missing)]) == 2
+    )
+
+
+def test_wrong_base_on_a_token_call_is_breaking_drift(tmp_path: Path) -> None:
+    """A token call on /v1 does not match the operation server /api."""
+    spec = {
+        "openapi": "3.0.3",
+        "servers": [{"url": "https://api.rm.smartsheet.com/api/v1"}],
+        "paths": {"/api_tokens": {"get": {"servers": [{"url": "https://api.rm.smartsheet.com/api"}]}}},
+    }
+    src = _src(
+        tmp_path,
+        "class C:\n    async def go(self):\n        await self._request('GET', '/api_tokens', api_base='v1')\n",
+    )
+    code, lines = run_drift_check(spec, src)
+    assert code == 1
+    assert any("❌ WRONG BASE" in line for line in lines)
+
+
+def test_spec_failures_do_not_report_new_uncovered(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A spec that cannot be read exits 2 with no uncovered-gate line, even with the flag."""
+    assert main(["--spec-file", str(tmp_path / "missing.json"), "--fail-on-new-uncovered"]) == 2
+    captured = capsys.readouterr()
+    assert "New uncovered" not in captured.out
+    assert "New uncovered" not in captured.err
+    bad = tmp_path / "spec.yaml"
+    bad.write_text("not json", encoding="utf-8")
+    assert main(["--spec-file", str(bad), "--fail-on-new-uncovered"]) == 2
+    captured = capsys.readouterr()
+    assert "cannot read spec file as JSON" in captured.err
+    assert "New uncovered" not in captured.out
+    assert "New uncovered" not in captured.err
+
+
+def test_committed_uncovered_baseline_matches_the_fixture() -> None:
+    """The reviewed baseline is 21 tagged lines, and each one is still uncovered."""
+    from scripts.check_openapi_drift import load_uncovered_baseline
+
+    baseline_path = ROOT / "scripts" / "drift_uncovered_baseline.txt"
+    baseline = load_uncovered_baseline(baseline_path)
+    assert len(baseline) == 21
+    assert len(baseline_path.read_text(encoding="utf-8").splitlines()) == 21
+    assert all(label.startswith(("gap:", "excluded:", "deprecated:")) for label in baseline.values())
+    spec_keys = set(parse_spec(RM_SPEC))
+    assert set(baseline) <= spec_keys
+    code, lines = run_drift_check(RM_SPEC, ROOT / "src", uncovered_baseline=baseline)
+    assert code == 0, "\n".join(lines)
+    assert not any("New uncovered" in line or "WRONG BASE" in line for line in lines)
+    calls = {(call.method, call.normalized_path) for call in extract_client_calls(ROOT / "src")}
+    assert spec_keys - calls == set(baseline)
 
 
 def test_script_exits_2_when_a_repo_import_fails() -> None:

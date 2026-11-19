@@ -22,7 +22,7 @@ Live doc MCP endpoints: `https://gofastmcp.com/mcp` (`search_fast_mcp`, `query_d
 
 `mcp-server-smartsheet-rm` is an enterprise Python MCP server for **Resource Management by Smartsheet** (formerly 10,000ft API) with strict safety gates, offline testing, and multi-tenant token isolation.
 
-- **Undocumented routes policy:** 46 method+path pairs are absent from both the current reference and archived 10,000ft docs. Keep them (never drop or re-point on this public repo); each carries `"Undocumented route"` in client/tool docstrings, a `README.md` row, and `# drift-ignore: <reason>` for `scripts/check_openapi_drift.py`. Any new undocumented route needs both the marker and a README row. Never claim complete API coverage.
+- **Undocumented routes policy:** 46 method+path pairs are absent from both the current reference and archived 10,000ft docs. Never drop them; re-point a tool onto a documented route only when that route is a drop-in with the same inputs and outputs, otherwise it stays on the undocumented route. Each carries `"Undocumented route"` in client/tool docstrings, a `README.md` row, and `# drift-ignore: <reason>` for `scripts/check_openapi_drift.py`. Any new undocumented route needs both the marker and a README row. Never claim complete API coverage.
 - **Smartsheet Gov (`GOV_BASE_URL` / `GOV_HOST` in `client.py`):** opt-in only — never make it default or add to `DEFAULT_ALLOWED_HOSTS`. Gov Bearer auth applies only when host equals `GOV_HOST`, and a per-request RM token is never paired with the environment Gov token.
 - Expected tool/profile counts live in `scripts/check_tool_contract.py` and `README.md`.
 
@@ -67,8 +67,8 @@ Follow in exact order:
 2. **Secret Redaction:** `_redact_secrets` / `redact_message` in `errors.py` mask Bearer tokens, passwords, API keys, and PEM blocks; raise redacted `ToolError` `from None` **after** `except` blocks (see `errors.py` and redaction tests for known multiline/bracket limits).
 3. **Multi-Stage Non-Root Containers (`Dockerfile`):**
    - Multi-stage `python:3.12-slim-trixie AS builder` → runtime pinned by digest, non-root `USER mcp`, venv `/opt/venv`.
-   - Trust-store floor (FastMCP Oct 2026 / `DSA-6572-1`): both stages upgrade OS `ca-certificates` and enforce `ARG CA_CERTIFICATES_FLOOR` (before pip runs in builder), builder bootstraps pip `26.2.2` (`docker/pip-bootstrap.txt`, `--require-hashes`), `release.yml` & CI `drift-check` install with `pip>=26.2.2`, and `certifi>=2026.10.19` is a direct dependency. Never lower `CA_CERTIFICATES_FLOOR` via `--build-arg`.
-   - Reproducible lock install: builder installs uv (`docker/uv-bootstrap.txt`, `--require-hashes`, outside venv), exports `uv export --locked --no-dev --no-emit-project --format requirements.txt`, installs `docker/build-backend.txt` (`--require-hashes --only-binary=:all:` outside venv), and installs via `PYTHONPATH=/tmp/build-backend pip install --no-deps --no-build-isolation .` (never `pip install .`). Regenerate `docker/build-backend.txt` after `uv lock` via `uv run python scripts/gen_build_backend.py` (never hand-edit; Dependabot excludes it). Enforced by `tests/test_dockerfile.py` & `tests/test_build_backend_lock.py`.
+   - Trust-store floor (FastMCP Oct 2026 / `DSA-6572-1`): both stages upgrade OS `ca-certificates` and enforce `ARG CA_CERTIFICATES_FLOOR` (before pip runs in builder), builder bootstraps pip from `docker/pip-bootstrap.txt` (`--require-hashes`; Dependabot bumps it), `release.yml` & CI `drift-check` install with `pip>=26.2.2`, and `certifi>=2026.10.19` is a direct dependency. Never lower `CA_CERTIFICATES_FLOOR` via `--build-arg`.
+   - Reproducible lock install: builder installs uv (`docker/uv-bootstrap.txt`, `--require-hashes`, outside venv; Dependabot bumps it), exports `uv export --locked --no-dev --no-emit-project --format requirements.txt`, installs `docker/build-backend.txt` (`--require-hashes --only-binary=:all:` outside venv), and installs via `PYTHONPATH=/tmp/build-backend pip install --no-deps --no-build-isolation .` (never `pip install .`). Regenerate `docker/build-backend.txt` after `uv lock` via `uv run python scripts/gen_build_backend.py` (never hand-edit; Dependabot excludes it). Enforced by `tests/test_dockerfile.py` & `tests/test_build_backend_lock.py`.
 4. **Registry Metadata (`server.json`):** root `description` **≤ 100 chars** (HTTP 422 otherwise); default transport `stdio`, `"runtimeHint": "uvx"`.
 5. **Outbound Requests (`SSRFSafeAsyncTransport`):** HTTPS only, blocks loopback/private/internal IPs, resolves DNS via `asyncio.to_thread`, connects directly to pinned checked addresses (`trust_env=False` on `fetch_pinned_https`; no env proxies), never rewrites URL to an IP or sets `sni_hostname`.
 6. **Git Safety & Releases:**
@@ -100,10 +100,14 @@ uv run pytest --cov=src/smartsheet_rm_mcp --cov-fail-under=100 -v
 # Tool contract verification
 uv run python scripts/check_tool_contract.py
 
-# Upstream OpenAPI / route drift check (a spec is required; exit 1 = drift, 2 = any other failure)
+# Upstream OpenAPI / route drift check (a spec is required; exit 1 = wrong-path drift, or with
+# --fail-on-new-uncovered a spec operation that is not called and not in the baseline; exit 2 =
+# any other failure, including a spec that cannot be fetched or read, which never reaches the gate)
 uv run python scripts/check_openapi_drift.py --spec-url https://developers.smartsheet.com/_spec/api/resource_management/openapi.json
 # Offline, against the paths-only fixture the tests use
 uv run python scripts/check_openapi_drift.py --spec-file tests/fixtures/rm-openapi-paths.json
+# Scheduled monitor: also fail when a new spec operation is missing from scripts/drift_uncovered_baseline.txt
+uv run python scripts/check_openapi_drift.py --spec-file tests/fixtures/rm-openapi-paths.json --fail-on-new-uncovered
 
 # Protocol integration tests (stdio handshake & stateless streamable HTTP)
 uv run pytest tests/test_protocol.py
@@ -119,7 +123,7 @@ coderabbit review --agent --uncommitted
 
 ## 🔄 CI & Releases
 
-- **CI (`.github/workflows/ci.yml`):** runs on `push`/`pull_request` to `main`, weekly schedule, and `workflow_dispatch` (with `fetch-depth: 0` on package jobs). Jobs: `lint-and-types`, `test` (Python 3.11–3.14, 100% cov) + `tests`, `tool-contract`, OpenAPI drift validation, `build-check` (`check_version.py` + `twine check`), `protocol`, `conformance`, `docker-build` (no push; verifies stripped build deps, stdio `initialize`/`tools/list`, negative `CA_CERTIFICATES_FLOOR`), and `drift-check` (schedule/manual only; opens issue on drift). CodeQL runs via GitHub default setup.
+- **CI (`.github/workflows/ci.yml`):** runs on `push`/`pull_request` to `main`, weekly schedule, and `workflow_dispatch` (with `fetch-depth: 0` on package jobs). Jobs: `lint-and-types`, `test` (Python 3.11–3.14, 100% cov) + `tests`, `tool-contract`, OpenAPI drift validation, `build-check` (`check_version.py` + `twine check`), `protocol`, `conformance`, `docker-build` (no push; verifies stripped build deps, stdio `initialize`/`tools/list`, negative `CA_CERTIFICATES_FLOOR`), and `drift-check` (schedule/manual only; passes `--fail-on-new-uncovered` against `scripts/drift_uncovered_baseline.txt` and opens one issue on main for wrong-path drift, new uncovered operations, both, or a monitor failure such as a spec fetch or parse error; the per-push drift job does not pass the flag). CodeQL runs via GitHub default setup.
 - **Dependabot (`dependabot-automerge.yml`):** squash-merges minor/patch PRs after CI passes on head commit; major & docker updates wait for human review.
 - **Releases (`.github/workflows/release.yml`):** triggered on `v*` tags (`fetch-depth: 0`); verifies wheel matches tag, publishes to PyPI, creates GitHub Release from `scripts/release_notes.py`, stamps tag version into `server.json` & publishes to MCP Registry, then pushes Docker image (`UV_DYNAMIC_VERSIONING_BYPASS` set to tag version).
 
