@@ -1,137 +1,89 @@
----
-vcs:
-  system: github
-  owner: christianclaudio
-  repo: mcp-server-smartsheet-rm
-  default_branch: main
-  branch_policy: pr_only
----
-
 # AGENTS.md
 
-Instructions for AI coding agents (Antigravity, Claude Code, Copilot, Cursor, Windsurf) working on this repository or integrating Smartsheet Resource Management capabilities.
+Instructions for AI coding agents working on `mcp-server-smartsheet-rm` or integrating Smartsheet Resource Management capabilities.
 
 ---
 
 ## 📚 Canonical Documentation & Live Doc MCPs
 
-Before designing, implementing, or updating any MCP tool, always consult the official machine-readable documentation indexes ("the bibles") and live documentation MCP servers:
+Always consult the official machine-readable indexes and live documentation MCP servers before designing or changing tools:
 
-### Machine-Readable Documentation Indexes (`llms.txt`)
-| Resource | URL | Focus Areas |
+| Resource | Index / URL | Focus |
 | :--- | :--- | :--- |
-| **FastMCP 4 Framework** | [`https://gofastmcp.com/llms.txt`](https://gofastmcp.com/llms.txt) | Server composition (`mount`), hierarchical middleware, transforms, lifespans, in-memory testing |
-| **Model Context Protocol (Official)** | [`https://modelcontextprotocol.io/llms.txt`](https://modelcontextprotocol.io/llms.txt) | Wire protocol spec, Streamable HTTP framing, tool annotations, elicitation |
-| **Smartsheet Developer Portal** | [`https://developers.smartsheet.com/llms.txt`](https://developers.smartsheet.com/llms.txt) | Resource Management API reference ([`/api/resource_management/openapi`](https://developers.smartsheet.com/api/resource_management/openapi), OpenAPI JSON at [`/_spec/api/resource_management/openapi.json`](https://developers.smartsheet.com/_spec/api/resource_management/openapi.json)), authentication and base URLs, changelog |
+| **FastMCP 4 Framework** | [`https://gofastmcp.com/llms.txt`](https://gofastmcp.com/llms.txt) | `mount`, hierarchical middleware, transforms, lifespans, in-memory testing |
+| **Model Context Protocol** | [`https://modelcontextprotocol.io/llms.txt`](https://modelcontextprotocol.io/llms.txt) | Wire spec, Streamable HTTP, annotations, elicitation |
+| **Smartsheet Developer Portal** | [`https://developers.smartsheet.com/llms.txt`](https://developers.smartsheet.com/llms.txt) | RM API ([`/api/resource_management/openapi`](https://developers.smartsheet.com/api/resource_management/openapi), OpenAPI JSON [`/_spec/api/resource_management/openapi.json`](https://developers.smartsheet.com/_spec/api/resource_management/openapi.json)), auth, base URLs |
 
-### Live Documentation MCP Servers
-Both ecosystems publish live, queryable Documentation MCP servers exposing full search and doc navigation tools:
-
-1. **FastMCP Documentation Server**:
-   - **Endpoint**: `https://gofastmcp.com/mcp` (SSE / Streamable HTTP)
-   - **Tools**: `search_fast_mcp(query)`, `query_docs_filesystem_fast_mcp(command)`, `submit_feedback(...)`
-2. **Anthropic Model Context Protocol Server**:
-   - **Endpoint**: `https://modelcontextprotocol.io/mcp` (SSE / Streamable HTTP)
-   - **Tools**: `search_model_context_protocol(query)`, `query_docs_filesystem_model_context_protocol(command)`, `submit_feedback(...)`
+Live doc MCP endpoints: `https://gofastmcp.com/mcp` (`search_fast_mcp`, `query_docs_filesystem_fast_mcp`) and `https://modelcontextprotocol.io/mcp` (`search_model_context_protocol`, `query_docs_filesystem_model_context_protocol`).
 
 ---
 
 ## 🎯 Project Overview
 
-This is `mcp-server-smartsheet-rm` — an enterprise Python Model Context Protocol (MCP) server for **Resource Management by Smartsheet** (formerly 10,000ft API), built on its public REST API. 46 method and path pairs the client calls are in neither the current API reference nor the archived 10,000ft docs. A tool on one of those routes is re-pointed onto a documented route only when that route is a drop-in with the same inputs and outputs; anything that would change what the tool sends or returns stays on the undocumented route. Each says "Undocumented route" in its client and tool docstrings, and `README.md` lists them. What is covered is defined by the tool catalog and checked by `scripts/check_openapi_drift.py`: every method in `ENDPOINT_TO_METHOD` must exist, and every `self._request(...)` call must match a route in Smartsheet's published OpenAPI spec (`--spec-url` or `--spec-file`, required) unless it carries `# drift-ignore: <reason>`, as the 46 undocumented routes do. A new client call on an undocumented route needs that marker and a README row. Do not claim complete API coverage. The default `full` profile lists every tool; the two bulk-destructive tools are listed but refused at call time unless enabled. Expected per-profile counts live in `scripts/check_tool_contract.py`.
+`mcp-server-smartsheet-rm` is an enterprise Python MCP server for **Resource Management by Smartsheet** (formerly 10,000ft API) with strict safety gates, offline testing, and multi-tenant token isolation.
 
-Smartsheet Gov (`GOV_BASE_URL` in `client.py`, from the RM API Introduction and Authentication pages) is opt-in: never make it a default or add it to `DEFAULT_ALLOWED_HOSTS`. Its extra Smartsheet token goes out as `Authorization: Bearer` only when the base URL host is `GOV_HOST`, and a per-request RM token is never paired with the environment Gov token.
-
-**Primary Purpose**:
-Expose deep resource planning, allocation, time-tracking, project management, and budget telemetry to AI agents with strict enterprise safety gates, offline testing, and multi-tenant token isolation.
+- **Undocumented routes policy:** 46 method+path pairs are absent from both the current reference and archived 10,000ft docs. Never drop them; re-point a tool onto a documented route only when that route is a drop-in with the same inputs and outputs, otherwise it stays on the undocumented route. Each carries `"Undocumented route"` in client/tool docstrings, a `README.md` row, and `# drift-ignore: <reason>`. `scripts/check_openapi_drift.py` requires every method in `ENDPOINT_TO_METHOD` to exist and every `self._request(...)` call to match a published OpenAPI route (`--spec-url` or `--spec-file`, required) unless it carries that marker. Any new undocumented route needs both the marker and a README row. Never claim complete API coverage.
+- **Smartsheet Gov (`GOV_BASE_URL` / `GOV_HOST` in `client.py`):** opt-in only — never make it default or add to `DEFAULT_ALLOWED_HOSTS`. Gov Bearer auth applies only when host equals `GOV_HOST`, and a per-request RM token is never paired with the environment Gov token.
+- Expected tool/profile counts live in `scripts/check_tool_contract.py` and `README.md`.
 
 ---
 
 ## 🏗️ Key Paths
 
-- `src/smartsheet_rm_mcp/server.py` — FastMCP 4 root gateway (`create_server`): domain mounts, job allowlists, read-only filter, Tool Search / Code Mode (full only).
+- `src/smartsheet_rm_mcp/server.py` — FastMCP 4 root gateway (`create_server`): domain mounts, job allowlists, read-only filter, Tool Search / Code Mode (`full` only).
 - `src/smartsheet_rm_mcp/profiles.py` — `PROFILES` (each with a one-line `job`), `FULL_ONLY_TOOLS`, `ReadOnlyToolFilter`, `is_read_only_tool`.
 - `src/smartsheet_rm_mcp/tools/{time,projects,admin}.py` — domain sub-servers; re-exported from `tools/__init__.py`.
-- `src/smartsheet_rm_mcp/common.py` — client resolution, `@rm_tool` decorator (a failed call raises FastMCP `ToolError` with the redacted `{"error": ...}` JSON, so `isError: true`), `_destructive_gate`, secret redaction, structured logging. `middleware.py` — gateway audit middleware, the annotation-driven `ReadOnlyGateMiddleware`, and domain guardrails (including the bulk gate).
-- `src/smartsheet_rm_mcp/client.py` — async HTTP client (`SmartsheetRMClient`). `auth.py` — `SMARTSHEET_RM_MCP_AUTH_TOKEN` bearer verifier and the tokenless non-localhost HTTP bind refusal. `errors.py` — structured exceptions and redaction. `config.py` — `SMARTSHEET_RM_*` settings.
-- `scripts/check_tool_contract.py` — source of truth for expected tool counts and annotations. Do not hard-code tool counts elsewhere.
-- `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`.
-- `scripts/setup_repo_governance.sh` — required status-check contexts (Lint and types, Tests, Tool contract assertions, Protocol conformance, Build and package check, Container image build). Edit it when those names change. Do not run it from CI or from an agent; applying it changes live branch protection.
-- `scripts/release_notes.py` — release body from squash commits since the previous `v*` tag. `scripts/check_version.py` — runs after the build and reads the version from the single wheel in `dist/` (the file that ships, as release.yml's tag check does); fails on `0.0.0` (no git metadata) or `0.0.1.devN` (no reachable tag, a shallow checkout).
-- `tests/` — unit tests are offline; live network tests live in `tests/test_live.py` (run via `-m live`). Default pytest `addopts` deselect that marker with `-m 'not live'`; `test_all_discovered_tools_live` skips unless `SMARTSHEET_RM_API_TOKEN` is set. Offline modules: `tests/test_client.py`, `tests/test_errors.py`, `tests/test_server.py`, `tests/test_layered.py`, `tests/test_profiles.py`, `tests/test_protocol.py`, `tests/test_scripts.py`, `tests/test_version.py`, `tests/test_release_notes.py`, `tests/test_check_version.py`, `tests/test_tool_failures.py`, `tests/test_tool_error_hygiene.py`, `tests/test_validation_errors.py`, `tests/test_http_auth.py`, `tests/test_redaction_probes.py`, `tests/test_redaction_house.py`, `tests/test_otel_spans.py`, `tests/test_release_workflow.py`, `tests/test_code_mode_extra.py`. Unmarked `test_dispatch_tool_call_offline` in `tests/test_live.py` stays in the default run.
-- `.github/workflows/` — `ci.yml`, `release.yml` (on a `v*` tag: build with full history, check the wheel version matches the tag, build the release notes, publish to PyPI, create the GitHub Release from `scripts/release_notes.py`, stamp the tag version into `server.json` and publish to the MCP Registry, then push the Docker image only after that job succeeds), `dependabot-automerge.yml` (waits for the CI run on the pull request head, then squash-merges that exact commit for Dependabot PRs whose highest update is minor or patch; docker updates and major updates wait for a human review).
-- `server.json` (MCP Registry metadata), `Dockerfile`, `fastmcp.json`, `pyproject.toml`.
+- `src/smartsheet_rm_mcp/common.py` — client resolution, `@rm_tool` decorator (failed calls raise redacted FastMCP `ToolError` JSON so `isError: true`), `_destructive_gate`, redaction, structured logging.
+- `src/smartsheet_rm_mcp/middleware.py` — gateway audit middleware, annotation-driven `ReadOnlyGateMiddleware`, domain guardrails (including bulk gate).
+- `src/smartsheet_rm_mcp/client.py`, `auth.py`, `errors.py`, `config.py` — `SmartsheetRMClient`, `SMARTSHEET_RM_MCP_AUTH_TOKEN` bearer verifier + tokenless non-localhost HTTP bind refusal, exceptions/redaction, `SMARTSHEET_RM_*` settings.
+- `scripts/check_tool_contract.py` — source of truth for expected tool/profile counts and annotations (do not duplicate counts outside it and `README.md`).
+- `scripts/check_openapi_drift.py`, `scripts/check_conformance.sh` + `conformance-baseline.yml`, `scripts/release_notes.py`, `scripts/check_version.py`.
+- `scripts/setup_repo_governance.sh` — required status-check contexts (`Lint and types`, `Tests`, `Tool contract assertions`, `Protocol conformance`, `Build and package check`, `Container image build`). Update when check names change; **never run from CI or agents** (mutates live branch protection).
+- `tests/` — 100% offline suite (`addopts` uses `-m 'not live'`); live module `tests/test_live.py` (`-m live`, skips unless `SMARTSHEET_RM_API_TOKEN` is set; unmarked `test_dispatch_tool_call_offline` stays in default run).
+- `.github/workflows/` — `ci.yml`, `release.yml`, `dependabot-automerge.yml`.
+- `server.json`, `Dockerfile`, `fastmcp.json`, `pyproject.toml`.
 
 ---
 
-## ⚡ The Canonical Workflow: Building Tools from API / llm.txt
+## ⚡ Canonical Workflow: Building Tools from API / `llms.txt`
 
-When translating an API documentation page or endpoint into an MCP tool, follow these 4 steps in exact order:
-
-### 1. Client Method (`client.py`)
-- Implement a dedicated `async def` method on `SmartsheetRMClient`.
-- Type all arguments strictly. Never use bare `dict` or `Any` when a concrete schema or literal is known.
-- URL path parameters **must** be safely formatted and escaped.
-- Call `await self._request("METHOD", path, params=..., json_data=...)`.
-
-### 2. Tool Handler (`tools/time.py`, `tools/projects.py`, `tools/admin.py`)
-- Register the tool with `@server.tool(name=..., annotations=...)` in the appropriate domain sub-server module and wrap with `@rm_tool`.
-- Provide an explicit, agent-friendly docstring describing capabilities, parameters, and return shape.
-- Destructive delete and bulk-delete tools **must** accept `confirm: bool = False` and call `_destructive_gate`. Creates, updates, and other non-destructive mutations do not take `confirm`.
-
-### 3. Tool Annotations & Composition Mounting
-- Declare native MCP `ToolAnnotations` directly at tool registration in each domain sub-server:
-  - `readOnlyHint`: `True` for inspection/GET; `False` for mutations.
-  - `destructiveHint`: `True` for delete and bulk-delete tools; `False` otherwise (archive-field updates stay non-destructive).
-  - `idempotentHint`: `True` for GET/list and for explicitly idempotent writes; `False` for creations, other updates, and deletes.
-  - `openWorldHint`: `True` when interacting with external networks/APIs.
-- FastMCP 4 Server Composition:
-  - Root gateway in `server.py` selectively mounts domain sub-servers with native domain namespaces (`namespace="time"`, `namespace="projects"`, `namespace="admin"`).
-  - Profiles (`--profile` / `SMARTSHEET_RM_PROFILE`, defined in `profiles.py`): domain-mount profiles `full`, `time`, `projects`, `admin`, `readonly` select mounts; job profiles `timesheets`, `staffing`, `org_setup`, `portfolio` mount every domain and expose an explicit tool-name allowlist via the public `root.disable(components={"tool"})` then `root.enable(names=..., components={"tool"})`. Never `enable(only=True)` (it hides prompts and resources) and never private FastMCP attributes. Unknown profile or allowlist names raise `ValueError` at build time.
-  - A new tool must go in at least one job profile or in `FULL_ONLY_TOOLS`; `tests/test_profiles.py` fails otherwise. Update the counts in `scripts/check_tool_contract.py` and the README profile table.
-  - Read-only: `readOnlyHint=True` is the only signal. `--profile readonly` or `SMARTSHEET_RM_READONLY=1` adds `ReadOnlyToolFilter`; `ReadOnlyGateMiddleware` refuses any real non-read-only tool (`SafetyViolationError`, a FastMCP `ToolError`, so `isError: true`). Unknown names pass through to FastMCP's `Unknown tool`. `call_tool` is unwrapped only when it is a real tool (Tool Search on); otherwise it is `Unknown tool: 'call_tool'`. No server context means refuse.
-  - Bulk protection: `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` are listed in `full`; the time/projects domain guards refuse them at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`.
-  - Tool Search (`regex` or `bm25`) and experimental Code Mode attach only on `full`, never both; on other profiles they log a warning and keep the flat list. Code Mode needs `pydantic-monty`, shipped by the public `code-mode` extra (`fastmcp[code-mode]`, same floor as `dev`); Code Mode tests call `pytest.importorskip("pydantic_monty")`, and `tests/conftest.py` aborts a CI session (`CI` set) without it, so CI syncs `--extra dev --extra code-mode`; when it is missing, Code Mode is skipped with a warning and the flat catalog is served. `search_tools`, `search` and `get_schema` are annotated `readOnlyHint=True`; Code Mode `execute` is refused under read-only.
-
-### 4. Pure Offline Testing & Contract Sync (`tests/`)
-- Add unit tests in `tests/` mocking responses via `respx` or `httpx.MockTransport`.
-- **Zero live network calls in the default suite.** Tests must run 100% offline in CI. The opt-in live module is `tests/test_live.py` (`-m live`, skips unless `SMARTSHEET_RM_API_TOKEN` is set).
-- Update expected tool and profile counts in `scripts/check_tool_contract.py` and the `README.md` profile table, and place the tool in a job profile or `FULL_ONLY_TOOLS`.
-- Ensure test statement coverage remains at **100.0%** (`--cov-fail-under=100`). Branch coverage is not enabled.
+Follow in exact order:
+1. **Client method (`client.py`):** typed `async def` method on `SmartsheetRMClient` (no bare `dict`/`Any` when a schema is known), escaped URL path params, calling `await self._request("METHOD", path, params=..., json_data=...)`.
+2. **Tool handler (`tools/{time,projects,admin}.py`):** register with `@server.tool(name=..., annotations=...)`, wrap with `@rm_tool`, write explicit docstrings (capabilities, params, return shape). Only delete and bulk-delete tools accept `confirm: bool = False` and call `_destructive_gate` (non-destructive creates/updates do not take `confirm`).
+3. **Annotations & composition:**
+   - Set `readOnlyHint` (`True` GET / `False` mutations), `destructiveHint` (`True` delete/bulk-delete / `False` others including archive-field updates), `idempotentHint` (`True` GET/list & idempotent writes / `False` creates/other updates/deletes), `openWorldHint` (`True` external APIs).
+   - Gateway mounts `namespace="time"`, `"projects"`, `"admin"`.
+   - **Profiles (`--profile` / `SMARTSHEET_RM_PROFILE`):** domain-mount (`full`, `time`, `projects`, `admin`, `readonly`) and job allowlists (`timesheets`, `staffing`, `org_setup`, `portfolio` via `root.disable(components={"tool"})` then `root.enable(names=..., components={"tool"})` — never `enable(only=True)` or private FastMCP attrs). Unknown profiles/names raise `ValueError` at build. New tools must be mapped in a job profile or `FULL_ONLY_TOOLS` (`tests/test_profiles.py` enforces).
+   - **Read-only:** `readOnlyHint=True` is the only signal (`--profile readonly` / `SMARTSHEET_RM_READONLY=1` → `ReadOnlyToolFilter` + `ReadOnlyGateMiddleware` raising `SafetyViolationError`; unknown names stay `Unknown tool`; `call_tool` unwrapped only when Tool Search is on; missing context refuses).
+   - **Bulk protection:** `time_bulk_delete_time_entries` and `projects_bulk_delete_assignments` list in `full` and refuse at call time unless `SMARTSHEET_RM_ALLOW_BULK_DESTRUCTIVE=1`.
+   - **Tool Search / Code Mode (`full` only, mutually exclusive):** `regex`/`bm25` or Code Mode (`mcp-server-smartsheet-rm[code-mode]`, `pydantic_monty`). Non-`full` profiles log a warning and serve flat list; missing `pydantic_monty` skips Code Mode (`tests/conftest.py` aborts CI if missing; tests use `pytest.importorskip`). `search_tools`, `search`, `get_schema` are `readOnlyHint=True`; Code Mode `execute` is refused under read-only.
+4. **Offline tests & contract sync (`tests/`):** mock HTTP with `respx` or `httpx.MockTransport` (**zero live calls in default suite**), update `scripts/check_tool_contract.py` + `README.md` profile table + `profiles.py` / `FULL_ONLY_TOOLS`, and keep **100.0%** statement coverage (`--cov-fail-under=100`).
 
 ---
 
 ## 🛡️ Non-Negotiable Safety & Security Rules
 
-1. **Destructive Confirmation Gate**:
-   - Every destructive tool (e.g. deletion, bulk removal, or permanent deallocation) must accept `confirm: bool = False` and invoke `_destructive_gate`. If `False`, `_destructive_gate` returns the confirm prompt as a normal result (`isError: false`, `"status": "confirmation_required"`, re-call with `confirm=true`) and the tool executes no side effects. Input validation failures call `_invalid_request(...)`, which raises `ToolError` with the redacted payload (`isError: true`); do not use it for the confirm prompt. Other failures the tool detects itself, such as a batch where every item failed, call `_tool_failure(type, message, **details)`, which raises the same way; never return an error dict or a `"status": "failed"` result as a normal result. Batch per-item `error` objects always include a `message` key. All four batch tools catch `Exception` (not `BaseException`) so a non-API failure on one item is recorded and the batch continues, logging only the redacted message; `asyncio.CancelledError` propagates. Each batch result uses `status`, a success count, `failed_count`, `results` and `errors`, with per-item `{key, status, result|error}`, and keeps any field names it returned before alongside them (prefer additive changes over renames). Non-destructive mutations (creates, updates, workflows) are protected by `ReadOnlyGateMiddleware` without requiring interactive confirmation.
-2. **Secret Redaction**:
-   - Error messages, logs, and tracebacks must pass through regex redaction (`_redact_secrets`) stripping Bearer tokens, passwords, and API keys. A PEM block runs from `-----BEGIN <label>-----` to the `-----END <label>-----` with the same label (any case; an END with another label does not end it, and a `-----BEGIN` with no matching END is masked to the end of the text). A `{...}`/`[...]`/`(...)` value after a credential key or a token key, quoted or not (a Python `repr` such as `{'api_key': ['x']}` or `{'api_key': ('a', 'x')}`), is masked to its balanced bracket, with brackets inside double- or single-quoted strings skipped (or the end of the line when it never balances), with bracket scans cached so many unbalanced values cost one pass. A bare number, `True` or word under a quoted key (`{'password': 12345}`) is masked; `None`/`null` stays. In `redact_message`, once 64 brackets have failed to parse (abusive input), the rest of the message is masked. A flood of `(` right after `:` or `=` costs about 25 times more per byte than plain text, because each one checks the 256 characters before it for a key; it stays linear and nothing leaks, but hundreds of KB of it take seconds (a known limit). A value on the line after `password=` (or any credential key) is not masked (a known limit).
-3. **Multi-Stage Non-Root Containers**:
-   - The `Dockerfile` must use a multi-stage build (`python:3.12-slim-trixie AS builder` $\rightarrow$ runtime, pinned by digest (both stages share the same pin); glibc is keyed by the Debian release in the tag, not the digest) creating and executing under non-root `USER mcp` with virtual environment `/opt/venv`.
-   - Trust stores follow FastMCP's [certificate authority incident notice (October 2026)](https://github.com/PrefectHQ/fastmcp/blob/main/SECURITY.md#certificate-authority-incident-october-2026): both Docker stages upgrade the OS `ca-certificates` package and fail the build below the patched Debian version ([DSA-6572-1](https://security-tracker.debian.org/tracker/DSA-6572-1); `ARG CA_CERTIFICATES_FLOOR`, declared once), the builder does so before any pip runs because pip trusts the OS store as well as its bundled certifi, the builder bootstraps pip from `docker/pip-bootstrap.txt`, the release workflow and the CI `drift-check` job install with `pip>=26.2.2`, and `certifi>=2026.10.19` is a direct dependency. `tests/test_dockerfile.py` and CI's `docker-build` job enforce the order and the floor.
-   - The pip bootstrap is hash-pinned in `docker/pip-bootstrap.txt` and installed with `--require-hashes`, so it does not depend on the TLS trust of the base image's older pip and certifi; whoever raises the pip floor updates that pin and its sha256 from PyPI (`https://pypi.org/pypi/pip/<version>/json`, the `py3-none-any` wheel's `digests.sha256`). Dependabot bumps `docker/pip-bootstrap.txt`.
-   - Runtime dependencies install from `uv.lock`, so the image runs the versions CI tests: the builder installs uv from `docker/uv-bootstrap.txt` (hash-pinned, `--require-hashes`, into `/tmp/uv` outside the venv, so the runtime image has no uv), runs `uv export --locked --no-dev --no-emit-project --format requirements.txt` (base dependencies only, a hash for every package, and the build fails if `uv.lock` is stale), installs that file with pip in hash-checking mode, then installs the project build backend from `docker/build-backend.txt` (hash-pinned hatchling, uv-dynamic-versioning, and every transitive build dependency, `--require-hashes --only-binary=:all:`, into `/tmp/build-backend` outside the venv, so the runtime image has no build backend) and the project with `PYTHONPATH=/tmp/build-backend pip install --no-deps --no-build-isolation .`. Never install the project with its dependencies (`pip install .`), which resolves them fresh at build time. Whoever changes `[tool.uv] required-version` keeps the uv pin within it and updates its sha256 values from `https://pypi.org/pypi/uv/<version>/json` (the manylinux x86_64 and aarch64 wheels' `digests.sha256`). Dependabot bumps `docker/uv-bootstrap.txt`. The build-backend pins are the `build-backend` dependency group in `pyproject.toml` (exact versions inside the `[build-system]` ranges, not installed by default), so `uv.lock` carries their closure with hashes. After `uv lock`, `uv run python scripts/gen_build_backend.py` rewrites `docker/build-backend.txt` from `uv.lock` (`--check` reports drift instead), and `tests/test_build_backend_lock.py` fails if the file, the lock or the ranges disagree. The file is generated from `uv.lock` by `scripts/gen_build_backend.py`, must never be edited by hand, and the `uv` Dependabot entry excludes it via `exclude-paths`. `tests/test_dockerfile.py` enforces the install steps and the pins.
-   - Lowering `CA_CERTIFICATES_FLOOR` with `--build-arg` is unsupported; the build-arg exists only so CI can raise it for the negative floor check, and CI and the release workflow never pass it otherwise.
-4. **Registry Metadata Constraint**:
-   - In `server.json`, the root `description` must be **strictly $\le$ 100 characters** to pass MCP Registry schema validation (longer strings trigger HTTP 422).
-   - Default package transport is `stdio`, and packages must specify `"runtimeHint": "uvx"`.
-5. **Git Safety & Releases**:
-   - Never commit API tokens or secrets.
-   - All changes proceed via feature branches and PRs.
-   - **The git tag is the version.** `uv-dynamic-versioning` reads the `vX.Y.Z` tag at build time; `pyproject.toml` declares `dynamic = ["version"]`, `__version__` comes from `importlib.metadata`, and `server.json` commits `0.0.0` (the release workflow stamps the tag version into it). PRs never edit a version: no bump in `pyproject.toml`, `src/smartsheet_rm_mcp/__init__.py`, `server.json`, `uv.lock`, or `CHANGELOG.md`. Untagged builds report `X.Y.(Z+1).devN+<sha>`; a build with no git metadata reports the fallback `0.0.0`, which `scripts/check_version.py` rejects when run on the built wheel after the build.
-   - **Breaking changes:** every `feat!` / `fix!` PR (any `type!:` title) carries a `BREAKING CHANGE:` footer as the final paragraph of the PR body, and the footer text must include the migration steps. `BREAKING CHANGE:` (or its synonym `BREAKING-CHANGE:`) is the only footer token; do not add a separate migration token. `scripts/release_notes.py` stops at the CodeRabbit marker line (outside a code fence) `<!-- This is an auto-generated comment: release notes by coderabbit.ai -->` and ignores everything after it, so the footer goes before CodeRabbit's generated summary, never inside it.
-   - **Squash merges use the PR body as the commit message** (repo settings: PR title as squash title, PR body as squash message). Keep the PR body accurate up to the merge, because `scripts/release_notes.py` reads it from the squash commit.
-   - **`CHANGELOG.md` is frozen** as of 1.2.2. GitHub Releases are the changelog: `scripts/release_notes.py` builds each release body from the squash commits since the previous tag (every `BREAKING CHANGE:` footer verbatim, then the commit subjects). Do not add CHANGELOG entries.
-   - **README is outside the release version ceremony.** Do not add or chase `README.md` `==X.Y.Z` install pins. Update `README.md` only when project behavior, install method, config, or commands actually change. Prefer unpinned install examples (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`) or point readers to GitHub Releases.
-6. **Outbound Requests**:
-   - Outbound requests must enforce HTTPS, disallow loopback/private/internal IP addresses, and offload DNS hostname verification to worker threads via `asyncio.to_thread` in `SSRFSafeAsyncTransport` to protect event loop responsiveness. The transport then connects only to an address it checked, trying the next checked address if a connect fails while the request's connect timeout lasts (one deadline shared by all the addresses, not a fresh timeout for each), and keeps the hostname in the URL for the Host header, TLS SNI, certificate verification and per-hostname connection pooling, so the name is never looked up a second time. Never rewrite a request URL to an IP or set `sni_hostname`. httpx ignores `HTTP(S)_PROXY` / `ALL_PROXY` whenever a transport is passed in (httpx `AsyncClient`: `allow_env_proxies = trust_env and transport is None`), so the client and the drift fetch (`fetch_pinned_https`) always connect directly, through the checked-address pin; an environment proxy is never used. Deployments that require an egress proxy need a proxy-aware transport, which this server does not provide. `trust_env=False` on the drift fetch is belt-and-braces.
+1. **Destructive Confirmation Gate & Errors:** destructive tools default `confirm: bool = False` and return `_destructive_gate` (`isError: false`, `"status": "confirmation_required"`) without side effects. Validation failures use `_invalid_request(...)` and detected tool/batch-total failures use `_tool_failure(type, message, **details)` (`ToolError`, `isError: true`); never return error dicts/`"status": "failed"` as normal results. Batch tools catch `Exception` (not `BaseException`, so `CancelledError` propagates), include `message` on item errors, and preserve additive field names (`status`, success count, `failed_count`, `results`, `errors`). Non-destructive mutations rely on `ReadOnlyGateMiddleware`.
+2. **Secret Redaction:** `_redact_secrets` / `redact_message` in `errors.py` mask Bearer tokens, passwords, API keys, and PEM blocks; raise redacted `ToolError` `from None` **after** `except` blocks (see `errors.py` and redaction tests for known multiline/bracket limits).
+3. **Multi-Stage Non-Root Containers (`Dockerfile`):**
+   - Multi-stage `python:3.12-slim-trixie AS builder` → runtime pinned by digest (both stages share the same pin; glibc is keyed by the Debian release in the tag, not the digest), non-root `USER mcp`, venv `/opt/venv`.
+   - Trust-store floor (FastMCP Oct 2026 / `DSA-6572-1`): both stages upgrade OS `ca-certificates` and enforce `ARG CA_CERTIFICATES_FLOOR` (before pip runs in builder), builder bootstraps pip from `docker/pip-bootstrap.txt` (`--require-hashes`; Dependabot bumps it), `release.yml` & CI `drift-check` install with `pip>=26.2.2`, and `certifi>=2026.10.23` is a direct dependency. Never lower `CA_CERTIFICATES_FLOOR` via `--build-arg` (the build-arg exists only so CI can raise it for the negative floor check; CI and the release workflow never pass it otherwise).
+   - Reproducible lock install: builder installs uv (`docker/uv-bootstrap.txt`, `--require-hashes`, outside venv; Dependabot bumps it), exports `uv export --locked --no-dev --no-emit-project --format requirements.txt` and installs that file with pip in hash-checking mode, then installs `docker/build-backend.txt` (`--require-hashes --only-binary=:all:` outside venv), and installs via `PYTHONPATH=/tmp/build-backend pip install --no-deps --no-build-isolation .` (never `pip install .`). Regenerate `docker/build-backend.txt` after `uv lock` via `uv run python scripts/gen_build_backend.py` (never hand-edit; Dependabot excludes it). Enforced by `tests/test_dockerfile.py` & `tests/test_build_backend_lock.py`.
+4. **Registry Metadata (`server.json`):** root `description` **≤ 100 chars** (HTTP 422 otherwise); default transport `stdio`, `"runtimeHint": "uvx"`.
+5. **Outbound Requests (`SSRFSafeAsyncTransport`):** HTTPS only, blocks loopback/private/internal IPs, resolves DNS via `asyncio.to_thread`, then connects only to a checked address, trying the next while the request's connect timeout lasts (one deadline shared by all addresses). Keep the hostname for the Host header, TLS SNI, certificate verification, and per-hostname pooling; never rewrite a request URL to an IP or set `sni_hostname`. httpx ignores env proxies when a transport is passed (`allow_env_proxies = trust_env and transport is None`), so the client and `fetch_pinned_https` always connect directly through the pin (no environment proxy; `trust_env=False` on the drift fetch is belt-and-braces).
+6. **Git Safety & Releases:**
+   - Never commit secrets; all work via feature branches and PRs.
+   - **Tag is version (`uv-dynamic-versioning`):** `pyproject.toml` declares `dynamic = ["version"]`, `__version__` uses `importlib.metadata`, `server.json` commits `0.0.0`. Never bump versions in PRs (`pyproject.toml`, `src/smartsheet_rm_mcp/__init__.py`, `server.json`, `uv.lock`, `CHANGELOG.md`). Untagged builds report `X.Y.(Z+1).devN+<sha>`; `scripts/check_version.py` rejects `0.0.0` / `0.0.1.devN`.
+   - **Breaking changes (`feat!` / `fix!`):** carry `BREAKING CHANGE:` as the final PR body paragraph (before `<!-- This is an auto-generated comment: release notes by coderabbit.ai -->` if present) and **must include migration steps** (do not add a separate migration token; `scripts/release_notes.py` stops at the CodeRabbit marker). Keep PR body accurate before squash merge.
+   - **`CHANGELOG.md` frozen at 1.2.2:** GitHub Releases are the changelog. Keep `README.md` unpinned (`uvx --from mcp-server-smartsheet-rm smartsheet-rm-mcp`).
+   - **Version level:** before tagging, check the proposed version against the commit types since the last tag (`!` / `BREAKING CHANGE:` → major, `feat` → minor, otherwise patch), and that every breaking commit carries its footer with migration steps.
+   - **Tagging (maintainer go only, no release PR):** preview `git fetch --tags && python3 scripts/release_notes.py` on `main` and post it with the release Ask; verify version is unused on git tags, PyPI (`https://pypi.org/pypi/mcp-server-smartsheet-rm/X.Y.Z/json`), and MCP Registry (`https://registry.modelcontextprotocol.io/v0.1/servers/io.github.christianclaudio%2Fsmartsheet-rm/versions/X.Y.Z`). In a throwaway clone, tag the release commit locally, run `rm -rf dist && uv build`, and confirm the wheel is `mcp_server_smartsheet_rm-X.Y.Z-py3-none-any.whl` and `scripts/check_version.py` passes; discard the clone without pushing. PyPI rejects re-uploads: on post-PyPI failure, merge a fix and tag next patch.
 
 ---
 
 ## 🛠️ Development & Verification Commands
 
-uv 0.13.4 or later is required (`[tool.uv] required-version` in `pyproject.toml`, from FastMCP's certificate authority incident notice); older uv refuses to run, and CI's `setup-uv` installs from that setting.
+Requires `uv >= 0.13.4` (`[tool.uv] required-version` in `pyproject.toml`).
 
 ```bash
 # Install editable with dev dependencies
@@ -172,16 +124,24 @@ coderabbit review --agent --uncommitted
 
 ## 🔄 CI & Releases
 
-CI is defined in `.github/workflows/ci.yml` (jobs: `lint-and-types` "Lint and types", `test` on Python 3.11–3.14 at 100% coverage, aggregate `tests` "Tests" which fails unless every matrix leg succeeded, `tool-contract` "Tool contract assertions", OpenAPI drift validation, `build-check` "Build and package check" (`scripts/check_version.py` and `twine check`), `protocol` for stdio verification, `conformance` "Protocol conformance", `docker-build` "Container image build" (builds the full image without pushing it, checks that the runtime image has the project and none of the build-only packages (runtime dependencies such as `packaging` stay), checks that the image answers `initialize` and `tools/list` over stdio with no network, and checks that the builder stage fails at its `ca-certificates` floor check, before any pip step, when the floor is above the installed version), and `drift-check` "Check API Drift" (scheduled and manual runs only; passes `--fail-on-new-uncovered` against `scripts/drift_uncovered_baseline.txt` and opens one issue on main for wrong-path drift, new uncovered operations, both, or a monitor failure including a spec fetch or parse error; the per-push OpenAPI drift job does not pass the flag)). CodeQL code scanning runs through GitHub's default setup, not a workflow job. Jobs that install or build the package check out with `fetch-depth: 0`, because a shallow checkout has no reachable tag and reports `0.0.1.devN`. The published Docker image is built only in `release.yml` (CI's `docker-build` image is never pushed), with `UV_DYNAMIC_VERSIONING_BYPASS` set to the tag version (the build context has no `.git`). CI runs on pushes and pull requests to `main`, weekly on `main` on Sunday at 14:41 America/New_York (`schedule` with `timezone`, after the Sunday 09:30 America/New_York Dependabot run in `.github/dependabot.yml`), and on manual dispatch (`workflow_dispatch`); the weekly run exists because merges by `dependabot-automerge.yml` use `GITHUB_TOKEN` and so never trigger the `push` run. Run the commands above before opening a PR.
+- **CI (`.github/workflows/ci.yml`):** runs on `push`/`pull_request` to `main`, weekly schedule, and `workflow_dispatch` (with `fetch-depth: 0` on package jobs). Jobs: `lint-and-types`, `test` (Python 3.11–3.14, 100% cov) + `tests`, `tool-contract`, OpenAPI drift validation, `build-check` (`check_version.py` + `twine check`), `protocol`, `conformance`, `docker-build` (no push; verifies stripped build deps, stdio `initialize`/`tools/list`, negative `CA_CERTIFICATES_FLOOR`), and `drift-check` (schedule/manual only; passes `--fail-on-new-uncovered` against `scripts/drift_uncovered_baseline.txt` and opens one issue on main for wrong-path drift, new uncovered operations, both, or a monitor failure such as a spec fetch or parse error; the per-push drift job does not pass the flag). CodeQL runs via GitHub default setup.
+- **Dependabot (`dependabot-automerge.yml`):** squash-merges minor/patch PRs after CI passes on head commit; major & docker updates wait for human review.
+- **Releases (`.github/workflows/release.yml`):** triggered on `v*` tags (`fetch-depth: 0`); verifies wheel matches tag, publishes to PyPI, creates GitHub Release from `scripts/release_notes.py`, stamps tag version into `server.json` & publishes to MCP Registry, then pushes Docker image (`UV_DYNAMIC_VERSIONING_BYPASS` set to tag version because the Docker build context has no `.git`).
 
-Do not create tags or releases unless the maintainer asks. There is no release PR: merged commits accumulate on `main`, and releases go out on any weekday on the maintainer's go; no fixed release day. Before the tag:
+---
 
-- The release owner previews the release body on an up-to-date `main` with full history and tags (`git fetch --tags && python3 scripts/release_notes.py`) and posts it with the release Ask.
-- The reviewer checks the proposed version against the commit types since the last tag (`!` / `BREAKING CHANGE:` → major, `feat` → minor, otherwise patch), that every breaking commit carries its footer with migration steps, and that the version is unused in all three places it could already exist:
-  ```bash
-  git ls-remote --tags origin vX.Y.Z                                                    # prints nothing
-  curl -s -o /dev/null -w '%{http_code}\n' https://pypi.org/pypi/mcp-server-smartsheet-rm/X.Y.Z/json   # prints 404
-  curl -s -o /dev/null -w '%{http_code}\n' https://registry.modelcontextprotocol.io/v0.1/servers/io.github.christianclaudio%2Fsmartsheet-rm/versions/X.Y.Z   # prints 404
-  ```
-  In a throwaway clone, the reviewer tags the release commit locally, runs `rm -rf dist && uv build`, and confirms the wheel is `mcp_server_smartsheet_rm-X.Y.Z-py3-none-any.whl` and `scripts/check_version.py` passes; then discards the clone without pushing.
-- Only the maintainer's go creates the tag. PyPI never accepts the same version twice: if a release fails after the PyPI upload, do not re-run it; merge a fix and tag the next patch.
+## VCS
+
+```yaml
+vcs:
+  host: github
+  remote: origin
+  repository: christianclaudio/mcp-server-smartsheet-rm
+  default_branch: main
+  protected_branches: [main]
+  branch_policy: pr_only
+  merge_strategy: squash
+  delete_branch_on_merge: true
+  require_coderabbit: true
+  branch_naming: type/scope-desc
+```
