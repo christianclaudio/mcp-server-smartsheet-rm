@@ -40,9 +40,9 @@ SIGNED_OFF = {
     "full": (163, 74),
     "readonly": (74, 74),
     "timesheets": (29, 17),
-    "staffing": (56, 35),
+    "staffing": (50, 35),
     "org_setup": (45, 20),
-    "portfolio": (49, 29),
+    "portfolio": (55, 29),
 }
 
 CODE_MODE_SKIP_REASON = "needs the code-mode extra (fastmcp[code-mode] / pydantic-monty)"
@@ -111,6 +111,43 @@ async def test_full_is_exhaustive_and_every_tool_is_placed() -> None:
     in_jobs = set().union(*(p.tools or frozenset() for p in JOB_PROFILES))
     assert in_jobs | FULL_ONLY_TOOLS == full_names
     assert not in_jobs & FULL_ONLY_TOOLS
+
+
+PROJECT_MEMBERSHIP_WRITES = frozenset(
+    {
+        "projects_set_project_members",
+        "projects_update_project_members",
+        "projects_delete_project_members",
+        "projects_set_user_project_memberships",
+        "projects_update_user_project_memberships",
+        "projects_delete_user_project_memberships",
+    }
+)
+
+PROJECT_MEMBERSHIP_READS = frozenset(
+    {
+        "projects_list_project_members",
+        "projects_list_relationships_project_members",
+        "projects_list_relationships_project_memberships",
+        "projects_list_user_project_memberships",
+    }
+)
+
+
+@pytest.mark.asyncio
+async def test_project_membership_writes_are_portfolio_not_staffing() -> None:
+    """Staffing excludes project membership writes; portfolio includes them. Reads stay on staffing."""
+    staffing_app = create_server(profile="staffing")
+    portfolio_names = await _tool_names(create_server(profile="portfolio"))
+    staffing_names = await _tool_names(staffing_app)
+    assert PROJECT_MEMBERSHIP_WRITES.isdisjoint(staffing_names)
+    assert PROJECT_MEMBERSHIP_WRITES <= portfolio_names
+    assert PROJECT_MEMBERSHIP_READS <= staffing_names
+    with pytest.raises(NotFoundError, match="Unknown tool"):
+        await staffing_app.call_tool(
+            "projects_set_project_members",
+            {"project_id": 1, "relationships": [[1, "viewer"]], "confirm": True},
+        )
 
 
 def test_full_only_tools() -> None:

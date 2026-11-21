@@ -24,9 +24,9 @@ EXPECTED_PROFILE_COUNTS: dict[str, tuple[int, int]] = {
     "readonly": (74, 74),
     # Job (allowlist) profiles
     "timesheets": (29, 17),
-    "staffing": (56, 35),
+    "staffing": (50, 35),
     "org_setup": (45, 20),
-    "portfolio": (49, 29),
+    "portfolio": (55, 29),
 }
 
 # Expected annotation split on ``full``.
