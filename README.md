@@ -19,9 +19,9 @@ Enables AI coding agents, planners, and assistants (Claude, Cortex, Antigravity,
 graph TD
     Client["AI Agent (Claude / Cortex / Antigravity / Cursor)"] -->|"MCP Stdio / Streamable HTTP /mcp"| Server["Root Gateway create_server()"]
     Server --> Middle["Parent Middleware (ParentAudit / ReadOnly Gate)"]
-    Middle --> SubTime["time namespace (time_* — 19 tools, incl. 1 bulk-gated)"]
-    Middle --> SubProj["projects namespace (projects_* — 36 tools, incl. 1 bulk-gated)"]
-    Middle --> SubAdmin["admin namespace (admin_* — 60 tools)"]
+    Middle --> SubTime["time namespace (time_* — 21 tools, incl. 1 bulk-gated)"]
+    Middle --> SubProj["projects namespace (projects_* — 62 tools, incl. 1 bulk-gated)"]
+    Middle --> SubAdmin["admin namespace (admin_* — 80 tools)"]
     SubTime --> Guards["Domain Guards"]
     SubProj --> Guards
     SubAdmin --> Guards
@@ -58,9 +58,9 @@ Pick a profile with `--profile` or `SMARTSHEET_RM_PROFILE` (default `full`). An 
 | `admin` | Users, org reference data, clients, expenses, fields, reports and webhooks (admin domain). | **80** | 38 |
 | `readonly` | Inspect without side effects: every tool annotated `readOnlyHint=True`. | **74** | 74 |
 | `timesheets` | Team member or manager logs, corrects, submits, locks and approves weekly time against their assignments. | **29** | 17 |
-| `staffing` | Resource manager checks availability and utilization and creates or adjusts assignments, placeholders and subtasks. | **56** | 35 |
+| `staffing` | Resource manager checks availability and utilization and creates or adjusts assignments, placeholders and subtasks. | **50** | 35 |
 | `org_setup` | Resource-management admin onboards people and maintains org reference data, custom-field definitions, user statuses and webhooks. | **45** | 20 |
-| `portfolio` | PMO sets up and maintains projects, phases, clients, expenses and project metadata, and reads budget and report totals. | **49** | 29 |
+| `portfolio` | PMO sets up and maintains projects, phases, clients, expenses and project metadata, and reads budget and report totals. | **55** | 29 |
 
 Twelve tools are in no job profile and are reachable only in `full` (or their domain-mount profile): `time_bulk_delete_time_entries`, `projects_bulk_delete_assignments`, `admin_delete_client`, `admin_delete_client_contact`, `admin_create_expense_category`, `admin_delete_expense_category`, `admin_delete_tag`, and the five API-token tools `admin_list_api_tokens`, `admin_create_api_token`, `admin_update_api_token`, `admin_delete_api_token`, and `admin_renew_api_token`.
 
